@@ -1,0 +1,19 @@
+{
+  "id": "block-blast",
+  "name": "Block Blast",
+  "url": "https://blockblast.game/",
+  "image": "/images/block-blast.png",
+  "description": "Place blocks strategically to clear rows and columns.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Offline",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Puzzle",
+    "Tile Matching",
+    "Casual"
+  ]
+}

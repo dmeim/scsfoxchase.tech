@@ -1,0 +1,19 @@
+{
+  "id": "cookie-clicker",
+  "name": "Cookie Clicker",
+  "url": "https://orteil.dashnet.org/cookieclicker/",
+  "image": "/images/cookie-clicker.png",
+  "description": "Click cookies, buy upgrades, and build a cookie empire in the original idle clicker game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Casual",
+    "Classics",
+    "Strategy"
+  ]
+}

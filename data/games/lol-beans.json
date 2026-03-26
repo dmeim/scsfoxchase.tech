@@ -1,0 +1,21 @@
+{
+  "id": "lol-beans",
+  "name": "Lol Beans",
+  "url": "https://lolbeans.io",
+  "image": "/images/lol-beans.png",
+  "description": "Race against other players in this fun obstacle course game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Obstacle Course",
+    "Party",
+    "Action"
+  ]
+}

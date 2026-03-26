@@ -1,0 +1,19 @@
+{
+  "id": "pbs-kids",
+  "name": "PBS Kids Games",
+  "url": "https://pbskids.org/games/all-topics/",
+  "image": "/images/pbs-kids.jpg",
+  "description": "Safe educational games featuring favorite PBS characters.",
+  "minGrade": 1,
+  "maxGrade": 3,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Kids",
+    "Casual"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "globle",
+  "name": "Globle",
+  "url": "https://globle.org",
+  "image": "/images/globle-new.png",
+  "description": "Guess the mystery country using a color-coded globe.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Geography",
+    "Daily Challenge",
+    "Trivia",
+    "Puzzle"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "letter-boxed",
+  "name": "Letter Boxed",
+  "url": "https://www.nytimes.com/puzzles/letter-boxed",
+  "image": "/images/letterboxed.png",
+  "description": "Connect letters around a square to form words.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Puzzle",
+    "Daily Challenge",
+    "Brain Teaser"
+  ]
+}

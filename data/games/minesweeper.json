@@ -1,0 +1,20 @@
+{
+  "id": "minesweeper",
+  "name": "Minesweeper",
+  "url": "https://minesweeper.online/",
+  "image": "/images/minesweeper.jpg",
+  "description": "The classic logic game — uncover tiles and use number clues to avoid hidden mines.",
+  "minGrade": 2,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Logic",
+    "Puzzle",
+    "Classics",
+    "Strategy"
+  ]
+}

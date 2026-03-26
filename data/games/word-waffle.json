@@ -1,0 +1,20 @@
+{
+  "id": "word-waffle",
+  "name": "Word Waffle",
+  "url": "https://wordwaffle.org",
+  "image": "/images/waffle.png",
+  "description": "Swap letters in a waffle grid to form correct words.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Puzzle",
+    "Brain Teaser"
+  ]
+}

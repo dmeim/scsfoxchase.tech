@@ -1,0 +1,20 @@
+{
+  "id": "tiles",
+  "name": "Tiles",
+  "url": "https://www.nytimes.com/puzzles/tiles",
+  "image": "/images/tiles.png",
+  "description": "Match pairs of tiles to clear the board.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Tile Matching",
+    "Puzzle",
+    "Casual"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "narrow-one",
+  "name": "Narrow One",
+  "url": "https://narrow.one/",
+  "image": "/images/narrow-one.png",
+  "description": "Multiplayer archery capture-the-flag game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "FPS / Shooter",
+    "Competitive",
+    "Action"
+  ]
+}

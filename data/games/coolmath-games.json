@@ -1,0 +1,20 @@
+{
+  "id": "coolmath-games",
+  "name": "CoolMath Games",
+  "url": "https://www.coolmathgames.com",
+  "image": "/images/coolmathgames.jpg",
+  "description": "A huge collection of logic, thinking, and math games.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Math",
+    "Puzzle",
+    "Casual"
+  ]
+}

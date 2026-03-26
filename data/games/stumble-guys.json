@@ -1,0 +1,21 @@
+{
+  "id": "stumble-guys",
+  "name": "Stumble Guys",
+  "url": "https://www.stumbleguys.com",
+  "image": "/images/stumbleguys.jpg",
+  "description": "Race through chaotic obstacle courses against other players.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Obstacle Course",
+    "Party",
+    "Action"
+  ]
+}

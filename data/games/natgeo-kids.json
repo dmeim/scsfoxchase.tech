@@ -1,0 +1,20 @@
+{
+  "id": "natgeo-kids",
+  "name": "National Geographic Kids",
+  "url": "https://kids.nationalgeographic.com/games",
+  "image": "/images/nat-geo-kids.jpg",
+  "description": "Explore nature and science through interactive games.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Science",
+    "Kids",
+    "Exploration"
+  ]
+}

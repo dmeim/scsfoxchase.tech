@@ -1,0 +1,21 @@
+{
+  "id": "bloxd",
+  "name": "Bloxd.io",
+  "url": "https://bloxd.io/",
+  "image": "/images/bloxdio.png",
+  "description": "Multiplayer voxel game with various game modes.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Minecraft-Style",
+    "Open World",
+    "Building"
+  ]
+}

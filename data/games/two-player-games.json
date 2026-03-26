@@ -1,0 +1,21 @@
+{
+  "id": "two-player-games",
+  "name": "Two Player Games",
+  "url": "https://www.twoplayergames.org",
+  "image": "/images/twoplayergames.jpg",
+  "description": "A collection of games you can play with a friend.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Party",
+    "Competitive",
+    "Casual"
+  ]
+}

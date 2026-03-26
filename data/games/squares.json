@@ -1,0 +1,20 @@
+{
+  "id": "squares",
+  "name": "Squares",
+  "url": "https://squares.org/",
+  "image": "/images/squares-new.png",
+  "description": "Strategic tile-based puzzle game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Offline",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Number Puzzles",
+    "Logic",
+    "Puzzle",
+    "Brain Teaser"
+  ]
+}

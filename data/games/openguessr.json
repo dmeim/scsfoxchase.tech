@@ -1,0 +1,22 @@
+{
+  "id": "openguessr",
+  "name": "OpenGuessr",
+  "url": "https://www.openguessr.com/",
+  "image": "/images/openguessr.jpg",
+  "description": "Guess locations around the world from street-view images in this free GeoGuessr alternative.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Geography",
+    "Trivia",
+    "Educational",
+    "Exploration",
+    "Daily Challenge"
+  ]
+}

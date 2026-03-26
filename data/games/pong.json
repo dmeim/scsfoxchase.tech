@@ -1,0 +1,22 @@
+{
+  "id": "pong",
+  "name": "Pong",
+  "url": "https://freepong.org",
+  "image": "/images/pong.jpg",
+  "description": "The original table tennis arcade game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Offline",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Arcade",
+    "Retro",
+    "Classics"
+  ]
+}

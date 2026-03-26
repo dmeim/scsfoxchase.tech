@@ -1,0 +1,20 @@
+{
+  "id": "phrazle",
+  "name": "Phrazle",
+  "url": "https://phrazle.gg",
+  "image": "/images/phrazle.png",
+  "description": "Guess the hidden phrase one word at a time.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Puzzle",
+    "Brain Teaser"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "watermelon-game",
+  "name": "Watermelon Game",
+  "url": "https://watermelongame.com",
+  "image": "/images/suika.jpg",
+  "description": "Drop and merge fruits to create the biggest watermelon.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Puzzle",
+    "Physics",
+    "Casual",
+    "Reaction Speed"
+  ]
+}

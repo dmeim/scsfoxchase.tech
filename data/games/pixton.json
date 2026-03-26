@@ -1,0 +1,19 @@
+{
+  "id": "pixton",
+  "name": "Pixton",
+  "url": "https://app.pixton.com",
+  "image": "/images/pixton.jpg",
+  "description": "Create your own comics and visual stories.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Educational",
+    "Casual"
+  ]
+}

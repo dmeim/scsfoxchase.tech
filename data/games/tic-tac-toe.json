@@ -1,0 +1,23 @@
+{
+  "id": "tic-tac-toe",
+  "name": "Tic Tac Toe",
+  "url": "https://playtictactoe.org",
+  "image": "/images/tictactoe.png",
+  "description": "The classic X and O strategy game.",
+  "minGrade": 1,
+  "maxGrade": 3,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Offline",
+    "PvP",
+    "Turn-Based",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Board Games",
+    "Classics",
+    "Strategy",
+    "Kids"
+  ]
+}

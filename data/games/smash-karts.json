@@ -1,0 +1,21 @@
+{
+  "id": "smash-karts",
+  "name": "SmashKarts",
+  "url": "https://www.smashkarts.io",
+  "image": "/images/smash-karts.jpg",
+  "description": "Battle other players in this multiplayer kart arena game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Driving & Racing",
+    "Action",
+    "Competitive"
+  ]
+}

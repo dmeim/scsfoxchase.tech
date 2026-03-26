@@ -1,0 +1,21 @@
+{
+  "id": "baseball-bros",
+  "name": "Baseball Bros",
+  "url": "https://baseballbros.io/",
+  "image": "/images/baseballbros.jpg",
+  "description": "Play fast-paced baseball against friends online.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Sports",
+    "Competitive",
+    "Action"
+  ]
+}

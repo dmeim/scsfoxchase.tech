@@ -1,0 +1,20 @@
+{
+  "id": "crosswordle",
+  "name": "Crosswordle",
+  "url": "https://crosswordle.org",
+  "image": "/images/crosswordle.png",
+  "description": "Reverse-engineer a crossword-style Wordle grid.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Crossword",
+    "Daily Challenge",
+    "Puzzle"
+  ]
+}

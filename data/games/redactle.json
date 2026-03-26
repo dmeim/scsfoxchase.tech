@@ -1,0 +1,20 @@
+{
+  "id": "redactle",
+  "name": "Redactle",
+  "url": "https://redactle.net/",
+  "image": "/images/redactle.png",
+  "description": "Guess words to reveal a hidden Wikipedia article — the fewer guesses, the better.",
+  "minGrade": 4,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Trivia",
+    "Puzzle"
+  ]
+}

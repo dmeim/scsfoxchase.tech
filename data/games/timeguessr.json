@@ -1,0 +1,20 @@
+{
+  "id": "timeguessr",
+  "name": "TimeGuessr",
+  "url": "https://timeguessr.com/",
+  "image": "/images/timeguessr.png",
+  "description": "Guess the location and year a photo was taken — combining geography and history in one challenge.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Geography",
+    "Trivia",
+    "Daily Challenge",
+    "Educational"
+  ]
+}

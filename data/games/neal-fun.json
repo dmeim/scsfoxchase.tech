@@ -1,0 +1,20 @@
+{
+  "id": "neal-fun",
+  "name": "Neal.fun",
+  "url": "https://neal.fun",
+  "image": "/images/neal-fun.jpg",
+  "description": "A collection of unique interactive web experiences.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Casual",
+    "Exploration",
+    "Trivia",
+    "Sandbox"
+  ]
+}

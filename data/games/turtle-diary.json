@@ -1,0 +1,20 @@
+{
+  "id": "turtle-diary",
+  "name": "Turtle Diary",
+  "url": "https://www.turtlediary.com",
+  "image": "/images/turtlediary.jpg",
+  "description": "Educational games and activities for elementary students.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Kids",
+    "Math",
+    "Spelling"
+  ]
+}

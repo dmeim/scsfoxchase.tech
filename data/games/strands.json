@@ -1,0 +1,20 @@
+{
+  "id": "strands",
+  "name": "Strands",
+  "url": "https://www.nytimes.com/games/strands",
+  "image": "/images/strands-new.png",
+  "description": "Find themed words hidden in a grid of letters.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Puzzle",
+    "Brain Teaser"
+  ]
+}

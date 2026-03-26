@@ -1,0 +1,21 @@
+{
+  "id": "basket-bros",
+  "name": "Basket Bros",
+  "url": "https://basketbros.io/",
+  "image": "/images/basketballbros.jpg",
+  "description": "Fast and fun 1v1 basketball action game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Sports",
+    "Competitive",
+    "Action"
+  ]
+}

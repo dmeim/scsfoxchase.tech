@@ -1,0 +1,20 @@
+{
+  "id": "weaver",
+  "name": "Weaver",
+  "url": "https://weavergame.org",
+  "image": "/images/weaver.png",
+  "description": "Change one letter at a time to get from one word to another.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Puzzle",
+    "Daily Challenge",
+    "Brain Teaser"
+  ]
+}

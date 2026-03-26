@@ -1,0 +1,20 @@
+{
+  "id": "gartic-phone",
+  "name": "Gartic Phone",
+  "url": "https://garticphone.com/",
+  "image": "/images/gartic-phone.png",
+  "description": "Play the telephone game with drawings — write a sentence, draw it, and watch it hilariously evolve.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Party",
+    "Word Games",
+    "Casual"
+  ]
+}

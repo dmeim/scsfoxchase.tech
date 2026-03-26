@@ -1,0 +1,21 @@
+{
+  "id": "slope-run",
+  "name": "Slope Run",
+  "url": "https://sloperun.io",
+  "image": "/images/slope-run.png",
+  "description": "Roll a ball down a steep slope while avoiding obstacles.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Endless Runner",
+    "Action",
+    "Reaction Speed",
+    "Casual"
+  ]
+}

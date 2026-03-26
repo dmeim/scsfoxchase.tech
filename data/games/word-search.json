@@ -1,0 +1,20 @@
+{
+  "id": "word-search",
+  "name": "Word Search",
+  "url": "https://wordsearch.io",
+  "image": "/images/wordsearch.png",
+  "description": "Find hidden words in a grid of letters.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Offline",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Spelling",
+    "Puzzle",
+    "Kids"
+  ]
+}

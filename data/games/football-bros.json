@@ -1,0 +1,21 @@
+{
+  "id": "football-bros",
+  "name": "Football Bros",
+  "url": "https://footballbros.io/",
+  "image": "/images/footballbros.jpg",
+  "description": "Tackle and score in this multiplayer football game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Sports",
+    "Competitive",
+    "Action"
+  ]
+}

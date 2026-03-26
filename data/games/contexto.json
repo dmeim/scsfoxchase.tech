@@ -1,0 +1,19 @@
+{
+  "id": "contexto",
+  "name": "Contexto",
+  "url": "https://contexto.me",
+  "image": "/images/contexto.png",
+  "description": "Guess the secret word using contextual clues and ranking.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Brain Teaser"
+  ]
+}

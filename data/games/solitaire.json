@@ -1,0 +1,19 @@
+{
+  "id": "solitaire",
+  "name": "Solitaire",
+  "url": "https://solitaire.online",
+  "image": "/images/solitaire.jpg",
+  "description": "The classic single-player card sorting game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Offline",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Card Games",
+    "Classics",
+    "Casual"
+  ]
+}

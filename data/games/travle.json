@@ -1,0 +1,20 @@
+{
+  "id": "travle",
+  "name": "Travle",
+  "url": "https://travle.earth/",
+  "image": "/images/travle-earth.png",
+  "description": "Find the shortest path between two countries on the map in this daily geography challenge.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Geography",
+    "Daily Challenge",
+    "Puzzle",
+    "Educational"
+  ]
+}

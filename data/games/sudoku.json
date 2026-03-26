@@ -1,0 +1,19 @@
+{
+  "id": "sudoku",
+  "name": "Sudoku",
+  "url": "https://sudoku-online.com",
+  "image": "/images/sudoku.png",
+  "description": "Fill the 9x9 grid so every row, column, and box has 1-9.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Offline",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Number Puzzles",
+    "Logic",
+    "Puzzle"
+  ]
+}

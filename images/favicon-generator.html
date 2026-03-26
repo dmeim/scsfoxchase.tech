@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Favicon Generator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #4a6baf;
+        }
+        p {
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        .instructions {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        .favicon-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+            background-color: #fff;
+        }
+        .download-btn {
+            display: inline-block;
+            background-color: #4a6baf;
+            color: white;
+            text-align: center;
+            padding: 10px 20px;
+            border-radius: 4px;
+            text-decoration: none;
+            margin-top: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .download-btn:hover {
+            background-color: #3a5a9f;
+        }
+        code {
+            background-color: #f0f0f0;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Favicon Generator</h1>
+    
+    <div class="instructions">
+        <h2>Instructions</h2>
+        <p>This page generates a favicon for the SchoolTech Hub website. You can use this favicon during development, or replace it with an actual favicon.</p>
+        <p>To use this favicon:</p>
+        <ol>
+            <li>Click the "Generate Favicon" button below</li>
+            <li>Right-click on the generated image and select "Save Image As..."</li>
+            <li>Save the image as <code>favicon.ico</code> in the root directory of your project</li>
+        </ol>
+        <p>Alternatively, you can take a screenshot of the generated favicon and save it as favicon.ico.</p>
+    </div>
+    
+    <div class="favicon-container">
+        <canvas id="faviconCanvas" width="64" height="64"></canvas>
+        <button id="generateBtn" class="download-btn">Generate Favicon</button>
+        <a id="downloadLink" class="download-btn" style="display: none;">Download Favicon</a>
+    </div>
+    
+    <div class="instructions">
+        <h2>Note for Production</h2>
+        <p>For a production environment, you should create a proper favicon.ico file with multiple sizes (16x16, 32x32, 48x48, 64x64) using a dedicated favicon generator tool.</p>
+    </div>
+    
+    <script>
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            const canvas = document.getElementById('faviconCanvas');
+            const ctx = canvas.getContext('2d');
+            const size = canvas.width;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+            
+            // Draw background
+            ctx.fillStyle = '#4a6baf';
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, size * 0.2);
+            ctx.fill();
+            
+            // Draw concentric circles
+            const center = size / 2;
+            const radiusSizes = [0.7, 0.58, 0.47];
+            
+            radiusSizes.forEach((radiusRatio, index) => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.1 * (index + 1)})`;
+                ctx.beginPath();
+                ctx.arc(center, center, center * radiusRatio, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw game controller icon
+            ctx.fillStyle = '#ffffff';
+            const controllerSize = size * 0.5;
+            const controllerX = center - controllerSize / 2;
+            const controllerY = center - controllerSize / 2;
+            
+            // Controller body
+            ctx.beginPath();
+            ctx.roundRect(
+                controllerX, 
+                controllerY + controllerSize * 0.3, 
+                controllerSize, 
+                controllerSize * 0.4, 
+                controllerSize * 0.1
+            );
+            ctx.fill();
+            
+            // D-pad
+            ctx.fillStyle = '#4a6baf';
+            const dpadSize = controllerSize * 0.1;
+            const dpadX = controllerX + controllerSize * 0.2;
+            const dpadY = controllerY + controllerSize * 0.5;
+            
+            // Horizontal line
+            ctx.beginPath();
+            ctx.roundRect(
+                dpadX - dpadSize, 
+                dpadY - dpadSize / 3, 
+                dpadSize * 2, 
+                dpadSize * 2/3, 
+                dpadSize * 0.3
+            );
+            ctx.fill();
+            
+            // Vertical line
+            ctx.beginPath();
+            ctx.roundRect(
+                dpadX - dpadSize / 3, 
+                dpadY - dpadSize, 
+                dpadSize * 2/3, 
+                dpadSize * 2, 
+                dpadSize * 0.3
+            );
+            ctx.fill();
+            
+            // Buttons
+            const buttonSize = controllerSize * 0.1;
+            const buttonX1 = controllerX + controllerSize * 0.7;
+            const buttonX2 = controllerX + controllerSize * 0.85;
+            const buttonY = controllerY + controllerSize * 0.5;
+            
+            ctx.beginPath();
+            ctx.arc(buttonX1, buttonY, buttonSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(buttonX2, buttonY, buttonSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Show download link
+            const downloadLink = document.getElementById('downloadLink');
+            downloadLink.style.display = 'inline-block';
+            downloadLink.href = canvas.toDataURL('image/png');
+            downloadLink.download = 'favicon.ico';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "id": "paper-io",
+  "name": "Paper.io",
+  "url": "https://paperio.site/",
+  "image": "/images/paper-io-new.jpg",
+  "description": "Expand your territory by drawing shapes on the map.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Strategy",
+    "Competitive"
+  ]
+}

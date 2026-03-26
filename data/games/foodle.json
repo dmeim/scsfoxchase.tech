@@ -1,0 +1,20 @@
+{
+  "id": "foodle",
+  "name": "Foodle",
+  "url": "https://foodle.gg",
+  "image": "/images/foodle.jpg",
+  "description": "A food-themed word guessing game.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Cooking",
+    "Puzzle"
+  ]
+}

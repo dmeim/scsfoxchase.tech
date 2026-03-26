@@ -1,0 +1,27 @@
+{
+  "name": "St. Cecilia Technology",
+  "short_name": "St. Cecilia Tech",
+  "description": "Educational games for grade-school students",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#125F31",
+  "theme_color": "#125F31",
+  "icons": [
+    {
+      "src": "/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "games", "kids"],
+  "orientation": "any",
+  "lang": "en-US",
+  "dir": "ltr"
+}

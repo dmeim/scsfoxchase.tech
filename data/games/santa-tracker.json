@@ -1,0 +1,20 @@
+{
+  "id": "santa-tracker",
+  "name": "Santa Tracker",
+  "url": "https://santatracker.google.com",
+  "image": "/images/google-santa-tracker.png",
+  "description": "Google's holiday hub with games and educational activities.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Holiday",
+    "Kids",
+    "Educational",
+    "Exploration"
+  ]
+}

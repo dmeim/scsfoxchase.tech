@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Browse educational games for grade-school students by grade level">
+    <meta name="theme-color" content="#125F31">
+    <title>Games - St. Cecilia Technology</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/carousel.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="js/placeholder-images.js"></script>
+    <script>
+        // Register Service Worker for offline functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-brand">
+                <img src="images/scs-logo.png" alt="SCS Logo" class="header-logo">
+                <h1>St. Cecilia Technology</h1>
+            </div>
+            <div class="header-right">
+                <nav>
+                    <ul>
+                        <li><a href="index.html">Home</a></li>
+                        <li><a href="apps.html">Apps</a></li>
+                        <li><a href="games.html" class="active">Games</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Hero Carousel -->
+        <section class="hero-carousel">
+            <div class="carousel-container">
+                <button class="carousel-button prev" aria-label="Previous slide">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <div class="carousel-track-container">
+                    <ul class="carousel-track" id="trending-carousel">
+                        <!-- Carousel items will be inserted here by JavaScript -->
+                        <li class="carousel-slide loading">
+                            <div class="loading-spinner"></div>
+                            <p>Loading trending games...</p>
+                        </li>
+                    </ul>
+                </div>
+                <button class="carousel-button next" aria-label="Next slide">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <div class="carousel-nav">
+                    <!-- Carousel indicators will be inserted here by JavaScript -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Game Filtering and Grid -->
+        <section class="games-section">
+            <div class="container">
+                <div class="filter-container">
+                    <div class="search-grade-row">
+                        <div class="search-bar">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" id="game-search" placeholder="Search games..." autocomplete="off">
+                        </div>
+                        <div class="filter-group filter-group-inline">
+                        <span class="filter-group-label">Grade</span>
+                        <div class="filter-chips-row" id="grade-chips">
+                            <span class="filter-chip" data-grade="1">1</span>
+                            <span class="filter-chip" data-grade="2">2</span>
+                            <span class="filter-chip" data-grade="3">3</span>
+                            <span class="filter-chip" data-grade="4">4</span>
+                            <span class="filter-chip" data-grade="5">5</span>
+                            <span class="filter-chip" data-grade="6">6</span>
+                            <span class="filter-chip" data-grade="7">7</span>
+                            <span class="filter-chip" data-grade="8">8</span>
+                        </div>
+                    </div>
+                    </div>
+                    <div class="filter-group">
+                        <span class="filter-group-label">Type</span>
+                        <div class="filter-chips-row" id="primary-category-chips">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="filter-group">
+                        <span class="filter-group-label">Genre</span>
+                        <div class="filter-chips-row" id="secondary-category-chips">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="games-grid" id="games-grid">
+                    <!-- Game cards will be inserted here by JavaScript -->
+                    <div class="loading-container">
+                        <div class="loading-spinner"></div>
+                        <p>Loading games...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Dimitri Meimaridis - All Rights Reserved</p>
+        </div>
+    </footer>
+
+    <script src="js/carousel.js"></script>
+    <script src="js/games.js"></script>
+    <script src="js/theme-toggle.js"></script>
+</body>
+</html>

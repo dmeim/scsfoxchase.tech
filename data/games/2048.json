@@ -1,0 +1,19 @@
+{
+  "id": "2048",
+  "name": "2048",
+  "url": "https://2048.gg",
+  "image": "/images/2048.png",
+  "description": "Slide numbered tiles to combine them and reach the 2048 tile.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Offline",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Number Puzzles",
+    "Puzzle",
+    "Casual"
+  ]
+}

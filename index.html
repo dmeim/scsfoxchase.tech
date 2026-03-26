@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="St. Cecilia Technology - Educational games for grade-school students">
+    <meta name="theme-color" content="#125F31">
+    <title>St. Cecilia Technology</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="js/placeholder-images.js"></script>
+    <script>
+        // Register Service Worker for offline functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-brand">
+                <img src="images/scs-logo.png" alt="SCS Logo" class="header-logo">
+                <h1>St. Cecilia Technology</h1>
+            </div>
+            <div class="header-right">
+                <nav>
+                    <ul>
+                        <li><a href="index.html" class="active">Home</a></li>
+                        <li><a href="apps.html">Apps</a></li>
+                        <li><a href="games.html">Games</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="container home-nav">
+            <a href="apps.html" class="home-nav-btn">
+                <i class="fas fa-rocket"></i>
+                <span>Apps</span>
+            </a>
+            <a href="games.html" class="home-nav-btn">
+                <i class="fas fa-gamepad"></i>
+                <span>Games</span>
+            </a>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Dimitri Meimaridis - All Rights Reserved</p>
+        </div>
+    </footer>
+    
+    <script src="js/theme-toggle.js"></script>
+</body>
+</html>

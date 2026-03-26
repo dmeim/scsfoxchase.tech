@@ -1,0 +1,21 @@
+{
+  "id": "blooket",
+  "name": "Blooket",
+  "url": "https://dashboard.blooket.com/",
+  "image": "/images/blooket.png",
+  "description": "Join game-based quizzes and review activities in class.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Trivia",
+    "Competitive"
+  ]
+}

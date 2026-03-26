@@ -1,0 +1,20 @@
+{
+  "id": "worldle",
+  "name": "Worldle",
+  "url": "https://worldlegame.io",
+  "image": "/images/worldle-new.png",
+  "description": "Guess the country from its silhouette shape.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Geography",
+    "Daily Challenge",
+    "Trivia",
+    "Puzzle"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "connections",
+  "name": "Connections",
+  "url": "https://www.nytimes.com/games/connections",
+  "image": "/images/connections-new.png",
+  "description": "Group 16 words into four categories in this NYT puzzle.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Puzzle",
+    "Daily Challenge",
+    "Brain Teaser"
+  ]
+}

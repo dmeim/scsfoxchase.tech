@@ -1,0 +1,20 @@
+{
+  "id": "abcya",
+  "name": "ABCya",
+  "url": "https://www.abcya.com",
+  "image": "/images/abcya.png",
+  "description": "Hundreds of educational games for Pre-K through 6th grade.",
+  "minGrade": 1,
+  "maxGrade": 6,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Kids",
+    "Math",
+    "Spelling"
+  ]
+}

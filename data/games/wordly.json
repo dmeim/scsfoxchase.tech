@@ -1,0 +1,20 @@
+{
+  "id": "wordly",
+  "name": "Wordly",
+  "url": "https://wordly.org",
+  "image": "/images/wordly.png",
+  "description": "Guess the five-letter word in six tries.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Spelling",
+    "Brain Teaser"
+  ]
+}

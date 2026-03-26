@@ -1,0 +1,22 @@
+{
+  "id": "checkers",
+  "name": "Checkers",
+  "url": "https://www.247checkers.com",
+  "image": "/images/checkers.png",
+  "description": "Play the classic board game of checkers online.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Turn-Based",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Board Games",
+    "Classics",
+    "Strategy"
+  ]
+}

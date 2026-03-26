@@ -1,0 +1,23 @@
+{
+  "id": "eaglercraft",
+  "name": "Eaglercraft",
+  "url": "https://eaglercraft.com/",
+  "image": "/images/minecraft.jpg",
+  "description": "Browser-based sandbox building and survival game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Co-op",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Minecraft-Style",
+    "Open World",
+    "Survival",
+    "Building"
+  ]
+}

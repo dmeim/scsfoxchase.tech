@@ -1,0 +1,19 @@
+{
+  "id": "mahjong",
+  "name": "Mahjong",
+  "url": "https://mahjong-online.org",
+  "image": "/images/mahjong-new.png",
+  "description": "Match and clear tiles in this classic strategy puzzle.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Offline",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Tile Matching",
+    "Classics",
+    "Puzzle"
+  ]
+}

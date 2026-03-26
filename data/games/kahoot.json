@@ -1,0 +1,21 @@
+{
+  "id": "kahoot",
+  "name": "Kahoot!",
+  "url": "https://kahoot.it/",
+  "image": "/images/kahoot.png",
+  "description": "Join live quiz games or play solo with millions of ready-made trivia sets across every subject.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Trivia",
+    "Educational",
+    "Competitive",
+    "Party"
+  ]
+}

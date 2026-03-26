@@ -1,0 +1,21 @@
+{
+  "id": "gimkit",
+  "name": "Gimkit",
+  "url": "https://www.gimkit.com",
+  "image": "/images/gimkit.jpg",
+  "description": "Live learning games and interactive classroom activities.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Trivia",
+    "Competitive"
+  ]
+}

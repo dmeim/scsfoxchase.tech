@@ -1,0 +1,20 @@
+{
+  "id": "sprunki",
+  "name": "Sprunki",
+  "url": "https://sprunki.gg/",
+  "image": "/images/sprunki-new.png",
+  "description": "Create music by mixing beats and characters together.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Music",
+    "Art & Creativity",
+    "Casual",
+    "Sandbox"
+  ]
+}

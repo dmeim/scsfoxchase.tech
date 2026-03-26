@@ -1,0 +1,20 @@
+{
+  "id": "digipuzzle",
+  "name": "Digipuzzle",
+  "url": "https://www.digipuzzle.net",
+  "image": "/images/digipuzzle.jpg",
+  "description": "Educational puzzles and games for reading, math, and more.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Kids",
+    "Math",
+    "Puzzle"
+  ]
+}

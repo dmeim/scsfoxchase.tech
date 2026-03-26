@@ -1,0 +1,20 @@
+{
+  "id": "spelling-bee",
+  "name": "Spelling Bee",
+  "url": "https://www.nytimes.com/puzzles/spelling-bee",
+  "image": "/images/spellingbee.png",
+  "description": "Make as many words as possible from seven letters.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Spelling",
+    "Word Games",
+    "Daily Challenge",
+    "Brain Teaser"
+  ]
+}

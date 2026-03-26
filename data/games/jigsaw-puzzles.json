@@ -1,0 +1,19 @@
+{
+  "id": "jigsaw-puzzles",
+  "name": "Jigsaw Puzzles",
+  "url": "https://www.jigsawexplorer.com/categories/",
+  "image": "/images/jigsaw-puzzles.png",
+  "description": "Solve online jigsaw puzzles with hundreds of images and adjustable piece counts.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Puzzle",
+    "Casual",
+    "Classics"
+  ]
+}

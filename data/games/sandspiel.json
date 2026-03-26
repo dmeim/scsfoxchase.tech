@@ -1,0 +1,21 @@
+{
+  "id": "sandspiel",
+  "name": "Sandspiel",
+  "url": "https://sandspiel.club/",
+  "image": "/images/sandspiel.png",
+  "description": "A falling sand game — paint with elements like water, fire, sand, and plants and watch them interact.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Sandbox",
+    "Art & Creativity",
+    "Physics",
+    "Science",
+    "Casual"
+  ]
+}
