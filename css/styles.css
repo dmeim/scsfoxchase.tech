@@ -952,14 +952,21 @@ footer {
         font-size: 0.8rem;
     }
 
-    /* Search bars: stack vertically */
+    /* Search bars: stack vertically with consistent spacing */
     .google-search-row {
         padding: 12px 0 6px;
+    }
+
+    .google-search-row .container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     }
 
     .google-search-bars {
         flex-direction: column;
         align-items: stretch;
+        gap: 8px;
     }
 
     .google-search-bars-row2 {
@@ -1074,8 +1081,9 @@ footer {
     }
 }
 
-/* Short viewport (Chromebooks ~768px tall) */
-@media (max-height: 800px) {
+/* Short + wide viewport (Chromebooks: 1366×768, ~610px usable with Chrome UI + bookmarks) */
+/* min-width: 1200px excludes iPads (1024px wide) while targeting Chromebooks (1366px) */
+@media (max-height: 800px) and (min-width: 1200px) {
     header {
         padding: 3px 0;
     }
@@ -1100,7 +1108,7 @@ footer {
     }
 
     .google-search-row {
-        padding: 10px 0 4px;
+        padding: 8px 0 4px;
     }
 
     .google-search-bar {
@@ -1108,7 +1116,7 @@ footer {
     }
 
     .google-search-bars {
-        gap: 10px;
+        gap: 8px;
     }
 
     .google-search-bars-row2 {
@@ -1122,79 +1130,83 @@ footer {
     }
 
     .google-search-input {
-        padding: 6px 8px;
+        padding: 5px 8px;
         font-size: 0.8rem;
     }
 
     .google-search-btn {
-        padding: 6px 10px 6px 6px;
+        padding: 5px 10px 5px 6px;
         margin: -3px -3px -3px 0;
     }
 
     .google-search-btn img {
-        width: 20px;
-        height: 20px;
+        width: 18px;
+        height: 18px;
     }
 
     .google-search-clear {
-        padding: 0 6px;
+        padding: 0 5px;
     }
 
     .google-search-clear img {
-        width: 12px;
-        height: 12px;
+        width: 11px;
+        height: 11px;
     }
 
     .app-gallery {
-        padding: 12px 0;
+        padding: 8px 0;
     }
 
     .app-row-header {
-        font-size: 1rem;
-        margin-bottom: 8px;
+        font-size: 0.95rem;
+        margin-bottom: 5px;
     }
 
     .app-row {
-        gap: 20px;
+        gap: 14px;
     }
 
     .app-subgroup {
-        gap: 8px;
+        gap: 6px;
     }
 
     .app-split-row {
-        gap: 24px;
+        gap: 20px;
     }
 
     .app-item {
-        width: 90px;
-        padding: 8px;
-        gap: 4px;
+        width: 88px;
+        padding: 6px;
+        gap: 3px;
     }
 
     .app-icon-wrapper {
-        width: 44px;
-        height: 44px;
+        width: 42px;
+        height: 42px;
         border-radius: 8px;
     }
 
     .app-item span {
-        font-size: 0.7rem;
+        font-size: 0.65rem;
     }
 
     .page-nav-container {
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
 
     .page-nav-btn {
-        padding: 6px 16px;
-        font-size: 0.85rem;
+        padding: 5px 14px;
+        font-size: 0.8rem;
         border-width: 2px;
     }
 
+    .page-nav-btn i {
+        font-size: 0.9rem;
+    }
+
     footer {
-        padding: 8px 0;
-        margin: 8px;
-        font-size: 0.8rem;
+        padding: 6px 0;
+        margin: 6px 8px;
+        font-size: 0.75rem;
     }
 }
