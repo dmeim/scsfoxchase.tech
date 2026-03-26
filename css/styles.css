@@ -884,13 +884,138 @@ footer {
     .games-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .filter-container {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .filter-container label {
         margin-bottom: 5px;
+    }
+}
+
+/* Short viewport (Chromebooks ~768px tall) */
+@media (max-height: 800px) {
+    header {
+        padding: 3px 0;
+    }
+
+    header h1 {
+        font-size: 1.1rem;
+    }
+
+    .header-logo {
+        height: 24px;
+    }
+
+    .theme-toggle-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 0.8rem;
+    }
+
+    nav ul li a {
+        padding: 3px 8px;
+        font-size: 0.85rem;
+    }
+
+    .google-search-row {
+        padding: 10px 0 4px;
+    }
+
+    .google-search-bar {
+        border-width: 3px;
+    }
+
+    .google-search-bars {
+        gap: 10px;
+    }
+
+    .google-search-bars-row2 {
+        margin-top: 4px;
+    }
+
+    .google-search-icon {
+        width: 18px;
+        height: 18px;
+        margin-left: 10px;
+    }
+
+    .google-search-input {
+        padding: 6px 8px;
+        font-size: 0.8rem;
+    }
+
+    .google-search-btn {
+        padding: 6px 10px 6px 6px;
+        margin: -3px -3px -3px 0;
+    }
+
+    .google-search-btn img {
+        width: 20px;
+        height: 20px;
+    }
+
+    .google-search-clear {
+        padding: 0 6px;
+    }
+
+    .google-search-clear img {
+        width: 12px;
+        height: 12px;
+    }
+
+    .app-gallery {
+        padding: 12px 0;
+    }
+
+    .app-row-header {
+        font-size: 1rem;
+        margin-bottom: 8px;
+    }
+
+    .app-row {
+        gap: 20px;
+    }
+
+    .app-subgroup {
+        gap: 8px;
+    }
+
+    .app-split-row {
+        gap: 24px;
+    }
+
+    .app-item {
+        width: 90px;
+        padding: 8px;
+        gap: 4px;
+    }
+
+    .app-icon-wrapper {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+    }
+
+    .app-item span {
+        font-size: 0.7rem;
+    }
+
+    .page-nav-container {
+        margin-bottom: 8px;
+    }
+
+    .page-nav-btn {
+        padding: 6px 16px;
+        font-size: 0.85rem;
+        border-width: 2px;
+    }
+
+    footer {
+        padding: 8px 0;
+        margin: 8px;
+        font-size: 0.8rem;
     }
 }
