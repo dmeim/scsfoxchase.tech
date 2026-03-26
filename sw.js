@@ -1,106 +1,65 @@
 // Service Worker for St. Cecilia Technology
-const CACHE_NAME = 'st-cecilia-tech-v3';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/games.html',
-  '/404.html',
-  '/offline.html',
-  '/css/styles.css',
-  '/css/carousel.css',
-  '/js/carousel.js',
-  '/js/games.js',
-  '/js/placeholder-images.js',
-  '/data/games/_index.json',
-  '/data/games/_trending.json',
-  '/manifest.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/webfonts/fa-solid-900.woff2'
-];
-
-// Offline fallback page
+// Network-first strategy: always fetch from network, cache as offline fallback only
+const CACHE_NAME = 'st-cecilia-tech-offline';
 const OFFLINE_PAGE = '/offline.html';
 
-// Install event - cache assets
+// Install event - only pre-cache the offline fallback page
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('Caching assets...');
-        return cache.addAll(ASSETS);
-      })
+      .then(cache => cache.add(OFFLINE_PAGE))
       .then(() => self.skipWaiting())
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and take control immediately
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            console.log('Clearing old cache:', cache);
-            return caches.delete(cache);
-          }
-        })
+        cacheNames
+          .filter(name => name !== CACHE_NAME)
+          .map(name => {
+            console.log('Clearing old cache:', name);
+            return caches.delete(name);
+          })
       );
     }).then(() => self.clients.claim())
   );
 });
 
-// Fetch event - serve from cache, fall back to network, then offline page
+// Fetch event - always network first, cache response for offline fallback
 self.addEventListener('fetch', event => {
-  // Skip cross-origin requests except for CDN
-  if (!event.request.url.startsWith(self.location.origin) && 
+  // Only handle GET requests from our origin or the CDN
+  if (event.request.method !== 'GET') return;
+  if (!event.request.url.startsWith(self.location.origin) &&
       !event.request.url.startsWith('https://cdnjs.cloudflare.com')) {
     return;
   }
-  
-  // HTML navigation requests - network first with offline fallback
-  if (event.request.mode === 'navigate' || 
-      (event.request.method === 'GET' && 
-       event.request.headers.get('accept').includes('text/html'))) {
-    
-    event.respondWith(
-      fetch(event.request)
-        .catch(error => {
-          console.log('Fetch failed; returning offline page instead.', error);
-          return caches.match(OFFLINE_PAGE);
-        })
-    );
-    return;
-  }
-  
-  // Special handling for game data files - network first, then cache
-  if (event.request.url.includes('/data/games/')) {
+
+  // HTML navigation requests - network first, offline page fallback
+  if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then(response => {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME)
-            .then(cache => cache.put(event.request, responseClone));
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(event.request)
+          .then(cached => cached || caches.match(OFFLINE_PAGE)))
     );
     return;
   }
-  
-  // For other assets - network first, fall back to cache
+
+  // All other assets - network first, cached copy as offline fallback
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Don't cache non-successful responses
-        if (!response || response.status !== 200) {
-          return response;
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
-
-        // Clone the response to store in cache
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME)
-          .then(cache => cache.put(event.request, responseClone));
-
         return response;
       })
       .catch(() => caches.match(event.request))

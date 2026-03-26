@@ -16,7 +16,7 @@ No build step, no package manager, no dependencies. This is a pure HTML/CSS/vani
 
 ## Architecture
 
-- **Static PWA** with service worker (`sw.js`) for offline support. Cache name is versioned (`st-cecilia-tech-v3`) — bump when updating cached assets.
+- **Static PWA** with service worker (`sw.js`) for offline support. Uses network-first strategy — no cache versioning needed. Only the offline fallback page is pre-cached; all other assets are cached on fetch for offline use only.
 - **Game data** lives in `data/games/` as individual JSON files. `_index.json` lists all game IDs; `_trending.json` lists carousel games. To add a game: create its JSON file and add the ID to `_index.json`.
 - **Theming** uses CSS variables on `:root` with dark mode via `[data-theme="dark"]` selectors. Theme state persists in localStorage.
 - **`js/placeholder-images.js`** dynamically generates PWA icons and fallback images when assets fail to load.
