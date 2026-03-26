@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="St. Cecilia Technology - Educational games for grade-school students">
+    <meta name="description" content="St. Cecilia Technology - Educational games and apps for grade-school students">
     <meta name="theme-color" content="#125F31">
     <title>St. Cecilia Technology</title>
     <link rel="manifest" href="manifest.json">
-    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="js/placeholder-images.js"></script>
     <script>
-        // Register Service Worker for offline functionality
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
@@ -37,7 +37,6 @@
                 <nav>
                     <ul>
                         <li><a href="index.html" class="active">Home</a></li>
-                        <li><a href="apps.html">Apps</a></li>
                         <li><a href="games.html">Games</a></li>
                     </ul>
                 </nav>
@@ -46,12 +45,161 @@
     </header>
 
     <main>
-        <div class="container home-nav">
-            <a href="apps.html" class="home-nav-btn">
-                <i class="fas fa-rocket"></i>
-                <span>Apps</span>
-            </a>
-            <a href="games.html" class="home-nav-btn">
+        <section class="google-search-row">
+            <div class="container">
+                <div class="google-search-bars">
+                    <form class="google-search-bar" action="https://drive.google.com/drive/u/0/search" method="GET" target="_blank" rel="noopener noreferrer">
+                        <img src="images/google-drive.png" alt="Google Drive" class="google-search-icon">
+                        <input type="text" name="q" placeholder="Drive Search..." class="google-search-input">
+                        <button type="button" class="google-search-clear" onclick="this.previousElementSibling.value='';this.previousElementSibling.focus()"><img src="images/x.svg" alt="Clear"></button>
+                        <button type="submit" class="google-search-btn"><img src="images/search.png" alt="Search"></button>
+                    </form>
+                    <form class="google-search-bar" action="https://www.google.com/search" method="GET" target="_blank" rel="noopener noreferrer">
+                        <input type="hidden" name="udm" value="web">
+                        <img src="images/google.svg" alt="Google" class="google-search-icon">
+                        <input type="text" name="q" placeholder="Google Web Search..." class="google-search-input">
+                        <button type="button" class="google-search-clear" onclick="this.previousElementSibling.value='';this.previousElementSibling.focus()"><img src="images/x.svg" alt="Clear"></button>
+                        <button type="submit" class="google-search-btn"><img src="images/search.png" alt="Search"></button>
+                    </form>
+                    <form class="google-search-bar" onsubmit="window.open('https://mail.google.com/mail/u/0/#search/'+encodeURIComponent(this.querySelector('input[type=text]').value),'_blank');return false;">
+                        <img src="images/gmail-square.png" alt="Gmail" class="google-search-icon">
+                        <input type="text" placeholder="Gmail Search..." class="google-search-input">
+                        <button type="button" class="google-search-clear" onclick="this.previousElementSibling.value='';this.previousElementSibling.focus()"><img src="images/x.svg" alt="Clear"></button>
+                        <button type="submit" class="google-search-btn"><img src="images/search.png" alt="Search"></button>
+                    </form>
+                </div>
+                <div class="google-search-bars google-search-bars-row2">
+                    <form class="google-search-bar" action="https://www.google.com/search" method="GET" target="_blank" rel="noopener noreferrer">
+                        <input type="hidden" name="udm" value="2">
+                        <img src="images/google-lens.svg" alt="Google Lens" class="google-search-icon">
+                        <input type="text" name="q" placeholder="Image Search..." class="google-search-input">
+                        <button type="button" class="google-search-clear" onclick="this.previousElementSibling.value='';this.previousElementSibling.focus()"><img src="images/x.svg" alt="Clear"></button>
+                        <button type="submit" class="google-search-btn"><img src="images/search.png" alt="Search"></button>
+                    </form>
+                    <form class="google-search-bar" action="https://www.youtube.com/results" method="GET" target="_blank" rel="noopener noreferrer">
+                        <img src="images/youtube-logo.png" alt="YouTube" class="google-search-icon google-search-icon-zoom">
+                        <input type="text" name="search_query" placeholder="YouTube Search..." class="google-search-input">
+                        <button type="button" class="google-search-clear" onclick="this.previousElementSibling.value='';this.previousElementSibling.focus()"><img src="images/x.svg" alt="Clear"></button>
+                        <button type="submit" class="google-search-btn"><img src="images/search.png" alt="Search"></button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <section class="app-gallery">
+            <div class="container">
+                <h2 class="app-row-header">Google (G-Suite)</h2>
+                <div class="app-row">
+                    <div class="app-subgroup">
+                        <a href="https://mail.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/gmail.png" alt="Gmail"></div>
+                            <span>Gmail</span>
+                        </a>
+                        <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/google-calendar.png" alt="Google Calendar"></div>
+                            <span>Calendar</span>
+                        </a>
+                        <a href="https://meet.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/google-meets.png" alt="Google Meet"></div>
+                            <span>Meet</span>
+                        </a>
+                    </div>
+                    <div class="app-subgroup">
+                        <a href="https://classroom.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/google-classroom-logo-clean.png" alt="Google Classroom"></div>
+                            <span>Classroom</span>
+                        </a>
+                        <a href="https://docs.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/Google_Docs_Logo_512px.png" alt="Google Docs"></div>
+                            <span>Docs</span>
+                        </a>
+                        <a href="https://slides.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/Google_Slides_Logo_512px.png" alt="Google Slides"></div>
+                            <span>Slides</span>
+                        </a>
+                        <a href="https://sheets.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/Google_Sheets_Logo_512px.png" alt="Google Sheets"></div>
+                            <span>Sheets</span>
+                        </a>
+                    </div>
+                    <div class="app-subgroup">
+                        <a href="https://drive.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/google-drive.png" alt="Google Drive"></div>
+                            <span>Drive</span>
+                        </a>
+                        <a href="https://gemini.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/google-gemini.png" alt="Google Gemini"></div>
+                            <span>Gemini</span>
+                        </a>
+                        <a href="https://notebooklm.google.com" target="_blank" rel="noopener noreferrer" class="app-item">
+                            <div class="app-icon-wrapper"><img src="images/google-notebooklm-square-black.png" alt="NotebookLM" class="theme-icon" data-light="images/google-notebooklm-square-black.png" data-dark="images/google-notebooklm-square-white.png"></div>
+                            <span>NotebookLM</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="app-gallery">
+            <div class="container">
+                <div class="app-split-row">
+                    <div class="app-group">
+                        <h2 class="app-row-header">Computer Practice</h2>
+                        <div class="app-subgroup">
+                            <a href="https://typesetgo.app" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/typesetgo.png" alt="TypeSetGo"></div>
+                                <span>TypeSetGo</span>
+                            </a>
+                            <a href="https://monkeytype.com?testSettings=NoIgLglgtgpiA0IAMCB2BXANp+AzAhpgM4x6EmIyoDmmERAFgiKgPYBOUhaWmAukA" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/monkeytype-logo.png" alt="Monkeytype"></div>
+                                <span>Monkeytype</span>
+                            </a>
+                            <a href="https://www.typing.com/student/lessons" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/typing-com-logo.png" alt="Typing.com"></div>
+                                <span>Typing.com</span>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="app-group">
+                        <h2 class="app-row-header">Learning Platforms</h2>
+                        <div class="app-subgroup">
+                            <a href="https://www.ixl.com/signin/saintcecilia" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/ixl-square.png" alt="IXL" class="app-icon-crop app-icon-zoom-in"></div>
+                                <span>IXL</span>
+                            </a>
+                            <a href="https://www.canva.com/login/" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/canva-square.png" alt="Canva" class="app-icon-crop app-icon-zoom-in"></div>
+                                <span>Canva</span>
+                            </a>
+                            <a href="https://play.sumdog.com/sch/stcecilia8" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/sumdog-square.png" alt="Sumdog" class="app-icon-crop"></div>
+                                <span>Sumdog</span>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="app-group">
+                        <h2 class="app-row-header">Library & Research</h2>
+                        <div class="app-subgroup">
+                            <a href="https://portal.follettdestiny.com/portal?appId=destiny-RZXK-3JKZ&siteGuid=0B91A465-AC66-4839-A810-FBE8955C907E&app=Destiny%20Discover" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/scs-destiny-logo.png" alt="Destiny"></div>
+                                <span>Destiny</span>
+                            </a>
+                            <a href="https://scholar.google.com/" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/google-scholar.png" alt="Google Scholar"></div>
+                                <span>Scholar</span>
+                            </a>
+                            <a href="https://www.hellosmart.com/link/" target="_blank" rel="noopener noreferrer" class="app-item">
+                                <div class="app-icon-wrapper"><img src="images/lumio-logo.png" alt="Lumio"></div>
+                                <span>Lumio</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="container page-nav-container">
+            <a href="games.html" class="page-nav-btn">
                 <i class="fas fa-gamepad"></i>
                 <span>Games</span>
             </a>
@@ -63,7 +211,7 @@
             <p>&copy; 2026 Dimitri Meimaridis - All Rights Reserved</p>
         </div>
     </footer>
-    
+
     <script src="js/theme-toggle.js"></script>
 </body>
 </html>
