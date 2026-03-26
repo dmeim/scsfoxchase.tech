@@ -912,35 +912,125 @@ footer {
 }
 
 @media (max-width: 768px) {
+    /* Header: brand on top, nav + theme toggle on second line */
     header .container {
         flex-direction: column;
-        gap: 8px;
+        gap: 4px;
+    }
+
+    header h1 {
+        font-size: 1.1rem;
+    }
+
+    .header-logo {
+        height: 24px;
     }
 
     .header-right {
-        flex-direction: column;
-        gap: 8px;
-        width: 100%;
-    }
-    
-    nav ul {
-        margin: 0;
+        flex-direction: row;
+        gap: 12px;
+        align-items: center;
         justify-content: center;
     }
-    
-    nav ul li {
-        margin: 0 10px;
+
+    nav ul {
+        margin: 0;
     }
-    
+
+    nav ul li {
+        margin: 0 4px;
+    }
+
+    nav ul li a {
+        padding: 3px 8px;
+        font-size: 0.85rem;
+    }
+
+    .theme-toggle-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 0.8rem;
+    }
+
+    /* Search bars: stack vertically */
+    .google-search-row {
+        padding: 12px 0 6px;
+    }
+
     .google-search-bars {
         flex-direction: column;
         align-items: stretch;
     }
 
-    .google-search-bar {
-        max-width: 100%;
+    .google-search-bars-row2 {
+        margin-top: 0;
     }
 
+    .google-search-bar {
+        max-width: 100%;
+        border-width: 3px;
+    }
+
+    .google-search-input {
+        padding: 8px 10px;
+        font-size: 0.85rem;
+    }
+
+    .google-search-btn {
+        padding: 8px 12px 8px 8px;
+        margin: -3px -3px -3px 0;
+    }
+
+    .google-search-btn img {
+        width: 22px;
+        height: 22px;
+    }
+
+    /* App grid: wrap into rows of 3 */
+    .app-gallery {
+        padding: 16px 0;
+    }
+
+    .app-row-header {
+        font-size: 1.1rem;
+        margin-bottom: 8px;
+    }
+
+    .app-row {
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+    }
+
+    .app-subgroup {
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .app-split-row {
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+    }
+
+    .app-item {
+        width: 90px;
+        padding: 10px;
+        gap: 6px;
+    }
+
+    .app-icon-wrapper {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+    }
+
+    .app-item span {
+        font-size: 0.72rem;
+    }
+
+    /* Other */
     .search-grade-row {
         flex-direction: column;
         align-items: stretch;
@@ -953,13 +1043,19 @@ footer {
     .hero h2, .games-hero h2 {
         font-size: 2rem;
     }
-    
+
     .hero p, .games-hero p {
         font-size: 1rem;
     }
-    
+
     .features .container {
         grid-template-columns: 1fr;
+    }
+
+    footer {
+        padding: 12px 0;
+        margin: 10px;
+        font-size: 0.8rem;
     }
 }
 
