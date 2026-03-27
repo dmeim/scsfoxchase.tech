@@ -503,23 +503,23 @@ nav ul li a:hover, nav ul li a.active {
 
 /* Google Search Bars */
 .google-search-row {
-    padding: 30px 0 10px;
+    padding: clamp(10px, 2vw, 30px) 0 clamp(4px, 0.6vw, 10px);
 }
 
 .google-search-bars {
     display: flex;
-    gap: 20px;
+    gap: clamp(8px, 1.2vw, 20px);
     justify-content: center;
 }
 
 .google-search-bars-row2 {
-    margin-top: 10px;
+    margin-top: clamp(4px, 0.6vw, 10px);
 }
 
 .google-search-bar {
     display: flex;
     align-items: center;
-    border: 5px solid var(--border-color);
+    border: clamp(3px, 0.3vw, 5px) solid var(--border-color);
     border-radius: 999px;
     overflow: hidden;
     background-color: var(--light-bg);
@@ -543,9 +543,9 @@ nav ul li a:hover, nav ul li a.active {
 }
 
 .google-search-icon {
-    width: 24px;
-    height: 24px;
-    margin-left: 16px;
+    width: clamp(18px, 1.5vw, 24px);
+    height: clamp(18px, 1.5vw, 24px);
+    margin-left: clamp(10px, 1vw, 16px);
     flex-shrink: 0;
     object-fit: contain;
 }
@@ -562,8 +562,8 @@ nav ul li a:hover, nav ul li a.active {
     flex: 1;
     border: none;
     outline: none;
-    padding: 12px 12px;
-    font-size: 0.95rem;
+    padding: clamp(6px, 0.7vw, 12px) clamp(8px, 0.8vw, 12px);
+    font-size: clamp(0.8rem, 0.85vw, 0.95rem);
     background: transparent;
     color: var(--text-color);
     min-width: 0;
@@ -608,8 +608,8 @@ nav ul li a:hover, nav ul li a.active {
     background-color: var(--primary-color);
     border: none;
     cursor: pointer;
-    padding: 12px 16px 12px 10px;
-    margin: -5px -5px -5px 0;
+    padding: clamp(6px, 0.7vw, 12px) clamp(10px, 1vw, 16px) clamp(6px, 0.7vw, 12px) clamp(6px, 0.6vw, 10px);
+    margin: clamp(-5px, -0.3vw, -3px) clamp(-5px, -0.3vw, -3px) clamp(-5px, -0.3vw, -3px) 0;
     border-radius: 0 999px 999px 0;
     transition: var(--transition);
     flex-shrink: 0;
@@ -621,8 +621,8 @@ nav ul li a:hover, nav ul li a.active {
 }
 
 .google-search-btn img {
-    width: 28px;
-    height: 28px;
+    width: clamp(18px, 1.8vw, 28px);
+    height: clamp(18px, 1.8vw, 28px);
     object-fit: contain;
     filter: brightness(0) invert(1);
 }
@@ -633,12 +633,12 @@ nav ul li a:hover, nav ul li a.active {
 
 /* App Gallery */
 .app-gallery {
-    padding: 40px 0;
+    padding: clamp(12px, 2.5vw, 40px) 0;
 }
 
 .app-row-header {
-    font-size: 1.4rem;
-    margin-bottom: 16px;
+    font-size: clamp(1rem, 1.1vw, 1.4rem);
+    margin-bottom: clamp(8px, 1vw, 16px);
     color: var(--text-color);
     text-align: center;
 }
@@ -646,21 +646,21 @@ nav ul li a:hover, nav ul li a.active {
 .app-row {
     display: flex;
     flex-wrap: nowrap;
-    gap: 40px;
+    gap: clamp(10px, 2.5vw, 40px);
     align-items: flex-start;
     justify-content: center;
 }
 
 .app-subgroup {
     display: flex;
-    gap: 16px;
+    gap: clamp(6px, 1vw, 16px);
 }
 
 .app-split-row {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    gap: 60px;
+    gap: clamp(16px, 3.5vw, 60px);
 }
 
 .app-group {
@@ -677,11 +677,11 @@ nav ul li a:hover, nav ul li a.active {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 20px;
+    gap: clamp(4px, 0.6vw, 10px);
+    padding: clamp(8px, 1.2vw, 20px);
     border: 2px solid var(--border-color);
     border-radius: 2px;
-    width: 140px;
+    width: clamp(75px, 8vw, 140px);
     text-align: center;
     transition: var(--transition);
     color: var(--text-color);
@@ -699,8 +699,8 @@ nav ul li a:hover, nav ul li a.active {
 }
 
 .app-icon-wrapper {
-    width: 64px;
-    height: 64px;
+    width: clamp(36px, 4vw, 64px);
+    height: clamp(36px, 4vw, 64px);
     border-radius: 12px;
     overflow: hidden;
     flex-shrink: 0;
@@ -728,7 +728,7 @@ nav ul li a:hover, nav ul li a.active {
 }
 
 .app-item span {
-    font-size: 0.85rem;
+    font-size: clamp(0.65rem, 0.8vw, 0.85rem);
     font-weight: 600;
     line-height: 1.3;
 }
@@ -827,98 +827,17 @@ main {
 footer {
     background-color: transparent;
     color: var(--text-color);
-    padding: 20px 0;
+    padding: clamp(8px, 1.2vw, 20px) 0;
     text-align: center;
     border: 2px solid var(--primary-color);
-    margin: 20px;
+    margin: clamp(8px, 1.2vw, 20px);
     margin-top: auto;
 }
 
 /* Responsive Styles */
 
-/* Mid-width viewport (iPads ~1024px wide in landscape) */
-@media (max-width: 1100px) {
-    .app-gallery {
-        padding: 20px 0;
-    }
-
-    .app-row {
-        gap: 16px;
-    }
-
-    .app-subgroup {
-        gap: 8px;
-    }
-
-    .app-split-row {
-        gap: 24px;
-    }
-
-    .app-item {
-        width: 100px;
-        padding: 10px;
-        gap: 6px;
-    }
-
-    .app-icon-wrapper {
-        width: 48px;
-        height: 48px;
-        border-radius: 10px;
-    }
-
-    .app-item span {
-        font-size: 0.75rem;
-    }
-
-    .app-row-header {
-        font-size: 1.1rem;
-        margin-bottom: 10px;
-    }
-
-    .google-search-row {
-        padding: 16px 0 6px;
-    }
-
-    .google-search-bars {
-        gap: 12px;
-    }
-
-    .google-search-bars-row2 {
-        margin-top: 6px;
-    }
-
-    .google-search-bar {
-        border-width: 3px;
-    }
-
-    .google-search-input {
-        padding: 8px 10px;
-        font-size: 0.85rem;
-    }
-
-    .google-search-icon {
-        width: 20px;
-        height: 20px;
-        margin-left: 12px;
-    }
-
-    .google-search-btn {
-        padding: 8px 12px 8px 8px;
-        margin: -3px -3px -3px 0;
-    }
-
-    .google-search-btn img {
-        width: 22px;
-        height: 22px;
-    }
-
-    footer {
-        padding: 12px 0;
-        margin: 12px;
-    }
-}
-
-@media (max-width: 768px) {
+/* Narrow viewport (phones + tablets in portrait) */
+@media (max-width: 900px) {
     /* Header: brand on top, nav + theme toggle on second line */
     header .container {
         flex-direction: column;
