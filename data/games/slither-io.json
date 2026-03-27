@@ -1,0 +1,20 @@
+{
+  "id": "slither-io",
+  "name": "Slither.io",
+  "url": "http://slither.com/io",
+  "image": "/images/slither-io.jpg",
+  "description": "Grow your snake by eating glowing orbs and outmaneuvering other players in this multiplayer game.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Arcade",
+    "Casual",
+    "Competitive"
+  ]
+}

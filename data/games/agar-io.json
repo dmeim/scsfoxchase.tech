@@ -1,0 +1,20 @@
+{
+  "id": "agar-io",
+  "name": "Agar.io",
+  "url": "https://agar.io/",
+  "image": "/images/agario.jpg",
+  "description": "Grow your cell by eating smaller players and avoid being eaten in this multiplayer arena.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Arcade",
+    "Casual",
+    "Competitive"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "pixilnumber",
+  "name": "PixilNumber",
+  "url": "https://pixilnumber.com/",
+  "image": "/images/pixilnumber.png",
+  "description": "Color by number pixel art puzzles to create fun pictures.",
+  "minGrade": 1,
+  "maxGrade": 6,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Creative",
+    "Art",
+    "Puzzle",
+    "Casual"
+  ]
+}
