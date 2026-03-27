@@ -1,6 +1,6 @@
 # St. Cecilia Technology
 
-A static website for grade-school tech teachers and IT managers, designed to be deployed on Cloudflare Pages. This website showcases educational games suitable for students in grades 1-8.
+A static website for all technology needs at St. Cecilia School, designed to be deployed on Cloudflare Pages.
 
 ## Features
 
