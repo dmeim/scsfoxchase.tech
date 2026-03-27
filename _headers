@@ -8,14 +8,17 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 # Cache control for static assets
+# Short cache + must-revalidate: browser caches for 10 minutes, then checks
+# the server for updates. Since files aren't hash-versioned, they must not
+# be marked immutable.
 /css/*
-  Cache-Control: public, max-age=2592000, immutable
+  Cache-Control: public, max-age=600, must-revalidate
 
 /js/*
-  Cache-Control: public, max-age=2592000, immutable
+  Cache-Control: public, max-age=600, must-revalidate
 
 /images/*
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=86400, must-revalidate
 
 # No cache for data files to ensure fresh content
 /data/*

@@ -123,6 +123,75 @@ The website is compatible with:
 - Edge (latest)
 - Mobile browsers (iOS Safari, Android Chrome)
 
+## Clearing the Cache
+
+If the site isn't showing recent changes after an update, the browser may be serving a stale cached version. Follow the steps below for your browser/device to clear it.
+
+### Chromebooks (Chrome OS)
+
+1. Open the site in Chrome
+2. Press `Ctrl + Shift + Delete` to open Clear Browsing Data
+3. Set the time range to **All time**
+4. Check **Cached images and files**
+5. Click **Clear data**
+6. Reload the page with `Ctrl + Shift + R`
+
+Alternatively, to clear only this site:
+
+1. Press `F12` to open DevTools (or `Ctrl + Shift + I`)
+2. Go to the **Application** tab
+3. Click **Storage** in the left sidebar
+4. Click **Clear site data**
+5. Close DevTools and reload the page
+
+### Google Chrome (Windows / Mac)
+
+1. Press `Ctrl + Shift + Delete` (Windows) or `Cmd + Shift + Delete` (Mac) to open Clear Browsing Data
+2. Set the time range to **All time**
+3. Check **Cached images and files**
+4. Click **Clear data**
+5. Reload the page with `Ctrl + Shift + R` (Windows) or `Cmd + Shift + R` (Mac)
+
+Alternatively, to clear only this site:
+
+1. Press `F12` to open DevTools (or `Ctrl + Shift + I` / `Cmd + Option + I`)
+2. Go to the **Application** tab
+3. Click **Storage** in the left sidebar
+4. Click **Clear site data**
+5. Close DevTools and reload the page
+
+### Firefox
+
+1. Press `Ctrl + Shift + Delete` (Windows) or `Cmd + Shift + Delete` (Mac) to open Clear Recent History
+2. Set the time range to **Everything**
+3. Check **Cache**
+4. Click **Clear Now**
+5. Reload the page with `Ctrl + Shift + R` (Windows) or `Cmd + Shift + R` (Mac)
+
+Alternatively, to clear only this site:
+
+1. Click the lock icon in the address bar
+2. Click **Clear cookies and site data**
+3. Click **Remove** to confirm
+4. Reload the page
+
+### Safari (Mac / iPad)
+
+1. Go to **Safari > Settings** (or **Preferences**) in the menu bar
+2. Go to the **Privacy** tab
+3. Click **Manage Website Data**
+4. Search for **scsfoxchase**
+5. Select it and click **Remove**
+6. Close Settings and reload the page with `Cmd + Shift + R`
+
+On iPad:
+
+1. Open the **Settings** app
+2. Scroll down and tap **Safari**
+3. Tap **Clear History and Website Data**
+4. Confirm by tapping **Clear**
+5. Reopen the site in Safari
+
 ## Performance Optimizations
 
 - **Caching Strategy**: Different caching policies for static assets vs. dynamic content
