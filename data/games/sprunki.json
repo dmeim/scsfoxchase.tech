@@ -4,7 +4,7 @@
   "url": "https://sprunki.gg/",
   "image": "/images/sprunki-new.png",
   "description": "Create music by mixing beats and characters together.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

@@ -4,7 +4,7 @@
   "url": "https://tetris.com/play-tetris/",
   "image": "/images/tetris.png",
   "description": "Arrange falling blocks to complete and clear rows.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

@@ -4,7 +4,7 @@
   "url": "https://freepacman.org",
   "image": "/images/pacman-new.png",
   "description": "Eat dots and avoid ghosts in this iconic arcade classic.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

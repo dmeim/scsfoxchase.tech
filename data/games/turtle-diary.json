@@ -4,7 +4,7 @@
   "url": "https://www.turtlediary.com",
   "image": "/images/turtlediary.jpg",
   "description": "Educational games and activities for elementary students.",
-  "minGrade": 1,
+  "minGrade": 0,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",

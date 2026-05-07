@@ -4,8 +4,8 @@
   "url": "https://www.nytimes.com/puzzles/spelling-bee",
   "image": "/images/spellingbee.png",
   "description": "Make as many words as possible from seven letters.",
-  "minGrade": 1,
-  "maxGrade": 5,
+  "minGrade": 4,
+  "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
     "Online",

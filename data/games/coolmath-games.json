@@ -4,7 +4,7 @@
   "url": "https://www.coolmathgames.com",
   "image": "/images/coolmathgames.jpg",
   "description": "A huge collection of logic, thinking, and math games.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

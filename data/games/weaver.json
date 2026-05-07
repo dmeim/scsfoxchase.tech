@@ -4,7 +4,7 @@
   "url": "https://weavergame.org",
   "image": "/images/weaver.png",
   "description": "Change one letter at a time to get from one word to another.",
-  "minGrade": 1,
+  "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

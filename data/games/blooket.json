@@ -4,7 +4,7 @@
   "url": "https://dashboard.blooket.com/",
   "image": "/images/blooket.png",
   "description": "Join game-based quizzes and review activities in class.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",

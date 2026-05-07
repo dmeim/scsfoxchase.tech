@@ -4,7 +4,7 @@
   "url": "https://narrow.one/",
   "image": "/images/narrow-one.png",
   "description": "Multiplayer archery capture-the-flag game.",
-  "minGrade": 1,
+  "minGrade": 6,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",

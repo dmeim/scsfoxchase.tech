@@ -4,7 +4,7 @@
   "url": "https://thisissand.com",
   "image": "/images/thisissand.png",
   "description": "Pour colorful sand to create beautiful layered art.",
-  "minGrade": 1,
+  "minGrade": 0,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

@@ -4,7 +4,7 @@
   "url": "https://freeflappybird.org",
   "image": "/images/flappybird.png",
   "description": "Tap to fly through pipes without crashing in this addictive game.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

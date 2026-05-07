@@ -4,7 +4,7 @@
   "url": "https://mahjong-online.org",
   "image": "/images/mahjong-new.png",
   "description": "Match and clear tiles in this classic strategy puzzle.",
-  "minGrade": 1,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

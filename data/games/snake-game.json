@@ -4,7 +4,7 @@
   "url": "https://snakegame.org",
   "image": "/images/snake-game-new.png",
   "description": "Eat food and grow longer without running into yourself.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

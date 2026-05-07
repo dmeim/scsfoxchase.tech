@@ -4,7 +4,7 @@
   "url": "https://squares.org/",
   "image": "/images/squares-new.png",
   "description": "Strategic tile-based puzzle game.",
-  "minGrade": 1,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

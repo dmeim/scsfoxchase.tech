@@ -4,7 +4,7 @@
   "url": "https://www.openguessr.com/",
   "image": "/images/openguessr.jpg",
   "description": "Guess locations around the world from street-view images in this free GeoGuessr alternative.",
-  "minGrade": 1,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

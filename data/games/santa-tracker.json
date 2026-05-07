@@ -4,7 +4,7 @@
   "url": "https://santatracker.google.com",
   "image": "/images/google-santa-tracker.png",
   "description": "Google's holiday hub with games and educational activities.",
-  "minGrade": 1,
+  "minGrade": 0,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",

@@ -4,7 +4,7 @@
   "url": "https://www.digipuzzle.net",
   "image": "/images/digipuzzle.jpg",
   "description": "Educational puzzles and games for reading, math, and more.",
-  "minGrade": 1,
+  "minGrade": 0,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",

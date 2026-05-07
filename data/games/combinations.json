@@ -4,7 +4,7 @@
   "url": "https://combinations.org",
   "image": "/images/combinations2.png",
   "description": "Find creative word combinations to solve each puzzle.",
-  "minGrade": 1,
+  "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

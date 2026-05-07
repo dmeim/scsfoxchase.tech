@@ -4,7 +4,7 @@
   "url": "https://retrobowl.game/game.html",
   "image": "/images/retrobowl.jpg",
   "description": "Manage your football team and play retro-style games to lead them to the Retro Bowl championship.",
-  "minGrade": 3,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

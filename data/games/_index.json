@@ -1,8 +1,8 @@
 [
   "2048",
+  "abcya",
   "agar-io",
   "angry-birds-friends",
-  "abcya",
   "arcademics",
   "asteroids",
   "baseball-bros",
@@ -57,6 +57,7 @@
   "pong",
   "redactle",
   "retro-bowl",
+  "rocketgoal-io",
   "sandspiel",
   "santa-tracker",
   "sesame-street",
@@ -69,11 +70,12 @@
   "solitaire",
   "spelling-bee",
   "sprunki",
-  "starfall",
   "squares",
+  "starfall",
   "strands",
   "stumble-guys",
   "sudoku",
+  "taming-io",
   "tetris",
   "this-is-sand",
   "tic-tac-toe",
@@ -87,5 +89,6 @@
   "word-search",
   "word-waffle",
   "wordly",
-  "worldle"
+  "worldle",
+  "zombs-royale"
 ]

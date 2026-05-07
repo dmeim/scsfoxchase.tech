@@ -4,7 +4,7 @@
   "url": "https://www.abcya.com",
   "image": "/images/abcya.png",
   "description": "Hundreds of educational games for Pre-K through 6th grade.",
-  "minGrade": 1,
+  "minGrade": 0,
   "maxGrade": 6,
   "primaryCategories": [
     "Single Player",

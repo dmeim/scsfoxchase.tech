@@ -4,7 +4,7 @@
   "url": "https://www.google.com/fbx?fbx=snake_arcade",
   "image": "/images/google-snake.png",
   "description": "Play the classic snake game on Google Maps.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

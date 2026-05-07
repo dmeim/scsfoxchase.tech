@@ -4,7 +4,7 @@
   "url": "https://blockbreaker.gg/",
   "image": "/images/blockbreaker-new.jpg",
   "description": "Break all the blocks by bouncing a ball off your paddle.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

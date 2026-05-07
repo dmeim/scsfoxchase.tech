@@ -4,7 +4,7 @@
   "url": "https://www.gimkit.com",
   "image": "/images/gimkit.jpg",
   "description": "Live learning games and interactive classroom activities.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",

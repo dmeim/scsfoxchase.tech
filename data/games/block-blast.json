@@ -4,7 +4,7 @@
   "url": "https://blockblast.game/",
   "image": "/images/block-blast.png",
   "description": "Place blocks strategically to clear rows and columns.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

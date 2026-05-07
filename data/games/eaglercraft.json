@@ -4,7 +4,7 @@
   "url": "https://eaglercraft.com/",
   "image": "/images/minecraft.jpg",
   "description": "Browser-based sandbox building and survival game.",
-  "minGrade": 1,
+  "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",

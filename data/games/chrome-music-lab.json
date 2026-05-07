@@ -3,9 +3,9 @@
   "name": "Chrome Music Lab",
   "url": "https://musiclab.chromeexperiments.com/",
   "image": "/images/chrome-music-lab.jpg",
-  "description": "Explore music through fun, hands-on experiments from Google — make songs, rhythms, and melodies.",
-  "minGrade": 1,
-  "maxGrade": 5,
+  "description": "Explore music through fun, hands-on experiments from Google \u2014 make songs, rhythms, and melodies.",
+  "minGrade": 0,
+  "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
     "Online",

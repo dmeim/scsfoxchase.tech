@@ -4,8 +4,8 @@
   "url": "https://playtictactoe.org",
   "image": "/images/tictactoe.png",
   "description": "The classic X and O strategy game.",
-  "minGrade": 1,
-  "maxGrade": 3,
+  "minGrade": 0,
+  "maxGrade": 4,
   "primaryCategories": [
     "Single Player",
     "Multiplayer",

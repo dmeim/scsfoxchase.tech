@@ -4,7 +4,7 @@
   "url": "https://skribbl.io/",
   "image": "/images/skribblio.jpg",
   "description": "Draw and guess words with friends or strangers in this fun multiplayer drawing game.",
-  "minGrade": 1,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",

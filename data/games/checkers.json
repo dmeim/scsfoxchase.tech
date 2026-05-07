@@ -4,7 +4,7 @@
   "url": "https://www.247checkers.com",
   "image": "/images/checkers.png",
   "description": "Play the classic board game of checkers online.",
-  "minGrade": 1,
+  "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

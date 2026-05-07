@@ -4,7 +4,7 @@
   "url": "https://neal.fun",
   "image": "/images/neal-fun.jpg",
   "description": "A collection of unique interactive web experiences.",
-  "minGrade": 1,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

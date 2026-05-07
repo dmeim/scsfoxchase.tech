@@ -4,7 +4,7 @@
   "url": "https://wordwaffle.org",
   "image": "/images/waffle.png",
   "description": "Swap letters in a waffle grid to form correct words.",
-  "minGrade": 1,
+  "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

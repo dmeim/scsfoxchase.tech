@@ -4,7 +4,7 @@
   "url": "https://lolbeans.io",
   "image": "/images/lol-beans.png",
   "description": "Race against other players in this fun obstacle course game.",
-  "minGrade": 1,
+  "minGrade": 3,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",

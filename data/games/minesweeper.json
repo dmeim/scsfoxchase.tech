@@ -3,8 +3,8 @@
   "name": "Minesweeper",
   "url": "https://minesweeper.online/",
   "image": "/images/minesweeper.jpg",
-  "description": "The classic logic game — uncover tiles and use number clues to avoid hidden mines.",
-  "minGrade": 2,
+  "description": "The classic logic game \u2014 uncover tiles and use number clues to avoid hidden mines.",
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

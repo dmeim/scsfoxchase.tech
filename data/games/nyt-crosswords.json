@@ -4,7 +4,7 @@
   "url": "https://www.nytimes.com/crosswords",
   "image": "/images/nyt-crosswords.png",
   "description": "Solve daily crossword puzzles from the New York Times.",
-  "minGrade": 1,
+  "minGrade": 6,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",

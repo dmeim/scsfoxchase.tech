@@ -4,7 +4,7 @@
   "url": "https://bloxd.io/",
   "image": "/images/bloxdio.png",
   "description": "Multiplayer voxel game with various game modes.",
-  "minGrade": 1,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
