@@ -1,7 +1,7 @@
 {
   "id": "google-snake",
   "name": "Google Snake",
-  "url": "https://snake.googlemaps.com",
+  "url": "https://www.google.com/fbx?fbx=snake_arcade",
   "image": "/images/google-snake.png",
   "description": "Play the classic snake game on Google Maps.",
   "minGrade": 1,
