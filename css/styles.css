@@ -39,6 +39,7 @@ body {
 }
 
 body.home-page {
+    min-height: 100dvh;
     background-image: url('../images/background.png');
     background-size: cover;
     background-position: center;
@@ -871,7 +872,6 @@ footer {
     color: var(--text-color);
     padding: clamp(8px, 1.2vw, 20px) 0;
     text-align: center;
-    border: 2px solid var(--primary-color);
     margin: clamp(8px, 1.2vw, 20px);
     margin-top: auto;
 }
@@ -1049,132 +1049,125 @@ footer {
     }
 }
 
-/* Short + wide viewport (Chromebooks: 1366×768, ~610px usable with Chrome UI + bookmarks) */
-/* min-width: 1200px excludes iPads (1024px wide) while targeting Chromebooks (1366px) */
-@media (max-height: 800px) and (min-width: 1200px) {
-    header {
-        padding: 3px 0;
+/* Homepage dashboard scaling for non-mobile screens.
+   This uses viewport-based clamps instead of Chromebook-specific breakpoints:
+   - width limits keep each row from clipping horizontally
+   - height limits let the dashboard grow on short laptop screens
+   - mobile/tablet portrait keeps the separate stacked layout above */
+@media (min-width: 901px) {
+    body.home-page {
+        --home-tile: clamp(88px, min(9vw, 20vh), 140px);
+        --home-icon: calc(var(--home-tile) * 0.48);
+        --home-gap: clamp(5px, 0.7vw, 14px);
+        --home-row-gap: clamp(12px, 2vw, 42px);
+        --home-search-width: clamp(360px, 30vw, 460px);
+        --home-search-font: clamp(0.86rem, min(1vw, 2.5vh), 1rem);
+        min-height: 100dvh;
+        overflow: hidden;
     }
 
-    header h1 {
-        font-size: 1.1rem;
+    .home-page main {
+        flex: 1;
+        justify-content: space-evenly;
+        min-height: 0;
     }
 
-    .header-logo {
-        height: 24px;
+    .home-page .container {
+        max-width: none;
     }
 
-    .theme-toggle-btn {
-        width: 28px;
-        height: 28px;
-        font-size: 0.8rem;
+    .home-page .google-search-row {
+        padding: clamp(8px, 1.8vh, 18px) 0 clamp(4px, 0.8vh, 8px);
     }
 
-    nav ul li a {
-        padding: 3px 8px;
-        font-size: 0.85rem;
+    .home-page .google-search-row .container {
+        padding: 0 clamp(14px, 2vw, 32px);
     }
 
-    .google-search-row {
-        padding: 8px 0 4px;
+    .home-page .google-search-bars {
+        gap: var(--home-gap);
     }
 
-    .google-search-bar {
-        border-width: 3px;
+    .home-page .google-search-bars-row2 {
+        margin-top: clamp(4px, 0.8vh, 8px);
     }
 
-    .google-search-bars {
-        gap: 8px;
+    .home-page .google-search-bar {
+        max-width: var(--home-search-width);
+        min-width: 0;
     }
 
-    .google-search-bars-row2 {
-        margin-top: 4px;
+    .home-page .google-search-icon {
+        width: clamp(20px, 3.5vh, 26px);
+        height: clamp(20px, 3.5vh, 26px);
     }
 
-    .google-search-icon {
-        width: 18px;
-        height: 18px;
-        margin-left: 10px;
+    .home-page .google-search-input {
+        padding: clamp(6px, 1.2vh, 12px) clamp(8px, 0.8vw, 12px);
+        font-size: var(--home-search-font);
     }
 
-    .google-search-input {
-        padding: 5px 8px;
-        font-size: 0.8rem;
+    .home-page .google-search-btn {
+        padding: clamp(6px, 1.2vh, 12px) clamp(10px, 1vw, 16px) clamp(6px, 1.2vh, 12px) clamp(7px, 0.7vw, 10px);
     }
 
-    .google-search-btn {
-        padding: 5px 10px 5px 6px;
-        margin: -3px -3px -3px 0;
+    .home-page .google-search-btn img {
+        width: clamp(21px, 3.8vh, 28px);
+        height: clamp(21px, 3.8vh, 28px);
     }
 
-    .google-search-btn img {
-        width: 18px;
-        height: 18px;
+    .home-page .app-gallery {
+        padding: clamp(5px, 1.3vh, 14px) 0;
     }
 
-    .google-search-clear {
-        padding: 0 5px;
+    .home-page .app-row-header {
+        font-size: clamp(1.05rem, min(1.4vw, 3vh), 1.4rem);
+        line-height: 1.15;
+        margin-bottom: clamp(5px, 1vh, 14px);
     }
 
-    .google-search-clear img {
-        width: 11px;
-        height: 11px;
+    .home-page .app-row {
+        gap: var(--home-row-gap);
     }
 
-    .app-gallery {
-        padding: 8px 0;
+    .home-page .app-subgroup {
+        gap: var(--home-gap);
     }
 
-    .app-row-header {
-        font-size: 0.95rem;
-        margin-bottom: 5px;
+    .home-page .app-split-row {
+        gap: var(--home-row-gap);
     }
 
-    .app-row {
-        gap: 14px;
+    .home-page .app-item {
+        width: var(--home-tile);
+        padding: clamp(8px, 1.5vh, 18px);
+        gap: clamp(4px, 0.8vh, 9px);
     }
 
-    .app-subgroup {
-        gap: 6px;
+    .home-page .app-icon-wrapper {
+        width: var(--home-icon);
+        height: var(--home-icon);
     }
 
-    .app-split-row {
-        gap: 20px;
+    .home-page .app-item span {
+        font-size: clamp(0.78rem, min(1vw, 2.2vh), 0.95rem);
     }
 
-    .app-item {
-        width: 88px;
-        padding: 6px;
-        gap: 3px;
+    .home-page .page-nav-container {
+        flex: 0 0 auto;
+        min-height: clamp(40px, 7vh, 70px);
+        margin-bottom: 0;
     }
 
-    .app-icon-wrapper {
-        width: 42px;
-        height: 42px;
-        border-radius: 8px;
+    .home-page .page-nav-btn {
+        padding: clamp(7px, 1.4vh, 12px) clamp(20px, 2vw, 28px);
+        font-size: clamp(0.95rem, min(1.2vw, 2.5vh), 1.1rem);
     }
 
-    .app-item span {
-        font-size: 0.65rem;
-    }
-
-    .page-nav-container {
-        margin-bottom: 6px;
-    }
-
-    .page-nav-btn {
-        padding: 5px 14px;
-        font-size: 0.8rem;
-        border-width: 2px;
-    }
-
-    .page-nav-btn i {
-        font-size: 0.9rem;
-    }
-
-    footer {
-        padding: 6px 0;
-        margin: 6px 8px;
-        font-size: 0.75rem;
+    .home-page footer {
+        flex: 0 0 auto;
+        padding: clamp(6px, 1.2vh, 14px) 0;
+        margin: clamp(6px, 1vh, 14px) clamp(8px, 1.2vw, 20px);
+        font-size: clamp(0.78rem, min(1vw, 2vh), 1rem);
     }
 }
