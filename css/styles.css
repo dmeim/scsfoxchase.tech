@@ -38,6 +38,34 @@ body {
     flex-direction: column;
 }
 
+body.home-page {
+    background-image: url('../images/background.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+body.games-page {
+    position: relative;
+    background-color: var(--light-bg);
+    overflow-x: hidden;
+}
+
+.dot-wave-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+body.games-page > header,
+body.games-page > main,
+body.games-page > footer {
+    position: relative;
+    z-index: 1;
+}
+
 .container {
     width: 100%;
     max-width: 1600px;
@@ -316,10 +344,14 @@ nav ul li a:hover, nav ul li a.active {
     font-weight: 600;
     cursor: pointer;
     border: 1.5px solid var(--border-color);
-    background-color: transparent;
+    background-color: var(--light-bg);
     color: var(--text-color);
     transition: var(--transition);
     user-select: none;
+}
+
+[data-theme="dark"] .filter-chip {
+    background-color: var(--dark-bg);
 }
 
 .filter-chip:hover {
@@ -639,7 +671,7 @@ nav ul li a:hover, nav ul li a.active {
 .app-row-header {
     font-size: clamp(1rem, 1.1vw, 1.4rem);
     margin-bottom: clamp(8px, 1vw, 16px);
-    color: var(--text-color);
+    color: var(--primary-color);
     text-align: center;
 }
 
@@ -687,8 +719,18 @@ nav ul li a:hover, nav ul li a.active {
     color: var(--text-color);
 }
 
+body.home-page .app-item {
+    background-color: rgba(249, 249, 249, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
 [data-theme="dark"] .app-item {
     background-color: var(--dark-bg);
+}
+
+[data-theme="dark"] body.home-page .app-item {
+    background-color: rgba(45, 45, 45, 0.5);
 }
 
 .app-item:hover {
@@ -802,7 +844,7 @@ main {
     border-radius: 999px;
     background-color: var(--light-bg);
     text-decoration: none;
-    color: var(--text-color);
+    color: var(--primary-color);
     font-size: 1.1rem;
     font-weight: 600;
     transition: var(--transition);

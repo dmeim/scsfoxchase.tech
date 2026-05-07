@@ -1,7 +1,4 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
+# AGENTS.md
 ## Project Overview
 
 St. Cecilia Technology — a static PWA serving as a dashboard and educational games catalog for a grade school. Used daily by students and teachers on both full-size desktop monitors and small Dell Chromebooks.
