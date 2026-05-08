@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#125F31">
+    <title>Game Card Final Preview - St. Cecilia Technology</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="js/placeholder-images.js"></script>
+    <style>
+        body.testing-page { background: #f3f5f2; }
+
+        .testing-hero {
+            padding: 32px 0 18px;
+            border-bottom: 1px solid var(--border-color);
+            background: #fff;
+        }
+
+        .testing-hero h1 {
+            color: var(--primary-color);
+            font-size: clamp(1.8rem, 3vw, 2.7rem);
+            margin-bottom: 8px;
+        }
+
+        .testing-hero p {
+            max-width: 850px;
+            color: #555;
+        }
+
+        .preview-section { padding: 36px 0 56px; }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(230px, 1fr));
+            gap: 24px;
+            align-items: start;
+        }
+
+        .preview-label {
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #666;
+        }
+
+        .preview-card {
+            width: 100%;
+            background: var(--light-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 2px;
+            overflow: hidden;
+            box-shadow: 0 8px 22px rgba(18, 95, 49, 0.08);
+        }
+
+        .preview-image {
+            aspect-ratio: 16 / 9;
+            background-size: cover;
+            background-position: center;
+            background-color: #ddd;
+        }
+
+        .chess-image { background-image: url('images/chess-com.png'); }
+        .checkers-image { background-image: url('images/checkers.png'); }
+
+        .preview-body { padding: 0; }
+
+        .title-band {
+            padding: 12px 14px;
+            background: #fff;
+        }
+
+        .title-band h2 {
+            color: var(--primary-color);
+            font-size: 1.2rem;
+            line-height: 1.25;
+            margin: 0;
+            text-align: center;
+        }
+
+        .badge-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .badge-column { padding: 10px 12px; }
+        .badge-column + .badge-column { border-left: 1px solid var(--border-color); }
+
+        .badge-label {
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #666;
+            margin-bottom: 7px;
+        }
+
+        .badge-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .preview-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .preview-description {
+            padding: 0 14px 14px;
+            font-size: 0.9rem;
+            line-height: 1.35;
+            color: #444;
+            text-align: center;
+        }
+
+        .dark-preview {
+            background: #050505;
+            border-color: #444;
+        }
+
+        .dark-preview .title-band { background: #050505; }
+
+        .dark-preview .title-band h2,
+        .dark-preview .badge-label,
+        .dark-preview .preview-description { color: #fff; }
+
+        .dark-preview .badge-column + .badge-column { border-left-color: #555; }
+
+        @media (max-width: 1280px) {
+            .preview-grid { grid-template-columns: repeat(2, minmax(280px, 420px)); justify-content: center; }
+        }
+
+        @media (max-width: 700px) {
+            .preview-grid { grid-template-columns: minmax(280px, 420px); }
+        }
+    </style>
+</head>
+<body class="testing-page">
+    <main>
+        <section class="testing-hero">
+            <div class="container">
+                <h1>Game Card Final Preview</h1>
+                <p>Chess and Checkers using their real images, descriptions, and badges with the existing production badge colors.</p>
+            </div>
+        </section>
+
+        <section class="container preview-section" aria-label="Final game card previews">
+            <div class="preview-grid">
+                <div>
+                    <div class="preview-label">Chess · Light</div>
+                    <article class="preview-card">
+                        <div class="preview-image chess-image" role="img" aria-label="Chess game image"></div>
+                        <div class="preview-body">
+                            <div class="title-band"><h2>Chess</h2></div>
+                            <div class="badge-columns">
+                                <div class="badge-column">
+                                    <div class="badge-label">Type</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#78909C;color:#fff">Single Player</span>
+                                        <span class="preview-badge" style="background:#1E88E5;color:#fff">Multiplayer</span>
+                                        <span class="preview-badge" style="background:#26A69A;color:#fff">Online</span>
+                                        <span class="preview-badge" style="background:#AB47BC;color:#fff">Turn-Based</span>
+                                        <span class="preview-badge" style="background:#4CAF50;color:#fff">Free to Play</span>
+                                    </div>
+                                </div>
+                                <div class="badge-column">
+                                    <div class="badge-label">Genre</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#8D6E63;color:#fff">Board Games</span>
+                                        <span class="preview-badge" style="background:#9575CD;color:#fff">Classics</span>
+                                        <span class="preview-badge" style="background:#3F51B5;color:#fff">Strategy</span>
+                                        <span class="preview-badge" style="background:#F44336;color:#fff">Competitive</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="preview-description">Play chess online against friends or the computer.</p>
+                        </div>
+                    </article>
+                </div>
+
+                <div>
+                    <div class="preview-label">Chess · Dark</div>
+                    <article class="preview-card dark-preview">
+                        <div class="preview-image chess-image" role="img" aria-label="Chess game image"></div>
+                        <div class="preview-body">
+                            <div class="title-band"><h2>Chess</h2></div>
+                            <div class="badge-columns">
+                                <div class="badge-column">
+                                    <div class="badge-label">Type</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#78909C;color:#fff">Single Player</span>
+                                        <span class="preview-badge" style="background:#1E88E5;color:#fff">Multiplayer</span>
+                                        <span class="preview-badge" style="background:#26A69A;color:#fff">Online</span>
+                                        <span class="preview-badge" style="background:#AB47BC;color:#fff">Turn-Based</span>
+                                        <span class="preview-badge" style="background:#4CAF50;color:#fff">Free to Play</span>
+                                    </div>
+                                </div>
+                                <div class="badge-column">
+                                    <div class="badge-label">Genre</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#8D6E63;color:#fff">Board Games</span>
+                                        <span class="preview-badge" style="background:#9575CD;color:#fff">Classics</span>
+                                        <span class="preview-badge" style="background:#3F51B5;color:#fff">Strategy</span>
+                                        <span class="preview-badge" style="background:#F44336;color:#fff">Competitive</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="preview-description">Play chess online against friends or the computer.</p>
+                        </div>
+                    </article>
+                </div>
+
+                <div>
+                    <div class="preview-label">Checkers · Light</div>
+                    <article class="preview-card">
+                        <div class="preview-image checkers-image" role="img" aria-label="Checkers game image"></div>
+                        <div class="preview-body">
+                            <div class="title-band"><h2>Checkers</h2></div>
+                            <div class="badge-columns">
+                                <div class="badge-column">
+                                    <div class="badge-label">Type</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#78909C;color:#fff">Single Player</span>
+                                        <span class="preview-badge" style="background:#1E88E5;color:#fff">Multiplayer</span>
+                                        <span class="preview-badge" style="background:#26A69A;color:#fff">Online</span>
+                                        <span class="preview-badge" style="background:#AB47BC;color:#fff">Turn-Based</span>
+                                        <span class="preview-badge" style="background:#4CAF50;color:#fff">Free to Play</span>
+                                    </div>
+                                </div>
+                                <div class="badge-column">
+                                    <div class="badge-label">Genre</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#8D6E63;color:#fff">Board Games</span>
+                                        <span class="preview-badge" style="background:#9575CD;color:#fff">Classics</span>
+                                        <span class="preview-badge" style="background:#3F51B5;color:#fff">Strategy</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="preview-description">Play the classic board game of checkers online.</p>
+                        </div>
+                    </article>
+                </div>
+
+                <div>
+                    <div class="preview-label">Checkers · Dark</div>
+                    <article class="preview-card dark-preview">
+                        <div class="preview-image checkers-image" role="img" aria-label="Checkers game image"></div>
+                        <div class="preview-body">
+                            <div class="title-band"><h2>Checkers</h2></div>
+                            <div class="badge-columns">
+                                <div class="badge-column">
+                                    <div class="badge-label">Type</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#78909C;color:#fff">Single Player</span>
+                                        <span class="preview-badge" style="background:#1E88E5;color:#fff">Multiplayer</span>
+                                        <span class="preview-badge" style="background:#26A69A;color:#fff">Online</span>
+                                        <span class="preview-badge" style="background:#AB47BC;color:#fff">Turn-Based</span>
+                                        <span class="preview-badge" style="background:#4CAF50;color:#fff">Free to Play</span>
+                                    </div>
+                                </div>
+                                <div class="badge-column">
+                                    <div class="badge-label">Genre</div>
+                                    <div class="badge-group">
+                                        <span class="preview-badge" style="background:#8D6E63;color:#fff">Board Games</span>
+                                        <span class="preview-badge" style="background:#9575CD;color:#fff">Classics</span>
+                                        <span class="preview-badge" style="background:#3F51B5;color:#fff">Strategy</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="preview-description">Play the classic board game of checkers online.</p>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

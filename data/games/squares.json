@@ -3,7 +3,7 @@
   "name": "Squares",
   "url": "https://squares.org/",
   "image": "/images/squares-new.png",
-  "description": "Strategic tile-based puzzle game.",
+  "description": "Slide tiles through a grid to solve each strategic puzzle.",
   "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
@@ -12,9 +12,9 @@
     "Free to Play"
   ],
   "secondaryCategories": [
-    "Number Puzzles",
     "Logic",
     "Puzzle",
-    "Brain Teaser"
+    "Brain Teaser",
+    "Strategy"
   ]
 }

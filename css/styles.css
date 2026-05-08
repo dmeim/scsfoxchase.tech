@@ -405,75 +405,64 @@ nav ul li a:hover, nav ul li a.active {
 }
 
 .game-card-content {
-    padding: 15px;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
     flex: 1;
 }
 
 .game-card-content h4 {
     font-size: 1.2rem;
-    margin-bottom: 10px;
+    line-height: 1.25;
+    margin: 0;
+    padding: 12px 14px;
     color: var(--primary-color);
+    background-color: #fff;
     text-align: center;
 }
 
 [data-theme="dark"] .game-card-content h4 {
     color: var(--light-text);
+    background-color: #050505;
 }
 
-.game-card-chips {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
+.game-card-badge-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
 }
 
-.game-card-details-toggle {
-    background: none;
-    border: none;
-    color: var(--primary-color);
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
-    padding: 4px 0;
-    margin-top: auto;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    transition: var(--transition);
+.game-card-badge-column {
+    padding: 10px 12px;
 }
 
-.game-card-details-toggle:hover {
-    color: var(--secondary-color);
+.game-card-badge-column + .game-card-badge-column {
+    border-left: 1px solid var(--border-color);
 }
 
-.game-card-details-toggle i {
-    transition: transform 0.3s ease;
-    font-size: 0.7rem;
+.game-card-badge-label {
+    color: #666;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+    margin-bottom: 7px;
+    text-align: center;
+    text-transform: uppercase;
 }
 
-.game-card.expanded .game-card-details-toggle i {
-    transform: rotate(180deg);
+[data-theme="dark"] .game-card-badge-label {
+    color: var(--light-text);
 }
 
 .game-card-description {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease;
     width: 100%;
-}
-
-.game-card.expanded .game-card-description {
-    max-height: 200px;
 }
 
 .game-card-description p {
     color: var(--text-color);
     font-size: 0.9rem;
-    padding-top: 8px;
+    line-height: 1.35;
+    padding: 0 14px 12px;
     text-align: center;
 }
 
@@ -493,14 +482,20 @@ nav ul li a:hover, nav ul li a.active {
     gap: 4px;
 }
 
+.game-card-badge-column .chip-row {
+    justify-content: center;
+}
+
+.game-card-badge-column .chip {
+    font-size: 0.65rem;
+}
+
 .chip-primary {
     /* Filled chips - colors set dynamically in JS */
 }
 
 .chip-secondary {
-    /* Outlined chips - border/text color set dynamically in JS */
-    background-color: transparent;
-    border: 1.5px solid;
+    /* Filled chips - colors set dynamically in JS */
     font-size: 0.65rem;
 }
 

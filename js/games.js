@@ -352,9 +352,7 @@ class GamesManager {
     createGameCard(game) {
         const card = document.createElement('div');
         card.classList.add('game-card');
-        card.addEventListener('click', (e) => {
-            // Don't navigate if clicking the details toggle
-            if (e.target.closest('.game-card-details-toggle')) return;
+        card.addEventListener('click', () => {
             window.open(game.url, '_blank');
         });
 
@@ -368,55 +366,38 @@ class GamesManager {
         const title = document.createElement('h4');
         title.textContent = game.name;
 
-        const chips = document.createElement('div');
-        chips.classList.add('game-card-chips');
+        const badgeColumns = document.createElement('div');
+        badgeColumns.classList.add('game-card-badge-columns');
 
-        // Primary categories (filled chips) - universal traits
-        const primaryRow = document.createElement('div');
-        primaryRow.classList.add('chip-row', 'chip-row-primary');
+        const createBadgeColumn = (label, categories, isPrimary) => {
+            const column = document.createElement('div');
+            column.classList.add('game-card-badge-column');
+
+            const columnLabel = document.createElement('div');
+            columnLabel.classList.add('game-card-badge-label');
+            columnLabel.textContent = label;
+            column.appendChild(columnLabel);
+
+            const row = document.createElement('div');
+            row.classList.add('chip-row', isPrimary ? 'chip-row-primary' : 'chip-row-secondary');
+            categories.forEach(cat => {
+                const chip = document.createElement('span');
+                chip.classList.add('chip', isPrimary ? 'chip-primary' : 'chip-secondary');
+                chip.textContent = cat;
+                const colors = getCategoryChipColor(cat, isPrimary);
+                chip.style.backgroundColor = colors.bg;
+                chip.style.color = colors.textColor;
+                row.appendChild(chip);
+            });
+            column.appendChild(row);
+
+            return column;
+        };
+
         const primaryCategories = game.primaryCategories || [];
-        primaryCategories.forEach(cat => {
-            const chip = document.createElement('span');
-            chip.classList.add('chip', 'chip-primary');
-            chip.textContent = cat;
-            const colors = getCategoryChipColor(cat, true);
-            chip.style.backgroundColor = colors.bg;
-            chip.style.color = colors.textColor;
-            primaryRow.appendChild(chip);
-        });
-        chips.appendChild(primaryRow);
-
-        // Secondary categories (outlined chips) - gameplay styles
-        const secondaryRow = document.createElement('div');
-        secondaryRow.classList.add('chip-row', 'chip-row-secondary');
         const secondaryCategories = game.secondaryCategories || game.categories || [];
-        secondaryCategories.forEach(cat => {
-            const chip = document.createElement('span');
-            chip.classList.add('chip', 'chip-secondary');
-            chip.textContent = cat;
-            const colors = getCategoryChipColor(cat, false);
-            chip.style.borderColor = colors.bg;
-            chip.style.color = colors.bg;
-            secondaryRow.appendChild(chip);
-        });
-        chips.appendChild(secondaryRow);
-
-        const gradeChip = document.createElement('span');
-        gradeChip.classList.add('chip', 'chip-grade');
-        const min = game.minGrade || 1;
-        const max = game.maxGrade;
-        gradeChip.textContent = min === max ? `GR ${min}` : `GR ${min}-${max}`;
-        const colors = getGradeChipColor(max);
-        gradeChip.style.backgroundColor = colors.bg;
-        gradeChip.style.color = colors.textColor;
-        // chips.appendChild(gradeChip);
-
-        const detailsToggle = document.createElement('button');
-        detailsToggle.classList.add('game-card-details-toggle');
-        detailsToggle.innerHTML = '<i class="fas fa-chevron-down"></i> Details';
-        detailsToggle.addEventListener('click', () => {
-            card.classList.toggle('expanded');
-        });
+        badgeColumns.appendChild(createBadgeColumn('Type', primaryCategories, true));
+        badgeColumns.appendChild(createBadgeColumn('Genre', secondaryCategories, false));
 
         const description = document.createElement('div');
         description.classList.add('game-card-description');
@@ -425,9 +406,8 @@ class GamesManager {
         description.appendChild(descText);
 
         cardContent.appendChild(title);
-        cardContent.appendChild(chips);
-        cardContent.appendChild(detailsToggle);
         cardContent.appendChild(description);
+        cardContent.appendChild(badgeColumns);
 
         card.appendChild(cardImage);
         card.appendChild(cardContent);
