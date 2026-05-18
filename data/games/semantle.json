@@ -1,0 +1,20 @@
+{
+  "id": "semantle",
+  "name": "Semantle",
+  "url": "https://semantle.com/",
+  "image": "/images/semantle.png",
+  "description": "Guess the secret word using semantic similarity clues.",
+  "minGrade": 5,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Word Games",
+    "Daily Challenge",
+    "Vocabulary",
+    "Brain Teaser"
+  ]
+}
