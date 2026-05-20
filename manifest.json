@@ -2,7 +2,7 @@
   "name": "St. Cecilia Technology",
   "short_name": "St. Cecilia Tech",
   "description": "Educational games for grade-school students",
-  "start_url": "/index.html",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#125F31",
   "theme_color": "#125F31",
