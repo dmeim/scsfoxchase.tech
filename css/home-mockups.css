@@ -156,7 +156,7 @@
     width: clamp(48px, 5vw, 72px);
     height: clamp(48px, 5vw, 72px);
 }
-@media (max-width: 1100px) {
+@media (max-width: 768px) {
     .newhome-workflow-grid-2 { grid-template-columns: 1fr; }
 }
 @media (max-height: 800px) and (min-width: 901px) {
@@ -328,4 +328,82 @@
 
 [data-theme="dark"] .newhome-group-card .app-row-header {
     color: var(--light-text);
+}
+
+/* iPad/tablet portrait: use the old-home responsive behavior, but keep the
+   new grouped app layout. Search fields wrap instead of shrinking into unusable pills. */
+@media (min-width: 740px) and (max-width: 900px) {
+    .newhome-groups {
+        padding-top: 10px;
+    }
+
+    .newhome-workflow-grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .newhome-group-card {
+        padding: 10px;
+    }
+
+    .newhome-link-row {
+        gap: 7px;
+    }
+
+    .newhome-link-row .mockup-link {
+        min-height: 64px;
+        font-size: 0.72rem;
+        padding: 6px 4px;
+    }
+
+    .newhome-link-row .newhome-feature-link,
+    .newhome-link-row .newhome-main-link {
+        min-height: 76px;
+        font-size: 0.85rem;
+    }
+
+    .newhome-link-row .newhome-feature-link img,
+    .newhome-link-row .newhome-main-link img {
+        width: 42px;
+        height: 42px;
+    }
+
+    .mockup-link img {
+        width: 34px;
+        height: 34px;
+    }
+
+    .smart-search-bars-titled {
+        align-items: flex-end;
+    }
+
+    .smart-search-field {
+        flex: 1 1 calc(50% - 8px);
+        max-width: 360px;
+        min-width: 250px;
+    }
+
+    .smart-search-field:nth-child(3) {
+        flex-basis: 50%;
+    }
+
+    .smart-search-picker {
+        width: 118px;
+    }
+
+    .smart-search-toggle {
+        gap: 4px;
+        padding-left: 8px;
+    }
+
+    .smart-search-label {
+        max-width: 62px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .smart-search-title {
+        min-width: 120px;
+        padding: 4px 14px 6px;
+    }
 }

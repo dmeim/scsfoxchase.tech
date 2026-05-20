@@ -1029,6 +1029,58 @@ footer {
     }
 }
 
+/* iPads/tablets in portrait are wide enough for the dashboard layout.
+   Keep the phone layout below 769px only; allow vertical scrolling when content exceeds the viewport. */
+@media (min-width: 740px) and (max-width: 900px) {
+    body.home-page {
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    header .container {
+        flex-direction: row;
+        gap: 20px;
+    }
+
+    header h1 {
+        font-size: 1.35rem;
+    }
+
+    .header-logo {
+        height: 32px;
+    }
+
+    .header-right {
+        justify-content: flex-end;
+    }
+
+    nav ul li a {
+        padding: 5px 10px;
+        font-size: 0.95rem;
+    }
+
+    .google-search-row .container {
+        gap: 0;
+    }
+
+    .google-search-bars {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .google-search-bar {
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .google-search-bars-row2 {
+        margin-top: clamp(4px, 0.6vw, 10px);
+    }
+}
+
 @media (max-width: 480px) {
     .games-grid {
         grid-template-columns: 1fr;
@@ -1058,7 +1110,8 @@ footer {
         --home-search-width: clamp(360px, 30vw, 460px);
         --home-search-font: clamp(0.86rem, min(1vw, 2.5vh), 1rem);
         min-height: 100dvh;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
     }
 
     .home-page main {
