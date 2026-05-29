@@ -18,7 +18,7 @@
   Cache-Control: public, max-age=600, must-revalidate
 
 /images/*
-  Cache-Control: public, max-age=86400, must-revalidate
+  Cache-Control: public, max-age=3600, must-revalidate
 
 # No cache for data files to ensure fresh content
 /data/*
