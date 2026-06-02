@@ -3,9 +3,15 @@
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://static.cloudflareinsights.com 'unsafe-inline'; style-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; font-src 'self' https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com
+  Permissions-Policy: camera=(self), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://static.cloudflareinsights.com 'unsafe-inline'; style-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; font-src 'self' https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com https://*.n8n.cloud https://n8n.mlabz.io
   Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+/assets
+  X-Robots-Tag: noindex, nofollow
+
+/assets/*
+  X-Robots-Tag: noindex, nofollow
 
 # Cache control for static assets
 # Short cache + must-revalidate: browser caches for 10 minutes, then checks
