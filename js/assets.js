@@ -256,8 +256,7 @@
 
         state.input.value = serial;
         stopScanner({ hideMessageAfterStop: true });
-        showMessage('QR scanned. Review the serial number, then press Lookup.', 'success');
-        state.input.focus();
+        lookupFromInput();
     }
 
     function extractSerialFromQr(rawQrValue) {
