@@ -1,13 +1,13 @@
-// Asset lookup page
+// Inventory lookup page
 (() => {
     // Test n8n webhook. The site POSTs: { "serial": "ABC123XYZ" }
-    const ASSET_LOOKUP_WEBHOOK_URL = 'https://n8n.mlabz.io/webhook/scs-assets';
+    const ASSET_LOOKUP_WEBHOOK_URL = 'https://n8n.mlabz.io/webhook/scs-inventory';
     const USE_MOCK_WHEN_NO_WEBHOOK = true;
     const REQUEST_SERIAL_FIELD = 'serial';
     const NO_DATA_LABEL = '🚫 No Data 🚫';
     const NOT_APPLICABLE_LABEL = '⚠ Does Not Apply ⚠️';
 
-    const FALLBACK_DEVICE_IMAGE = '/images/assets/fallback-device.svg';
+    const FALLBACK_DEVICE_IMAGE = '/images/inventory/fallback-device.svg';
     const MODEL_IMAGES = {
         'ipad a2602': '/images/ipad-A2602.jpg',
         'dell chromebook 3100': '/images/dell-chromebook-3100-1.jpg',
@@ -31,15 +31,40 @@
         { label: 'Case', keys: ['Case'] },
         { label: 'Chassis', keys: ['Chassis'] },
         { label: 'Hinges', keys: ['Hinges', 'Hinge'] },
-        { label: 'Screen', keys: ['Screen'] },
-        { label: 'Keyboard / Buttons', keys: ['Keyboard / Buttons', 'Meyboard / Buttons', 'Keyboard'] },
-        { label: 'Trackpad', keys: ['Trackpad', 'Touchpad'] },
-        { label: 'Battery', keys: ['Battery'] },
-        { label: 'Buttons', keys: ['Buttons', 'Button'] }
+        { label: 'Display', keys: ['Display', 'Screen'] },
+        { label: 'Keyboard / Buttons', keys: ['Keyboard / Buttons', 'Keyboard'] },
+        { label: 'Trackpad / Mouse', keys: ['Trackpad / Mouse', 'Trackpad', 'Touchpad', 'Mouse'] },
+        { label: 'Battery / Charging', keys: ['Battery / Charging', 'Battery', 'Charging'] },
+        { label: 'Ports', keys: ['Ports', 'Port'] },
+        { label: 'Camera / Audio', keys: ['Camera / Audio', 'Camera', 'Audio'] }
     ];
 
+    // Exact colors from the Google Sheet data-validation dropdowns.
+    const PART_STATUS_COLORS = {
+        'Unknown': { bg: '#EADCF8', text: '#4A148C' },
+        'N/A': { bg: '#E0E0E0', text: '#424242' },
+        'Ok': { bg: '#D9EAD3', text: '#274E13' },
+        'Cosmetic': { bg: '#D9EAF7', text: '#0B5394' },
+        'Loose': { bg: '#FFF2CC', text: '#7F6000' },
+        'Missing': { bg: '#FCE5CD', text: '#783F04' },
+        'Damaged': { bg: '#F4CCCC', text: '#990000' },
+        'Not Working': { bg: '#E06666', text: '#FFFFFF' }
+    };
+
+    const DEVICE_STATUS_COLORS = {
+        'Unknown': { bg: '#EADCF8', text: '#4A148C' },
+        'Ok': { bg: '#D9EAD3', text: '#274E13' },
+        'No DRC': { bg: '#D9EAF7', text: '#0B5394' },
+        'Repair': { bg: '#F4CCCC', text: '#990000' },
+        'Warranty': { bg: '#FFF2CC', text: '#7F6000' },
+        'Parts Only': { bg: '#D9D2E9', text: '#351C75' },
+        'Missing': { bg: '#FCE5CD', text: '#783F04' },
+        'Lost': { bg: '#E06666', text: '#FFFFFF' },
+        'Retired': { bg: '#D9D9D9', text: '#434343' }
+    };
+
     const demoAsset = serial => ({
-        'Device Status': 'Repair: In Warranty',
+        'Device Status': 'Warranty',
         'Assigned To': 'Student Name',
         'Device Number': '3A-18',
         'Serial Number / Service Tag': serial,
@@ -47,14 +72,16 @@
         'Make / Model': 'Dell Chromebook 3100',
         'Year Purchased': '2020',
         'Grant': 'ESSER',
-        'Case': 'Scratches',
+        'Case': 'Cosmetic',
         'Chassis': 'Ok',
         'Hinges': 'Ok',
-        'Screen': 'Ok',
-        'Keyboard / Buttons': 'Loose Key(s), Scratches',
-        'Trackpad': 'Ok',
-        'Battery': 'Ok',
-        'Notes': 'Demo mode is active because the n8n webhook URL is not configured yet. Replace ASSET_LOOKUP_WEBHOOK_URL in /js/assets.js when the workflow is ready.'
+        'Display': 'Ok',
+        'Keyboard / Buttons': 'Loose',
+        'Trackpad / Mouse': 'Ok',
+        'Battery / Charging': 'Ok',
+        'Ports': 'Ok',
+        'Camera / Audio': 'Ok',
+        'Notes': 'Demo mode is active because the n8n webhook URL is not configured yet. Replace ASSET_LOOKUP_WEBHOOK_URL in /js/inventory.js when the workflow is ready.'
     });
 
     const state = {
@@ -409,7 +436,7 @@
 
         state.result.innerHTML = `
             <div class="asset-print-header">
-                <h1>St. Cecilia Asset Report</h1>
+                <h1>St. Cecilia Inventory Report</h1>
                 <p><span data-print-date>${escapeHtml(formatPrintedDate())}</span></p>
             </div>
 
@@ -470,12 +497,16 @@
 
         if (statuses.length <= 1) {
             const status = statuses[0] || NO_DATA_LABEL;
-            return `<span class="asset-condition-status" data-status-tone="${getStatusTone(status)}">${escapeHtml(status)}</span>`;
+            const style = getExactStatusStyle(status);
+            return `<span class="asset-condition-status" data-status-tone="${getStatusTone(status)}"${style ? ' ' + style : ''}>${escapeHtml(status)}</span>`;
         }
 
         return `
             <span class="asset-condition-status-list" aria-label="Multiple condition values">
-                ${statuses.map(status => `<span class="asset-condition-status" data-status-tone="${getStatusTone(status)}">${escapeHtml(status)}</span>`).join('')}
+                ${statuses.map(status => {
+                    const style = getExactStatusStyle(status);
+                    return `<span class="asset-condition-status" data-status-tone="${getStatusTone(status)}"${style ? ' ' + style : ''}>${escapeHtml(status)}</span>`;
+                }).join('')}
             </span>
         `;
     }
@@ -501,7 +532,7 @@
 
         if (makeModel && !isSpecialValue(makeModel)) {
             return {
-                src: `/images/assets/${slugify(makeModel)}.png`,
+                src: `/images/inventory/${slugify(makeModel)}.png`,
                 alt: `${makeModel} image`,
                 caption: makeModel
             };
@@ -543,6 +574,8 @@
     }
 
     function getStatusTone(value) {
+        if (findStatusColors(value)) return 'neutral'; // exact colors applied inline
+
         const status = normalizeText(value);
 
         if (isNoDataValue(value) || status.includes('not checked') || status.includes('unknown')) return 'nodata';
@@ -554,6 +587,18 @@
         if (status.includes('ok') || status.includes('working') || status.includes('none applied')) return 'good';
 
         return 'neutral';
+    }
+
+    function findStatusColors(value) {
+        const normalized = String(value || '').trim();
+        return PART_STATUS_COLORS[normalized] || DEVICE_STATUS_COLORS[normalized] || null;
+    }
+
+    function getExactStatusStyle(value) {
+        const colors = findStatusColors(value);
+        if (!colors) return '';
+        const border = `color-mix(in srgb, ${colors.bg} 80%, #000000)`;
+        return `style="--tone-bg: ${colors.bg}; --tone-border: ${border}; --tone-text: ${colors.text};"`;
     }
 
     function printReport() {
@@ -661,9 +706,8 @@
     }
 
     function formatAssetValue(value) {
-        if (isNoDataValue(value)) return NO_DATA_LABEL;
-        if (isNotApplicableValue(value)) return NOT_APPLICABLE_LABEL;
-        return value;
+        if (value === undefined || value === null || String(value).trim() === '') return NO_DATA_LABEL;
+        return String(value).trim();
     }
 
     function getSpecialToneAttribute(value) {
