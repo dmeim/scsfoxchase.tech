@@ -39,7 +39,7 @@ Task 6: Headers, redirects, Font Awesome decision, sitemap/robots
   - Notes: `src/content.config.ts` + 95 game JSON in `src/content/games/` (copied from `data/games/`; legacy `data/games/` kept for Task 9); `src/data/trending.json`; `GamesCatalog.astro` embeds build-time JSON via `#games-catalog-data` (no client `/data/games/*` fetches); `initGamesCatalog(games, trendingIds)`; carousel + placeholder-images ports; `public/_redirects` `/games.html` → `/games`; game thumbnails copied into `public/images/`
   - Verify: `npm run build` PASS — `dist/client/games/index.html`; embedded 95 games + 6 trending IDs; shell has hero-carousel / grade-chips / games-grid; no `/data/games/` in built HTML
 - [x] Task 5: Offline, 404, PWA icons, service worker
-  - Commit: *(pending this commit)*
+  - Commit: `c19e565`
   - Notes: `src/pages/offline.astro` + `404.astro` via BaseLayout; `public/sw.js` rewritten (`st-cecilia-tech-astro-v1`, precache `/offline`, network-first navigations, cache-first `/_astro/*`, no cdnjs special-case); real `icon-192.png`/`icon-512.png` from `scs-logo.png`; `/offline.html` → `/offline` redirect; SW register remains BaseLayout-only
   - Verify: `npm run build` PASS — `dist/client/offline/index.html`, `dist/client/404.html`, icons + SW in dist; grep confirms network-first/`/offline`/`/_astro`; preview curl `/offline` (follows 307→`/offline/`) + icons 200
 
