@@ -30,6 +30,7 @@ Bugfix pass complete. Human: restart `npm run dev` in worktree, click-check, the
 - Smart-search hover CSS; redirects verified with `Accept: text/html`
 - Adapter IMAGES/SESSION warnings silenced; duplicate `_redirects` cleaned
 - `npm run build` emits HTML in `dist/client`
+- BUG-015: restored games dotted-wave canvas (`dot-waves.ts`) + fixed `game-grid` → `games-grid` for 4-column desktop layout
 
 ## Task 9 (deferred)
 - **Status:** partially done via archive move (not deleted)

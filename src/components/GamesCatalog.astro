@@ -59,7 +59,7 @@ const catalogPayload = JSON.stringify({ games, trendingIds });
       </div>
     </div>
 
-    <div class="game-grid" id="games-grid">
+    <div class="games-grid" id="games-grid">
       <div class="loading-container">
         <div class="loading-spinner"></div>
         <p>Loading games...</p>
@@ -72,6 +72,9 @@ const catalogPayload = JSON.stringify({ games, trendingIds });
 
 <script>
   import { initGamesCatalog } from '../scripts/games-catalog';
+  import { initDotWaves } from '../scripts/dot-waves';
+
+  initDotWaves();
 
   const dataEl = document.getElementById('games-catalog-data');
   if (dataEl?.textContent) {

@@ -23,12 +23,13 @@
 | Touch hover Chromebook | — | deferred | — | N/A |
 | Inventory camera/QR | — | deferred | — | Human hardware test |
 | Production DNS cutover | — | deferred | — | Human |
+| BUG-015 | Medium | fixed | *(pending commit)* | Games wave bg + 4-col grid |
 
 ## What’s left for human
 
 1. Restart preview: `cd ".worktrees/astro-cloudflare-migration" && npm run dev` (or `npm run build && npx astro preview`)
 2. Visual confirm smart-search title hover yellows the **whole bar** (CSS in `962dd39`)
-3. Click Games nav → `/games` catalog loads
+3. Click Games nav → `/games` catalog loads — confirm dotted wave background + **4 game cards per row** on desktop
 4. Inventory camera/QR on a real device
 5. Production DNS / Workers cutover (see `ASTRO-MIGRATION.md`) — do **not** flip DNS until preview checklist passes
 
@@ -39,6 +40,7 @@
 - [x] `/games.html` → `/games` with `Accept: text/html` — 301
 - [x] `/inventory` 200, no slash loop; `/inventory/` → 301 → `/inventory`
 - [ ] Smart search title hover yellows whole bar — **human visual**
+- [ ] Games page: dotted wave canvas + 4-column `.games-grid` — **human visual** (hard-refresh)
 - [x] `npm run build` produces HTML in `dist/client`
 
 ## Per-bug detail
@@ -95,5 +97,13 @@
 - **Status:** fixed
 - **Commit(s):** `e0fb143`
 - **Fix:** `public/_redirects` keeps only `/newhome/` and `/inventory/` (Astro config redirects are merged into dist `_redirects` at build). Preview now: “Parsed 7 valid redirect rules” with no duplicates.
+
+### BUG-015 — Games page missing wave background and 4-column grid
+- **Status:** fixed
+- **Commit(s):** *(filled after commit)*
+- **Root cause:**
+  1. `GamesCatalog.astro` used `class="game-grid"` but `global.css` styles `.games-grid` (incl. `repeat(4, 1fr)` at ≥1280px).
+  2. Legacy `js/dot-waves.js` (creates `.dot-wave-canvas`) was never ported; CSS for the canvas already existed in `global.css`.
+- **Fix:** Rename wrapper to `games-grid`; add `src/scripts/dot-waves.ts` and call `initDotWaves()` from `GamesCatalog.astro`.
 
 ---
