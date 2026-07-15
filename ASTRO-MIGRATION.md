@@ -27,7 +27,7 @@ Task 3: Home page parity (`/`)
   - Notes: `output: static` + `@astrojs/cloudflare`; Worker name `scsfoxchase-tech`; stub at `src/pages/index.astro`; dropped duplicate `/newhome/` redirect to avoid Astro collision (kept `/newhome` → `/`; `/newhome/` covered later via `public/_redirects`)
   - Verify: `npm run build` PASS — `dist/client/index.html` contains stub
 - [x] Task 2: Base layout, global styles, Header/Footer
-  - Commit: `d367f66`
+  - Commit: `4959632`
   - Notes: `BaseLayout` + `Header`/`Footer`; `global.css` from `css/styles.css`; ESM `theme-toggle.ts`; minimal `public/` (manifest, sw.js, favicons, logo); Games nav → `/games`; FOUC-prevention inline theme script; SW register once in layout
   - Verify: `npm run build` PASS — `dist/client/index.html` has header/footer/theme/SW; brand tokens `#125F31`/`#F6D724` present in `src/styles/global.css`
 
