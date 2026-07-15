@@ -35,7 +35,7 @@ Task 5: Offline, 404, PWA icons, service worker
   - Notes: `SmartSearch` + `AppLauncher`; `home.css` from `home-mockups.css`; ESM `smart-search.ts`; `bodyClass="home-page"`; home tile/search icons + `background.png` in `public/images/`; global bg URL → `/images/background.png` (no vite warn)
   - Verify: `npm run build` PASS — dist has 3 smart-search forms, 21 app tiles, URLs/labels match `index.html`; home CSS media queries preserved
 - [x] Task 4: Games content collection + `/games` page
-  - Commit: (pending this commit)
+  - Commit: `06f3f40`
   - Notes: `src/content.config.ts` + 95 game JSON in `src/content/games/` (copied from `data/games/`; legacy `data/games/` kept for Task 9); `src/data/trending.json`; `GamesCatalog.astro` embeds build-time JSON via `#games-catalog-data` (no client `/data/games/*` fetches); `initGamesCatalog(games, trendingIds)`; carousel + placeholder-images ports; `public/_redirects` `/games.html` → `/games`; game thumbnails copied into `public/images/`
   - Verify: `npm run build` PASS — `dist/client/games/index.html`; embedded 95 games + 6 trending IDs; shell has hero-carousel / grade-chips / games-grid; no `/data/games/` in built HTML
 
