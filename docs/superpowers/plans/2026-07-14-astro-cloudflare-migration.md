@@ -75,7 +75,7 @@ Legacy root HTML/CSS/JS are removed only after parity cutover (Task 9).
 **Interfaces:**
 - Produces: `npm run dev`, `npm run build`, `npx wrangler deploy` (or `npm run deploy`) working against a stub page
 
-- [ ] **Step 1: Scaffold in the repo root without wiping the site**
+- [x] **Step 1: Scaffold in the repo root without wiping the site**
 
 From repo root, initialize Astro manually (do not use a destructive overwrite of existing files):
 
@@ -85,7 +85,7 @@ npm install astro @astrojs/cloudflare
 npm install -D wrangler typescript
 ```
 
-- [ ] **Step 2: Write `astro.config.mjs`**
+- [x] **Step 2: Write `astro.config.mjs`**
 
 ```js
 import { defineConfig } from 'astro/config';
@@ -106,7 +106,7 @@ export default defineConfig({
 
 Note: With current `@astrojs/cloudflare`, static output still uses the adapter for Workers static-asset deploys. If `astro add cloudflare` rewrites `output`, prefer hybrid/prerender-all pages over forcing unnecessary SSR for this school site. Every product page should set `export const prerender = true` if the project ends up in `server`/`hybrid` mode.
 
-- [ ] **Step 3: Write `wrangler.jsonc`**
+- [x] **Step 3: Write `wrangler.jsonc`**
 
 ```jsonc
 {
@@ -120,7 +120,7 @@ Note: With current `@astrojs/cloudflare`, static output still uses the adapter f
 
 If the installed adapter generates a different Wrangler shape (e.g. binding name `ASSETS`), follow the adapter’s generated config and keep the Worker name `scsfoxchase-tech` (or match the existing Cloudflare project name exactly).
 
-- [ ] **Step 4: Add scripts to `package.json`**
+- [x] **Step 4: Add scripts to `package.json`**
 
 ```json
 {
@@ -134,7 +134,7 @@ If the installed adapter generates a different Wrangler shape (e.g. binding name
 }
 ```
 
-- [ ] **Step 5: Temporary stub page**
+- [x] **Step 5: Temporary stub page**
 
 Create `src/pages/index.astro`:
 
@@ -148,7 +148,7 @@ export const prerender = true;
 </html>
 ```
 
-- [ ] **Step 6: Verify locally**
+- [x] **Step 6: Verify locally**
 
 Run:
 
@@ -166,7 +166,7 @@ npm run dev
 
 Expected: stub page at `http://localhost:4321`.
 
-- [ ] **Step 7: Commit** (only if user approved commits for this plan)
+- [x] **Step 7: Commit** (only if user approved commits for this plan)
 
 ```bash
 git add package.json package-lock.json astro.config.mjs wrangler.jsonc tsconfig.json src .gitignore
