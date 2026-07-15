@@ -13,7 +13,7 @@
 | BUG-002 | High | open | — | Games nav → `/games` (Header already `/games`; verify after 004) |
 | BUG-003 / BUG-008 | High | open | — | `/inventory` trailingSlash loop |
 | BUG-005 / BUG-006 / BUG-012 | High | open | — | Legacy `.html` / dir redirects with `Accept: text/html` |
-| BUG-001 | High | open | — | Smart search nametag hover yellow border on bar |
+| BUG-001 | High | fixed | `962dd39` | Smart search nametag hover yellows whole bar; human visual confirm still needed |
 | BUG-007 | High | open | — | Rebuild; ensure `dist/client` has prerendered HTML |
 | BUG-011 | High | fixed | _(same as 004)_ | Root `sw.js` archived; `public/sw.js` remains |
 | BUG-010 | Medium | open | — | No FA CDN on Astro pages (follows 004) |
@@ -25,7 +25,7 @@
 
 ## What’s left for human
 
-- Visual confirm smart-search hover yellows whole bar
+- Visual confirm smart-search hover yellows whole bar (BUG-001 CSS landed in `962dd39`)
 - Inventory camera/QR on real device
 - Production DNS / Workers cutover (see ASTRO-MIGRATION.md)
 - Click-check verification checklist below after restarting `npm run dev` in worktree
@@ -40,6 +40,12 @@
 - [ ] `npm run build` produces HTML in dist/client
 
 ## Per-bug detail
+
+### BUG-001 — Smart search nametag hover
+- **Status:** fixed
+- **Fix:** Mirrored title hover/focus-within border styles onto `.smart-search-bar` so field hover yellows the whole bar, not only the title tab.
+- **Commit(s):** `962dd39` (`fix(home): yellow smart-search bar border on title hover`)
+- **Verification:** Human visual confirm still needed (checklist item above).
 
 ### BUG-004 — Legacy root files shadow Astro
 - **Status:** fixed (commit pending)
