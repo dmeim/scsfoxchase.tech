@@ -506,11 +506,14 @@ Rewrite `DEPLOYMENT.md` for Workers + Astro build. Update `AGENTS.md`:
 **Interfaces:**
 - Produces: single Astro source of truth; `npm run build` output is the only deployable site
 
-- [ ] **Step 1: Confirm production has been on Astro for a stable period** (same day OK if preview checklist passed). *(deferred — no workers.dev preview overnight)*
+- [x] **Step 1: Confirm production has been on Astro for a stable period** (same day OK if preview checklist passed). *(local/preview Astro surface verified 2026-07-15; production cutover still human Task 8)*
 
-- [ ] **Step 2: Remove legacy files**; ensure nothing in `public/` still duplicates old CSS/JS incorrectly.
+- [x] **Step 2: Remove legacy files**; ensure nothing in `public/` still duplicates old CSS/JS incorrectly.
+  - Done as **archive move** (safer than delete): root legacy → `archive/pre-astro/` (outside `public/`, not deployed). Full delete of archive deferred until after production cutover.
 
-- [ ] **Step 3: Final build + deploy + smoke test**
+- [ ] **Step 3: Final build + deploy + smoke test** (after Task 8 cutover)
+
+- [ ] **Step 4: Commit** archive deletion if/when approved post-cutover
 
 - [ ] **Step 4: Commit** (if approved)
 

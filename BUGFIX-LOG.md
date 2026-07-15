@@ -14,11 +14,11 @@
 | BUG-003 / BUG-008 | High | fixed | `db3f2a8` | Flat `inventory.astro` + `build.format: 'file'` |
 | BUG-005 / BUG-006 / BUG-012 | High | fixed | `db3f2a8` + follow-ups | Redirects OK with `Accept: text/html` |
 | BUG-001 | High | fixed | `962dd39` | Smart-search bar yellow on field hover; human visual confirm |
-| BUG-007 | High | fixed | _(this pass)_ | `dist/client` has index/games/offline/inventory/404 HTML |
+| BUG-007 | High | fixed | `e0fb143` | `dist/client` has index/games/offline/inventory/404 HTML |
 | BUG-011 | High | fixed | `338ae96` | Root `sw.js` archived; `public/sw.js` only |
 | BUG-010 | Medium | verified | `6e39079` | No FA/`cdnjs` on Astro pages |
-| BUG-013 | Medium | fixed | _(this pass)_ | `imageService: 'passthrough'` + `sessionDrivers.lruCache()` |
-| Duplicate redirects | Medium | fixed | _(this pass)_ | `_redirects` only extras; Astro config owns `.html` rules |
+| BUG-013 | Medium | fixed | `e0fb143` | `imageService: 'passthrough'` + `sessionDrivers.lruCache()` |
+| Duplicate redirects | Medium | fixed | `e0fb143` | `_redirects` only extras; Astro config owns `.html` rules |
 | BUG-014 | Low | deferred | — | Sitemap intentional-ish |
 | Touch hover Chromebook | — | deferred | — | N/A |
 | Inventory camera/QR | — | deferred | — | Human hardware test |
@@ -82,15 +82,18 @@
 
 ### BUG-007 — Rebuild / dist HTML
 - **Status:** fixed
+- **Commit(s):** `e0fb143` (verification recorded)
 - **Verification:** `dist/client/{index,games,offline,inventory,404}.html` present after `npm run build`.
 
 ### BUG-013 — IMAGES / SESSION binding warnings
 - **Status:** fixed
+- **Commit(s):** `e0fb143`
 - **Fix:** `adapter: cloudflare({ imageService: 'passthrough', experimental: { headersAndRedirectsDevModeSupport: true } })` and `session: { driver: sessionDrivers.lruCache() }` so static site does not auto-enable Cloudflare Images / SESSION KV.
 - **Note:** App does not use Astro Image transforms or Astro sessions; these settings silence adapter defaults without wrangler binding stubs.
 
 ### Duplicate redirect warnings
 - **Status:** fixed
+- **Commit(s):** `e0fb143`
 - **Fix:** `public/_redirects` keeps only `/newhome/` and `/inventory/` (Astro config redirects are merged into dist `_redirects` at build). Preview now: “Parsed 7 valid redirect rules” with no duplicates.
 
 ---
