@@ -447,7 +447,7 @@ If inventory is out of scope for v1 cutover, skip this task and leave `inventory
 **Interfaces:**
 - Produces: `main` pushes build + deploy Worker; custom domain `scsfoxchase.tech` on Worker
 
-- [ ] **Step 1: Local production deploy dry-run**
+- [x] **Step 1: Local production deploy dry-run** *(overnight: `npm run build` + `wrangler deploy --dry-run` PASS; live `wrangler deploy` blocked — auth expired; human tomorrow)*
 
 ```bash
 npm run build
@@ -456,7 +456,7 @@ npx wrangler deploy
 
 Confirm Worker URL serves `/`, `/games`, offline, assets.
 
-- [ ] **Step 2: Connect Git → Workers Builds**
+- [ ] **Step 2: Connect Git → Workers Builds** *(manual — human tomorrow; see ASTRO-MIGRATION.md)*
 
 In Cloudflare dashboard:
 1. Create or convert project to Worker named to match `wrangler.jsonc` `name`
@@ -466,7 +466,7 @@ In Cloudflare dashboard:
 5. Root directory: repo root
 6. Production branch: `main`
 
-- [ ] **Step 3: Domain cutover window**
+- [ ] **Step 3: Domain cutover window** *(manual — human tomorrow; do not flip overnight)*
 
 1. Deploy Astro Worker on a `*.workers.dev` or preview URL first
 2. Run full checklist against preview
@@ -474,7 +474,7 @@ In Cloudflare dashboard:
 4. Disable/delete old Pages project only after DNS + HTTPS confirm
 5. Accept brief downtime during domain move
 
-- [ ] **Step 4: Post-cutover checklist**
+- [ ] **Step 4: Post-cutover checklist** *(manual — after domain move)*
 
 - [ ] `/` and `/games` load on desktop, iPad landscape, Chromebook height
 - [ ] `/games.html` redirects
@@ -484,7 +484,7 @@ In Cloudflare dashboard:
 - [ ] Inventory (if shipped) camera + webhook
 - [ ] No accidental SPA fallback of all routes to home
 
-- [ ] **Step 5: Update docs**
+- [x] **Step 5: Update docs**
 
 Rewrite `DEPLOYMENT.md` for Workers + Astro build. Update `AGENTS.md`:
 - Stack is Astro + Cloudflare Workers
@@ -492,11 +492,13 @@ Rewrite `DEPLOYMENT.md` for Workers + Astro build. Update `AGENTS.md`:
 - Games live in `src/content/games/`
 - No more “empty build command / publish `/`”
 
-- [ ] **Step 6: Commit** (if approved)
+- [x] **Step 6: Commit** (if approved)
 
 ---
 
 ### Task 9: Remove legacy static surface
+
+> **Overnight status (2026-07-15):** DEFERRED. workers.dev preview was not deployed (Wrangler auth expired). Legacy root HTML/CSS/JS/`data/games`/`inventory/` kept on purpose until human verifies preview (or production) per safer cutover rule. `dist/` is already Astro-only.
 
 **Files:**
 - Delete from repo root after cutover confirmed: `index.html`, `games.html`, `hub.html`, `404.html`, `offline.html`, `testing.html`, `css/`, `js/` (except anything still needed — should be none), duplicate `newhome/`, optionally move `oldhome/` + `old-site/` to a separate archive branch or leave unlinked under `archive/` outside the Astro `public/` tree so they are not deployed
@@ -504,7 +506,7 @@ Rewrite `DEPLOYMENT.md` for Workers + Astro build. Update `AGENTS.md`:
 **Interfaces:**
 - Produces: single Astro source of truth; `npm run build` output is the only deployable site
 
-- [ ] **Step 1: Confirm production has been on Astro for a stable period** (same day OK if preview checklist passed).
+- [ ] **Step 1: Confirm production has been on Astro for a stable period** (same day OK if preview checklist passed). *(deferred — no workers.dev preview overnight)*
 
 - [ ] **Step 2: Remove legacy files**; ensure nothing in `public/` still duplicates old CSS/JS incorrectly.
 
