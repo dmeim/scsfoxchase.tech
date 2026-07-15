@@ -274,16 +274,16 @@ Manual checklist:
 - Consumes: content collection `games`
 - Produces: `getCollection('games')` at build time; client receives serialized JSON embed or `data-games` attribute for filtering UI
 
-- [ ] **Step 1: Define collection schema in `src/content.config.ts`**
+- [x] **Step 1: Define collection schema in `src/content.config.ts`**
 
 Schema fields matching existing JSON:
 `id`, `name`, `url`, `image`, `description`, `minGrade`, `maxGrade`, `primaryCategories[]`, `secondaryCategories[]`
 
 Exclude `_index.json` and `_trending.json` from the collection glob (trending becomes `src/data/trending.json`).
 
-- [ ] **Step 2: Move game JSON files** into `src/content/games/` (keep filenames as IDs). Keep a copy under `public/data/games/` **only if** something still needs public URLs during transition; delete public copies once client no longer fetches them.
+- [x] **Step 2: Move game JSON files** into `src/content/games/` (keep filenames as IDs). Keep a copy under `public/data/games/` **only if** something still needs public URLs during transition; delete public copies once client no longer fetches them.
 
-- [ ] **Step 3: Port carousel CSS/JS** and games catalog JS into Astro scripts. Refactor `games.js` so it accepts an in-memory array instead of fetching:
+- [x] **Step 3: Port carousel CSS/JS** and games catalog JS into Astro scripts. Refactor `games.js` so it accepts an in-memory array instead of fetching:
 
 ```ts
 export function initGamesCatalog(games: Game[], trendingIds: string[]) { /* ... */ }
@@ -306,23 +306,23 @@ const games = (await getCollection('games')).map((e) => e.data);
 
 (Adjust `define:vars` + import pattern to valid Astro 5 script rules; if `define:vars` cannot mix with imports, embed `JSON.stringify(games)` into a `type="application/json"` script tag and read it from the module.)
 
-- [ ] **Step 4: `games.astro`** uses `BaseLayout`, imports carousel + home/games styles as needed, sets `body` class `games-page`, includes `GamesCatalog`.
+- [x] **Step 4: `games.astro`** uses `BaseLayout`, imports carousel + home/games styles as needed, sets `body` class `games-page`, includes `GamesCatalog`.
 
-- [ ] **Step 5: Add redirect** already in config for `/games.html` → `/games`. Add `public/_redirects` entry as backup:
+- [x] **Step 5: Add redirect** already in config for `/games.html` → `/games`. Add `public/_redirects` entry as backup:
 
 ```
 /games.html /games 301
 ```
 
-- [ ] **Step 6: Parity check**
+- [x] **Step 6: Parity check**
 
-- [ ] All games render without network waterfalls to `/data/games/*.json`
-- [ ] Search, grade chips, category chips filter correctly
-- [ ] Trending carousel autoplay/indicators work
-- [ ] Clicking a game opens the external URL
-- [ ] Broken images get placeholders (if that behavior is kept)
+- [x] All games render without network waterfalls to `/data/games/*.json`
+- [x] Search, grade chips, category chips filter correctly
+- [x] Trending carousel autoplay/indicators work
+- [x] Clicking a game opens the external URL
+- [x] Broken images get placeholders (if that behavior is kept)
 
-- [ ] **Step 7: Commit** (if approved)
+- [x] **Step 7: Commit** (if approved)
 
 ---
 

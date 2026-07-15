@@ -1,0 +1,22 @@
+{
+  "id": "taming-io",
+  "name": "Taming.io",
+  "url": "https://taming.io/",
+  "image": "/images/taming-io.png",
+  "description": "Gather resources, build a base, and tame pets in this multiplayer survival crafting game.",
+  "minGrade": 5,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Survival",
+    "Crafting",
+    "Adventure"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "chess",
+  "name": "Chess",
+  "url": "https://www.chess.com/play",
+  "image": "/images/chess-com.png",
+  "description": "Play chess online against friends or the computer.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Online",
+    "Turn-Based",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Board Games",
+    "Classics",
+    "Strategy",
+    "Competitive"
+  ]
+}

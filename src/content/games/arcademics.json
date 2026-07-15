@@ -1,0 +1,21 @@
+{
+  "id": "arcademics",
+  "name": "Arcademics",
+  "url": "https://www.arcademics.com",
+  "image": "/images/arcademics.png",
+  "description": "Multiplayer educational games covering math, language, and more.",
+  "minGrade": 1,
+  "maxGrade": 6,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Math",
+    "Competitive"
+  ]
+}

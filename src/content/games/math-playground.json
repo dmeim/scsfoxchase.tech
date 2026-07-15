@@ -1,0 +1,20 @@
+{
+  "id": "math-playground",
+  "name": "Math Playground",
+  "url": "https://www.mathplayground.com/",
+  "image": "/images/math-playground.png",
+  "description": "Math games, logic puzzles, and educational activities.",
+  "minGrade": 1,
+  "maxGrade": 6,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Educational",
+    "Math",
+    "Kids",
+    "Logic"
+  ]
+}

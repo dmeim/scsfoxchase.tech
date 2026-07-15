@@ -1,0 +1,20 @@
+{
+  "id": "shady-bears",
+  "name": "Shady Bears",
+  "url": "https://shadybears.net/",
+  "image": "/images/shadybears.jpg",
+  "description": "A cozy collection of web-based mini-games.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Kids",
+    "Casual",
+    "Puzzle",
+    "Art & Creativity"
+  ]
+}

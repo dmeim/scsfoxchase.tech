@@ -1,0 +1,84 @@
+---
+import { getCollection } from 'astro:content';
+import trending from '../data/trending.json';
+
+const games = (await getCollection('games')).map((entry) => entry.data);
+const trendingIds = trending as string[];
+const catalogPayload = JSON.stringify({ games, trendingIds });
+---
+
+<section class="hero-carousel">
+  <div class="carousel-container">
+    <button class="carousel-button prev" aria-label="Previous slide">
+      <i class="fas fa-chevron-left"></i>
+    </button>
+    <div class="carousel-track-container">
+      <ul class="carousel-track" id="trending-carousel">
+        <li class="carousel-slide loading">
+          <div class="loading-spinner"></div>
+          <p>Loading trending games...</p>
+        </li>
+      </ul>
+    </div>
+    <button class="carousel-button next" aria-label="Next slide">
+      <i class="fas fa-chevron-right"></i>
+    </button>
+    <div class="carousel-nav"></div>
+  </div>
+</section>
+
+<section class="games-section">
+  <div class="container">
+    <div class="filter-container">
+      <div class="search-grade-row">
+        <div class="search-bar">
+          <i class="fas fa-search search-icon"></i>
+          <input type="text" id="game-search" placeholder="Search games..." autocomplete="off" />
+        </div>
+        <div class="filter-group filter-group-inline">
+          <span class="filter-group-label">Grade</span>
+          <div class="filter-chips-row" id="grade-chips">
+            <span class="filter-chip" data-grade="1">1</span>
+            <span class="filter-chip" data-grade="2">2</span>
+            <span class="filter-chip" data-grade="3">3</span>
+            <span class="filter-chip" data-grade="4">4</span>
+            <span class="filter-chip" data-grade="5">5</span>
+            <span class="filter-chip" data-grade="6">6</span>
+            <span class="filter-chip" data-grade="7">7</span>
+            <span class="filter-chip" data-grade="8">8</span>
+          </div>
+        </div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-group-label">Type</span>
+        <div class="filter-chips-row" id="primary-category-chips"></div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-group-label">Genre</span>
+        <div class="filter-chips-row" id="secondary-category-chips"></div>
+      </div>
+    </div>
+
+    <div class="game-grid" id="games-grid">
+      <div class="loading-container">
+        <div class="loading-spinner"></div>
+        <p>Loading games...</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script type="application/json" id="games-catalog-data" set:html={catalogPayload} />
+
+<script>
+  import { initGamesCatalog } from '../scripts/games-catalog';
+
+  const dataEl = document.getElementById('games-catalog-data');
+  if (dataEl?.textContent) {
+    const { games, trendingIds } = JSON.parse(dataEl.textContent) as {
+      games: Parameters<typeof initGamesCatalog>[0];
+      trendingIds: string[];
+    };
+    initGamesCatalog(games, trendingIds);
+  }
+</script>

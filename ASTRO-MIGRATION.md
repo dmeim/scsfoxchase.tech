@@ -3,7 +3,7 @@
 **Branch:** astro-cloudflare-migration
 **Worktree:** `/Users/dimitri/Library/Mobile Documents/com~apple~CloudDocs/~/Code/scsfoxchase.tech/.worktrees/astro-cloudflare-migration`
 **Plan:** docs/superpowers/plans/2026-07-14-astro-cloudflare-migration.md
-**Last updated:** 2026-07-15T01:42:00Z
+**Last updated:** 2026-07-15T01:48:00Z
 **Status:** in progress
 
 ## Decisions (locked)
@@ -18,7 +18,7 @@
 - Subagent model: `cursor-grok-4.5-high` (fallback `composer-2.5`)
 
 ## Current task
-Task 4: Games content collection + `/games` page
+Task 5: Offline, 404, PWA icons, service worker
 
 ## Completed
 - [x] Step 0: Worktree created (base: `bacc732` gitignore)
@@ -34,19 +34,26 @@ Task 4: Games content collection + `/games` page
   - Commit: `0d46d75`
   - Notes: `SmartSearch` + `AppLauncher`; `home.css` from `home-mockups.css`; ESM `smart-search.ts`; `bodyClass="home-page"`; home tile/search icons + `background.png` in `public/images/`; global bg URL → `/images/background.png` (no vite warn)
   - Verify: `npm run build` PASS — dist has 3 smart-search forms, 21 app tiles, URLs/labels match `index.html`; home CSS media queries preserved
+- [x] Task 4: Games content collection + `/games` page
+  - Commit: (pending this commit)
+  - Notes: `src/content.config.ts` + 95 game JSON in `src/content/games/` (copied from `data/games/`; legacy `data/games/` kept for Task 9); `src/data/trending.json`; `GamesCatalog.astro` embeds build-time JSON via `#games-catalog-data` (no client `/data/games/*` fetches); `initGamesCatalog(games, trendingIds)`; carousel + placeholder-images ports; `public/_redirects` `/games.html` → `/games`; game thumbnails copied into `public/images/`
+  - Verify: `npm run build` PASS — `dist/client/games/index.html`; embedded 95 games + 6 trending IDs; shell has hero-carousel / grade-chips / games-grid; no `/data/games/` in built HTML
 
 ## In progress
-- Task 4
+- Task 5
 
 ## Blockers / risks
 - Cloudflare dashboard domain cutover requires human tomorrow
 - Wrangler deploy needs CF credentials (attempt dry-run in Task 8)
 - Adapter emits `dist/client/` (not flat `dist/`) — follow generated wrangler on deploy
 - Font Awesome still via CDN (Task 6 may drop/self-host)
-- No interactive browser viewport smoke for home (build + HTML/CSS parity only)
+- No interactive browser viewport smoke for games filters/carousel (build + HTML/JS embed parity only)
 - iCloud Drive under worktree can briefly desync `public/images` / `src` — re-copy if assets vanish mid-session
+- Legacy `data/games/` + `games.html` still present until Task 9 (Astro does not depend on them)
 
 ## Verification log
+- 2026-07-15T01:46:58Z — Task 4 `npm run build` Pass (full permissions). `dist/client/games/index.html` embeds 95 games + trending; carousel/filter shell present; no `/data/games/` fetch path in HTML.
+- 2026-07-15T01:43:33Z — Checkpoint Tasks 1–3: npm run build PASS; dist home has SmartSearch + AppLauncher + BaseLayout. Pass.
 - 2026-07-15T01:30:00Z — Isolation check / worktree create. Pass.
 - 2026-07-15T01:32:19Z — Task 1 `npm run build` Pass (full permissions). Stub HTML in `dist/client/index.html`.
 - 2026-07-15T01:34:14Z — Task 2 `npm run build` Pass (full permissions). `dist/client/index.html` includes header, footer, theme bootstrap, theme-toggle module, SW register `/sw.js` `{ updateViaCache: 'none' }`, favicons + manifest from `public/`.
@@ -58,15 +65,25 @@ Task 4: Games content collection + `/games` page
 | package.json | present |
 | astro.config.mjs | present |
 | wrangler.jsonc | present |
+| src/content.config.ts | present (games collection) |
+| src/content/games/*.json | present (95 games; copied from data/games) |
+| src/data/trending.json | present |
 | src/pages/index.astro | full home (SmartSearch + AppLauncher) |
+| src/pages/games.astro | present (`bodyClass="games-page"`) |
 | src/layouts/BaseLayout.astro | present |
 | src/components/Header.astro | present |
 | src/components/Footer.astro | present |
 | src/components/SmartSearch.astro | present |
 | src/components/AppLauncher.astro | present |
+| src/components/GamesCatalog.astro | present (JSON embed + client init) |
 | src/styles/global.css | present (bg → `/images/background.png`) |
 | src/styles/home.css | present (from home-mockups.css) |
+| src/styles/carousel.css | present |
 | src/scripts/theme-toggle.ts | present |
 | src/scripts/smart-search.ts | present |
-| public/manifest.json, sw.js, favicons, images/* (home set) | present |
-| Legacy HTML | still present (expected until Task 9) |
+| src/scripts/games-catalog.ts | present (`initGamesCatalog`) |
+| src/scripts/carousel.ts | present |
+| src/scripts/placeholder-images.ts | present (image fallbacks only) |
+| public/_redirects | present (`/games.html` → `/games`) |
+| public/manifest.json, sw.js, favicons, images/* (home + game thumbs) | present |
+| Legacy HTML / data/games | still present (expected until Task 9) |
