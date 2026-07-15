@@ -23,7 +23,7 @@
 | Touch hover Chromebook | — | deferred | — | N/A |
 | Inventory camera/QR | — | deferred | — | Human hardware test |
 | Production DNS cutover | — | deferred | — | Human |
-| BUG-015 | Medium | fixed | *(pending commit)* | Games wave bg + 4-col grid |
+| BUG-015 | Medium | fixed | `6dfc3e8` | Games wave bg + 4-col grid |
 
 ## What’s left for human
 
@@ -100,7 +100,7 @@
 
 ### BUG-015 — Games page missing wave background and 4-column grid
 - **Status:** fixed
-- **Commit(s):** *(filled after commit)*
+- **Commit(s):** `6dfc3e8`
 - **Root cause:**
   1. `GamesCatalog.astro` used `class="game-grid"` but `global.css` styles `.games-grid` (incl. `repeat(4, 1fr)` at ≥1280px).
   2. Legacy `js/dot-waves.js` (creates `.dot-wave-canvas`) was never ported; CSS for the canvas already existed in `global.css`.
