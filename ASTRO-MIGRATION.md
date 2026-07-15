@@ -31,7 +31,7 @@ Task 4: Games content collection + `/games` page
   - Notes: `BaseLayout` + `Header`/`Footer`; `global.css` from `css/styles.css`; ESM `theme-toggle.ts`; minimal `public/` (manifest, sw.js, favicons, logo); Games nav → `/games`; FOUC-prevention inline theme script; SW register once in layout
   - Verify: `npm run build` PASS — `dist/client/index.html` has header/footer/theme/SW; brand tokens `#125F31`/`#F6D724` present in `src/styles/global.css`
 - [x] Task 3: Home page parity (`/`)
-  - Commit: *(pending — filled after commit)*
+  - Commit: `0d46d75`
   - Notes: `SmartSearch` + `AppLauncher`; `home.css` from `home-mockups.css`; ESM `smart-search.ts`; `bodyClass="home-page"`; home tile/search icons + `background.png` in `public/images/`; global bg URL → `/images/background.png` (no vite warn)
   - Verify: `npm run build` PASS — dist has 3 smart-search forms, 21 app tiles, URLs/labels match `index.html`; home CSS media queries preserved
 

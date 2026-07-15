@@ -22,7 +22,7 @@ Port homepage SmartSearch + AppLauncher into Astro for parity with `index.html`.
 | `ASTRO-MIGRATION.md` | Current→Task 4; Task 3 completed + verification log |
 
 ## Commits
-- *(filled after commit)*
+- `0d46d75` — Port homepage SmartSearch and AppLauncher into Astro for parity.
 
 ## Validation
 - `npm run build` → **PASS** (full permissions)
