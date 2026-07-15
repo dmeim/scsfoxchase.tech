@@ -48,7 +48,7 @@ Task 8: Workers cutover (dry-run / docs)
   - Verify: `npm run build` PASS — dist has `_headers`/`_redirects`/robots/sitemap; no cdnjs/FA in dist HTML; no catch-all SPA rewrite
 
 - [x] Task 7: Inventory page (full Astro port)
-  - Commit: _(pending)_
+  - Commit: `513242c`
   - Notes: `src/pages/inventory/index.astro` + `src/styles/inventory.css` + `src/scripts/inventory.ts`; jsQR at `public/vendor/jsQR.min.js`; device images in `public/images/`; webhook via `PUBLIC_INVENTORY_WEBHOOK` fallback `https://n8n.mlabz.io/webhook/scs-inventory`; FA icons → inline SVG; CSP camera + n8n unchanged; legacy `inventory/` kept for Task 9
   - Verify: `npm run build` PASS — `dist/client/inventory/index.html` + vendor/jsQR + DOM hooks; QR/camera not exercised headlessly
 
