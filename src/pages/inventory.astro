@@ -1,8 +1,8 @@
 ---
 export const prerender = true;
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import { iconPrint, iconQrCode, iconSearch, iconTimes } from '../../scripts/icons';
-import '../../styles/inventory.css';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { iconPrint, iconQrCode, iconSearch, iconTimes } from '../scripts/icons';
+import '../styles/inventory.css';
 ---
 <BaseLayout title="Inventory Lookup | St. Cecilia Technology" bodyClass="asset-lookup-page">
   <meta
@@ -93,6 +93,6 @@ import '../../styles/inventory.css';
 
   <script is:inline src="/vendor/jsQR.min.js"></script>
   <script>
-    import '../../scripts/inventory';
+    import '../scripts/inventory';
   </script>
 </BaseLayout>

@@ -11,7 +11,7 @@
 |--------|----------|--------|-----------|-------|
 | BUG-004 | Critical | fixed | _(pending commit)_ | Legacy moved to `archive/pre-astro/` (outside `public/`) |
 | BUG-002 | High | open | — | Games nav → `/games` (Header already `/games`; verify after 004) |
-| BUG-003 / BUG-008 | High | open | — | `/inventory` trailingSlash loop |
+| BUG-003 / BUG-008 | High | fixed | `4acb76a` | Flat `inventory.astro` + `build.format: file`; `/inventory` 200, `/inventory/`→301 |
 | BUG-005 / BUG-006 / BUG-012 | High | open | — | Legacy `.html` / dir redirects with `Accept: text/html` |
 | BUG-001 | High | fixed | `962dd39` | Smart search nametag hover yellows whole bar; human visual confirm still needed |
 | BUG-007 | High | open | — | Rebuild; ensure `dist/client` has prerendered HTML |
@@ -51,12 +51,19 @@
 - **Status:** fixed (commit pending)
 - **Fix:** Moved legacy HTML + dirs + duplicate root statics into `archive/pre-astro/` (not under `public/`, not deployed). Root now only Astro project files + `public/` + `src/`.
 - **Moved:** `index.html`, `games.html`, `offline.html`, `404.html`, `hub.html`, `testing.html`, `inventory/`, `newhome/`, `oldhome/`, `old-site/`, `css/`, `js/`, `data/`, `images/`, root `sw.js`, `manifest.json`, `robots.txt`, `sitemap.xml`, favicons, `.htaccess`
-- **Commit(s):** _(fill after commit)_
+- **Commit(s):** 
 - **Verification:** Root clean; `public/sw.js` remains. Dev/curl verify after restart.
 
 ### BUG-011 — Duplicate root sw.js
 - **Status:** fixed (same commit as BUG-004)
 - **Fix:** Root `sw.js` → `archive/pre-astro/sw.js`; only `public/sw.js` is source of truth.
 - **Commit(s):** _(same as BUG-004)_
+
+
+### BUG-003 / BUG-008 — `/inventory` trailingSlash loop
+- **Status:** fixed
+- **Fix:** Moved `src/pages/inventory/index.astro` → `src/pages/inventory.astro` (flat route). Set `build.format: 'file'` so routes emit `inventory.html` / `games.html` / `offline.html` instead of `*/index.html` directories that 307 to trailing slash and fought `_redirects`. Added `public/_redirects` rule `/inventory/ → /inventory` (301). Did **not** add Astro `redirects['/inventory/']` (that collided with the page and produced a self-redirect).
+- **Commit(s):** `4acb76a`
+- **Verification:** `npm run build` → `dist/client/inventory.html`. `wrangler pages dev`: `/inventory` → 200; `/inventory/` → 301 → `/inventory`; `/games` and `/offline` → 200; slash variants 307 to no-slash (no loop).
 
 ---

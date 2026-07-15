@@ -6,10 +6,14 @@ export default defineConfig({
   output: 'static',
   adapter: cloudflare(),
   trailingSlash: 'never',
+  build: {
+    format: 'file',
+  },
   redirects: {
     '/games.html': '/games',
-    '/newhome': '/',
     '/hub.html': '/',
+    '/hub': '/',
+    '/newhome': '/',
     '/offline.html': '/offline',
   },
 });
