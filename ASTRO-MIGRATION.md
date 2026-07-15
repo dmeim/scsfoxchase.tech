@@ -3,8 +3,8 @@
 **Branch:** astro-cloudflare-migration
 **Worktree:** `/Users/dimitri/Library/Mobile Documents/com~apple~CloudDocs/~/Code/scsfoxchase.tech/.worktrees/astro-cloudflare-migration`
 **Plan:** docs/superpowers/plans/2026-07-14-astro-cloudflare-migration.md
-**Last updated:** 2026-07-15T02:03:37Z
-**Status:** in progress
+**Last updated:** 2026-07-15T02:10:00Z
+**Status:** in progress (Task 8 overnight docs/build done; domain cutover = human tomorrow)
 
 ## Decisions (locked)
 - Offline URL: `/offline` (canonical; not offline.html)
@@ -18,7 +18,7 @@
 - Subagent model: `cursor-grok-4.5-high` (fallback `composer-2.5`)
 
 ## Current task
-Task 8: Workers cutover (dry-run / docs)
+Task 8: Workers cutover — overnight docs/build complete; **dashboard/domain steps = human tomorrow**
 
 ## Completed
 - [x] Step 0: Worktree created (base: `bacc732` gitignore)
@@ -52,22 +52,94 @@ Task 8: Workers cutover (dry-run / docs)
   - Notes: `src/pages/inventory/index.astro` + `src/styles/inventory.css` + `src/scripts/inventory.ts`; jsQR at `public/vendor/jsQR.min.js`; device images in `public/images/`; webhook via `PUBLIC_INVENTORY_WEBHOOK` fallback `https://n8n.mlabz.io/webhook/scs-inventory`; FA icons → inline SVG; CSP camera + n8n unchanged; legacy `inventory/` kept for Task 9
   - Verify: `npm run build` PASS — `dist/client/inventory/index.html` + vendor/jsQR + DOM hooks; QR/camera not exercised headlessly
 
-## In progress
-- Task 8
+- [x] Task 8 (overnight only): Docs + local build + auth attempt
+  - Commit: *(this commit)*
+  - Notes: Rewrote `DEPLOYMENT.md` + `AGENTS.md` for Astro Workers; `wrangler.jsonc` assets → `./dist/client`; confirmed `cloudflare-pages.toml` absent; `npx wrangler whoami` → **not logged in** (token expired) — **no workers.dev preview deploy overnight**; full domain cutover checklist below for human tomorrow
+  - Verify: `npm run build` PASS; Worker name remains `scsfoxchase-tech`
+
+## In progress / deferred (manual — human tomorrow)
+- [ ] Task 8 Step 1 (live): `npx wrangler deploy` to workers.dev after `wrangler login`
+- [ ] Task 8 Step 2: Connect Git → Workers Builds (dashboard)
+- [ ] Task 8 Step 3: Domain cutover `scsfoxchase.tech` Pages → Worker
+- [ ] Task 8 Step 4: Post-cutover checklist on production
+
+## Human tomorrow — domain cutover checklist
+
+**Do not do these overnight. Production Pages must keep serving until you finish this list.**
+
+### A. Auth + workers.dev preview (CLI)
+
+1. In the worktree:  
+   `cd ".../scsfoxchase.tech/.worktrees/astro-cloudflare-migration"`
+2. `npx wrangler login` (interactive browser) **or** export a scoped `CLOUDFLARE_API_TOKEN`
+3. `npx wrangler whoami` — confirm account
+4. `npm run build`
+5. `npx wrangler deploy` — deploys Worker **`scsfoxchase-tech`** with assets from **`./dist/client`**
+6. Open the printed `*.workers.dev` URL and smoke:
+   - [ ] `/` and `/games`
+   - [ ] `/games.html` redirects to `/games`
+   - [ ] `/offline`, `/inventory`
+   - [ ] Theme toggle persists
+   - [ ] SW registers; DevTools offline reload shows `/offline`
+   - [ ] Response headers include CSP + HSTS (from `public/_headers`)
+   - [ ] No SPA catch-all sending unknown routes to home (404 should be 404)
+
+### B. Workers Builds (Git → Cloudflare dashboard)
+
+In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create** / open Worker:
+
+1. Worker name: **`scsfoxchase-tech`** (must match `wrangler.jsonc`)
+2. Connect the GitHub repo
+3. Root directory: repo root
+4. Build command: **`npm run build`**
+5. Deploy command: **`npx wrangler deploy`**
+6. Production branch: **`main`**
+7. Save; wait for a successful build on a non-production branch or workers.dev first if possible
+8. **Do not** attach the custom domain yet
+
+### C. Domain move (accept brief downtime)
+
+1. Keep the **old Pages project running** until the Worker preview passes section A/B.
+2. In the Worker `scsfoxchase-tech` → **Custom domains** → add **`scsfoxchase.tech`** (and `www` if used).
+3. Remove / detach **`scsfoxchase.tech`** from the **old Pages** project so only the Worker owns the hostname.
+4. Wait for DNS + SSL on the Worker custom domain (usually a few minutes).
+5. Verify production HTTPS on `https://scsfoxchase.tech` (full post-cutover checklist below).
+6. **Only then** disable or delete the old Pages project.
+
+### D. Post-cutover checklist (production)
+
+- [ ] `/` and `/games` load on desktop, iPad landscape, Chromebook height
+- [ ] `/games.html` redirects
+- [ ] Theme persists
+- [ ] SW registers; offline works
+- [ ] Headers present (CSP, HSTS)
+- [ ] Inventory camera + webhook (if shipped)
+- [ ] No accidental SPA fallback of all routes to home
+
+### Deploy path reminder
+
+| Item | Value |
+|------|--------|
+| Worker name | `scsfoxchase-tech` |
+| Build | `npm run build` |
+| Deploy | `npx wrangler deploy` |
+| Assets | `./dist/client` (not `/`, not `./dist`) |
+| Docs | `DEPLOYMENT.md`, this file |
 
 ## Blockers / risks
 - Task 7: QR/camera + live n8n lookup not exercised headlessly — needs human browser pass with camera permission
 - Legacy `inventory/` + `js/inventory.js` still present until Task 9
 - Cloudflare dashboard domain cutover requires human tomorrow
-- Wrangler deploy needs CF credentials (attempt dry-run in Task 8)
-- Adapter emits `dist/client/` (not flat `dist/`) — follow generated wrangler on deploy
+- **Wrangler auth expired overnight** — `whoami` failed; no workers.dev URL yet. Human must `wrangler login` then deploy.
+- Adapter emits `dist/client/` — root `wrangler.jsonc` now points assets there
 - No interactive browser viewport smoke for games filters/carousel (build + HTML/JS embed parity only)
 - iCloud Drive under worktree can briefly desync `public/images` / `src` — re-copy if assets vanish mid-session
 - Legacy `data/games/` + `games.html` still present until Task 9 (Astro does not depend on them)
-- Task 5: `astro preview` redirects `/offline`→`/offline/` (307); SW uses fetch+put under `/offline` key. Confirm Workers Assets serves `/offline` without redirect in Task 8. Full DevTools offline toggle still needs human pass.
+- Task 5: `astro preview` redirects `/offline`→`/offline/` (307); SW uses fetch+put under `/offline` key. Confirm Workers Assets serves `/offline` without redirect after workers.dev deploy. Full DevTools offline toggle still needs human pass.
 - Task 6: Astro config redirects + `public/_redirects` both emit rules (duplicate lines in dist `_redirects` — harmless). Root legacy `robots.txt`/`sitemap.xml` still exist until Task 9 cleanup.
 
 ## Verification log
+- 2026-07-15T02:06:59Z — Task 8 overnight: `npm run build` PASS; `wrangler deploy --dry-run` PASS (169 assets from `dist/client`, Worker `scsfoxchase-tech`); `wrangler whoami` FAIL (auth expired) — no workers.dev deploy. Docs rewritten; `cloudflare-pages.toml` confirmed absent.
 - 2026-07-15T02:03:37Z — Task 7 `npm run build` Pass (full permissions). `dist/client/inventory/index.html` has DOM hooks + jsQR + inventory module; CSP camera=(self) + n8n.mlabz.io; device images + fallback in dist.
 - 2026-07-15T01:58:52Z — Checkpoint Tasks 4–6: build PASS; /games embed; offline/404; SW /offline; FA CDN removed; public/_headers; cloudflare-pages.toml removed. Pass.
 - 2026-07-15T01:57:32Z — Task 6 `npm run build` Pass (full permissions). `dist/client/_headers` CSP without cdnjs, camera + n8n preserved; `_redirects` has games/newhome/hub/offline; robots/sitemap host `scsfoxchase.tech`; no FA/cdnjs in dist HTML; `cloudflare-pages.toml` deleted.

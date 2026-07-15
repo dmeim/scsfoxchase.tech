@@ -1,30 +1,36 @@
 # AGENTS.md
 ## Project Overview
 
-St. Cecilia Technology — a static PWA serving as a dashboard and educational games catalog for a grade school. Used daily by students and teachers on both full-size desktop monitors and small Dell Chromebooks.
+St. Cecilia Technology — a PWA dashboard and educational games catalog for a grade school. Used daily by students and teachers on full-size desktop monitors and small Dell Chromebooks.
 
 ## Development
 
-No build step, no package manager, no dependencies. This is a pure HTML/CSS/vanilla JS static site.
+**Stack:** Astro 7 + `@astrojs/cloudflare`, deployed as a Cloudflare Worker with static assets.
 
-- **Dev server**: Any static server works (e.g., `python3 -m http.server 8000`)
-- **Deployment**: Push to `main` branch auto-deploys to Cloudflare Pages (no build command)
+- **Dev server**: `npm run dev` (Astro)
+- **Production build**: `npm run build` → output under `dist/client/`
+- **Deploy**: `npx wrangler deploy` (Worker name `scsfoxchase-tech`)
 - **Domain**: scsfoxchase.tech
+
+See `DEPLOYMENT.md` for Workers Builds settings and cutover notes.
 
 ## Architecture
 
-- **Static PWA** with service worker (`sw.js`) for offline support. Uses network-first strategy — no cache versioning needed. Only the offline fallback page is pre-cached; all other assets are cached on fetch for offline use only.
-- **Game data** lives in `data/games/` as individual JSON files. `_index.json` lists all game IDs; `_trending.json` lists carousel games. To add a game: create its JSON file and add the ID to `_index.json`.
-- **Theming** uses CSS variables on `:root` with dark mode via `[data-theme="dark"]` selectors. Theme state persists in localStorage.
-- **`js/placeholder-images.js`** dynamically generates PWA icons and fallback images when assets fail to load.
+- **Astro static site** adapted for Cloudflare Workers Assets (`output: 'static'` + Cloudflare adapter).
+- **PWA** with service worker (`public/sw.js`) for offline support. Network-first for navigations; `/offline` is the canonical offline page. `/_astro/*` is cache-first.
+- **Game data** lives in `src/content/games/` as individual JSON files (Astro content collection). Trending IDs live in `src/data/trending.json`. To add a game: add its JSON under `src/content/games/` (collection picks it up at build time).
+- **Theming** uses CSS variables on `:root` with dark mode via `[data-theme="dark"]`. Theme state persists in localStorage (`src/scripts/theme-toggle.ts`).
+- **`src/scripts/placeholder-images.ts`** provides image fallbacks when assets fail to load.
 
 ## Key Pages
 
-| Route | File | Purpose |
-|-------|------|---------|
-| `/` | `index.html` | Homepage — search bars + app launcher grid |
-| `/games.html` | `games.html` | Game catalog with filtering/carousel |
-| `/hub.html` | `hub.html` | Archived old homepage (kept for potential reuse) |
+| Route | Source | Purpose |
+|-------|--------|---------|
+| `/` | `src/pages/index.astro` | Homepage — search bars + app launcher grid |
+| `/games` | `src/pages/games.astro` | Game catalog with filtering/carousel |
+| `/offline` | `src/pages/offline.astro` | Offline fallback |
+| `/inventory` | `src/pages/inventory/index.astro` | Staff device inventory lookup + QR |
+| `/games.html` | redirect | → `/games` |
 
 ## Device Compatibility (Important)
 
@@ -33,7 +39,7 @@ The site runs on three device types:
 - **Student Chromebooks**: 11.6" screens (1366x768), limited vertical space
 - **iPads**: ~1024px wide in landscape, limited horizontal space
 
-Responsive queries in `css/styles.css`:
+Responsive queries in `src/styles/global.css` / `home.css`:
 - `@media (max-width: 1100px)` — iPad scaling (narrower app tiles, smaller icons/gaps)
 - `@media (max-width: 768px)` — Mobile/phone layout (stacked elements)
 - `@media (max-height: 800px)` — Chromebook vertical compression
@@ -42,12 +48,14 @@ Responsive queries in `css/styles.css`:
 
 ## Deployment Config
 
-- `cloudflare-pages.toml` — Cloudflare Pages settings (no build command, publish dir is `/`)
-- `_headers` — Security headers (CSP, HSTS, X-Frame-Options, cache rules)
-- `sw.js` — Service worker with network-first strategy for HTML, cache fallback for assets
+- `wrangler.jsonc` — Worker `scsfoxchase-tech`, assets `./dist/client`
+- `public/_headers` — Security headers (CSP, HSTS, X-Frame-Options, cache rules)
+- `public/_redirects` — Legacy path redirects
+- `public/sw.js` — Service worker (network-first HTML, cache fallback for assets)
+- **Do not** use empty Pages build / publish `/` — `cloudflare-pages.toml` is removed
 
 ## Style Conventions
 
 - Colors: primary `#125F31` (green), secondary `#F6D724` (yellow)
 - Border radius: `2px` for cards/buttons, `999px` for pills/search bars
-- No CSS framework — all custom styles in `css/styles.css` and `css/carousel.css`
+- No CSS framework — styles in `src/styles/` (`global.css`, `home.css`, `carousel.css`, `inventory.css`)
