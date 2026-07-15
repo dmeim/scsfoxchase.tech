@@ -1,0 +1,73 @@
+---
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Page Not Found - St. Cecilia Technology">
+  <meta
+    slot="head"
+    name="description"
+    content="Page not found - St. Cecilia Technology"
+  />
+
+  <section class="error-container">
+    <div class="error-icon">
+      <i class="fas fa-gamepad"></i>
+    </div>
+    <h2 class="error-title">Page Not Found</h2>
+    <p class="error-message">
+      Oops! The page you're looking for seems to have gone on an adventure of its own.
+    </p>
+    <div class="error-actions">
+      <a href="/" class="btn">
+        <i class="fas fa-home"></i> Go Home
+      </a>
+      <a href="/games" class="btn">
+        <i class="fas fa-gamepad"></i> Explore Games
+      </a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .error-container {
+    text-align: center;
+    padding: 60px 20px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .error-icon {
+    font-size: 80px;
+    color: var(--primary-color);
+    margin-bottom: 20px;
+  }
+
+  .error-title {
+    font-size: 2.5rem;
+    margin-bottom: 20px;
+    color: var(--primary-color);
+  }
+
+  .error-message {
+    font-size: 1.2rem;
+    margin-bottom: 30px;
+    color: var(--text-color);
+  }
+
+  .error-actions {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 480px) {
+    .error-title {
+      font-size: 2rem;
+    }
+
+    .error-message {
+      font-size: 1rem;
+    }
+  }
+</style>

@@ -336,11 +336,11 @@ const games = (await getCollection('games')).map((e) => e.data);
 **Interfaces:**
 - Produces: offline fallback still works; SW does not break hashed `/_astro/*` assets
 
-- [ ] **Step 1: Port `offline.html` and `404.html`** into Astro pages using `BaseLayout` (or a minimal layout if header differs). Move inline CSS into small scoped style files or page `<style>` blocks.
+- [x] **Step 1: Port `offline.html` and `404.html`** into Astro pages using `BaseLayout` (or a minimal layout if header differs). Move inline CSS into small scoped style files or page `<style>` blocks.
 
-- [ ] **Step 2: Fix manifest icons** — ensure files exist at the paths in `manifest.json`.
+- [x] **Step 2: Fix manifest icons** — ensure files exist at the paths in `manifest.json`.
 
-- [ ] **Step 3: Rewrite `public/sw.js`**
+- [x] **Step 3: Rewrite `public/sw.js`**
 
 Keep:
 - Pre-cache `/offline` (or `/offline.html` if that remains the URL — pick **one** canonical offline URL and use it everywhere)
@@ -353,11 +353,11 @@ Change:
 - For `/_astro/*` hashed assets: cache-first on successful fetch is OK; never serve stale HTML for navigations
 - Precache only the offline document, not the whole site
 
-- [ ] **Step 4: Register SW from `BaseLayout` only**
+- [x] **Step 4: Register SW from `BaseLayout` only**
 
-- [ ] **Step 5: Verify** in DevTools: SW registers; offline toggle shows offline page; hard reload after deploy gets new HTML (network-first).
+- [x] **Step 5: Verify** in DevTools: SW registers; offline toggle shows offline page; hard reload after deploy gets new HTML (network-first). *(overnight: build + curl/grep smoke; full DevTools offline toggle deferred to human)*
 
-- [ ] **Step 6: Commit** (if approved)
+- [x] **Step 6: Commit** (if approved)
 
 ---
 
