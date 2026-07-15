@@ -176,7 +176,7 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 | astro.config.mjs | present (redirects: games.html, newhome, hub.html, offline.html) |
 | wrangler.jsonc | present |
 | cloudflare-pages.toml | deleted (SPA rewrite removed) |
-| public/_headers | present (sole headers source; n8n + camera; `/_astro/*` cache) |
+| public/_headers | present (sole headers source; n8n + camera; max-age≤3600, no immutable) |
 | public/_redirects | present (games/newhome/hub/offline) |
 | public/robots.txt | present (`scsfoxchase.tech`) |
 | public/sitemap.xml | present (`/` + `/games` only) |

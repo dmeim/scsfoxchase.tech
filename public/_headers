@@ -1,4 +1,6 @@
 # Security headers — single source of truth for Cloudflare (Astro public/)
+# Cache: max-age ≤ 3600 everywhere (never immutable). Long immutable TTLs on
+# /_astro/* previously cached 404s for a year when CSS was briefly missing.
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
@@ -6,15 +8,10 @@
   Permissions-Policy: camera=(self), microphone=(), geolocation=()
   Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com https://*.n8n.cloud https://n8n.mlabz.io
   Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cache-Control: public, max-age=3600, must-revalidate
 
 /inventory
   X-Robots-Tag: noindex, nofollow
 
 /inventory/*
   X-Robots-Tag: noindex, nofollow
-
-/_astro/*
-  Cache-Control: public, max-age=31536000, immutable
-
-/images/*
-  Cache-Control: public, max-age=3600, must-revalidate

@@ -1,8 +1,14 @@
 {
   "name": "scsfoxchase-tech",
   "compatibility_date": "2026-07-14",
+  // Ensure workers.dev route is published (DNS must resolve for preview)
+  "workers_dev": true,
+  "preview_urls": true,
   // Astro + @astrojs/cloudflare (output: static) emits static assets under dist/client/
   "assets": {
-    "directory": "./dist/client"
+    "directory": "./dist/client",
+    // Missing assets must 404 — never SPA-fallback HTML onto CSS (breaks under nosniff)
+    "not_found_handling": "404-page",
+    "html_handling": "drop-trailing-slash"
   }
 }

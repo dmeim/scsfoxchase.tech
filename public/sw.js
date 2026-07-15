@@ -1,8 +1,8 @@
 // Service Worker for St. Cecilia Technology (Astro)
 // Navigations: network-first (never stale HTML; offline page on failure)
-// /_astro/* hashed assets: cache-first
-// Other same-origin assets: network-first with cache fallback
-const CACHE_NAME = 'st-cecilia-tech-astro-v1';
+// /_astro/* and other assets: network-first with cache fallback
+// (v2: drop cache-first on /_astro — poisoned immutable 404s broke CSS)
+const CACHE_NAME = 'st-cecilia-tech-astro-v2';
 const OFFLINE_PAGE = '/offline';
 
 self.addEventListener('install', (event) => {
@@ -53,24 +53,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Hashed Astro build assets — cache-first (content-addressed filenames)
-  if (url.pathname.startsWith('/_astro/')) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        });
-      })
-    );
-    return;
-  }
-
-  // Other same-origin assets — network-first, cache for offline fallback
+  // Same-origin assets (including hashed /_astro/*) — network-first, cache for offline
   event.respondWith(
     fetch(event.request)
       .then((response) => {
