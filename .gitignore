@@ -1,1 +1,3 @@
 **/.DS_Store
+# Git worktrees (local isolation)
+.worktrees/
