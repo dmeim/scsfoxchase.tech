@@ -12,7 +12,7 @@ St. Cecilia Technology — a PWA dashboard and educational games catalog for a g
 - **Deploy**: `npx wrangler deploy` (Worker name `scsfoxchase-tech`)
 - **Domain**: scsfoxchase.tech
 
-See `DEPLOYMENT.md` for Workers Builds settings and cutover notes.
+See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ See `DEPLOYMENT.md` for Workers Builds settings and cutover notes.
 | `/` | `src/pages/index.astro` | Homepage — search bars + app launcher grid |
 | `/games` | `src/pages/games.astro` | Game catalog with filtering/carousel |
 | `/offline` | `src/pages/offline.astro` | Offline fallback |
-| `/inventory` | `src/pages/inventory/index.astro` | Staff device inventory lookup + QR |
+| `/inventory` | `src/pages/inventory.astro` | Staff device inventory lookup + QR |
 | `/games.html` | redirect | → `/games` |
 
 ## Device Compatibility (Important)

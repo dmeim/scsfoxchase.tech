@@ -3,7 +3,7 @@
 St. Cecilia Technology is an **Astro** site deployed as a **Cloudflare Worker** with static assets (Workers Assets). It is **not** a Cloudflare Pages project anymore.
 
 - **Worker name:** `scsfoxchase-tech` (must match `wrangler.jsonc` `name`)
-- **Domain:** `scsfoxchase.tech`
+- **Domain:** `scsfoxchase.tech` — live on Worker `scsfoxchase-tech`
 - **Build command:** `npm run build`
 - **Deploy command:** `npx wrangler deploy`
 - **Assets directory:** `./dist/client` (Astro adapter emits client assets here — not repo root `/`, not flat `./dist`)
@@ -61,18 +61,11 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 
 **Important:** Workers Builds must use Node **≥ 20.17** (prefer **22**). Older Node can fail to upload nested static dirs like `/_astro/`, which leaves HTML unstyled (header logo at full 1000×1000). Prefer **Deploy command** `npx wrangler deploy` over relying only on `versions upload` for asset-heavy static sites.
 
-Every push to `main` should build and deploy the Worker. Prefer verifying on `*.workers.dev` / preview URLs before attaching the custom domain.
+Every push to `main` should build and deploy the Worker.
 
-## Custom domain cutover
+## Domain
 
-Pointing `scsfoxchase.tech` at this Worker is a **manual dashboard step**. See **Human tomorrow — domain cutover** in [`ASTRO-MIGRATION.md`](./ASTRO-MIGRATION.md).
-
-Rules of thumb:
-
-1. Deploy and smoke-test the Worker on workers.dev / preview first.
-2. Move the custom domain from the old Pages project to Worker `scsfoxchase-tech`.
-3. Only disable/delete the old Pages project after DNS + HTTPS confirm on the Worker.
-4. Expect brief downtime during the domain move.
+`scsfoxchase.tech` is attached to Worker `scsfoxchase-tech`. The old Cloudflare Pages project has been removed. No further domain cutover steps are required.
 
 ## Useful CLI commands
 
@@ -90,9 +83,9 @@ npx wrangler tail        # live logs
 | File | Role |
 |---|---|
 | `wrangler.jsonc` | Worker name + assets directory |
-| `astro.config.mjs` | Astro + `@astrojs/cloudflare` adapter |
+| `astro.config.mjs` | Astro + `@astrojs/cloudflare` adapter; legacy redirects (`/games.html` → `/games`, `/hub`, `/offline.html`, etc.) |
 | `public/_headers` | CSP, HSTS, cache rules (sole headers source) |
-| `public/_redirects` | Legacy path redirects (`/games.html` → `/games`, etc.) |
+| `public/_redirects` | Path redirects for `/newhome/` and `/inventory/` only |
 | `public/sw.js` | Service worker (network-first navigations) |
 
 `cloudflare-pages.toml` has been **removed** — do not restore Pages SPA rewrites or empty-build Pages settings.

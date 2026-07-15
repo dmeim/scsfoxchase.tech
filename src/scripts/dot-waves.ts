@@ -1,4 +1,4 @@
-// Animated dotted wave background for the games page (ported from archive/pre-astro/js/dot-waves.js)
+// Animated dotted wave background for the games page
 
 type Dot = {
   x: number;
