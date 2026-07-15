@@ -115,7 +115,7 @@
 - **Fix:** Scope the override to `.home-page main .container` so the shared Header matches games.
 
 ### BUG-017 — Gigantic logo / unstyled workers.dev (CSS not applying)
-- **Status:** fixed (deployed version `cf027424`; `9be2e74`)
+- **Status:** fixed (manual deploy `beea4e6b`; commit `9be2e74`)
 - **Symptom:** Homepage showed unstyled HTML — 1000×1000 `scs-logo.png` at full intrinsic size.
 - **Root cause:** `/_astro/*` had `Cache-Control: public, max-age=31536000, immutable`. When CSS was briefly missing (or 404) after early deploys, browsers cached those **404s as immutable for a year**. Redeploys that restored CSS could not override the poisoned client cache for the same hashed URLs. Local `wrangler` confirmed `_headers` also applied that long TTL to `/_astro` 404 responses.
 - **Fix:** Cap all site `Cache-Control` to `max-age=3600, must-revalidate` (no `immutable`); bump SW to `st-cecilia-tech-astro-v2` and network-first all assets; change `.header-logo` CSS to force new `/_astro` hash (`BaseLayout.Bvsk51aj.css`); set `workers_dev`/`not_found_handling: 404-page` in `wrangler.jsonc`.
