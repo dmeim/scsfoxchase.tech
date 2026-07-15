@@ -57,6 +57,9 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 | Build command | `npm run build` |
 | Deploy command | `npx wrangler deploy` |
 | Worker name | `scsfoxchase-tech` |
+| Node version | **22+** (set `NODE_VERSION=22` in Workers Builds vars, or rely on `.nvmrc` / `package.json` `engines`) |
+
+**Important:** Workers Builds must use Node **≥ 20.17** (prefer **22**). Older Node can fail to upload nested static dirs like `/_astro/`, which leaves HTML unstyled (header logo at full 1000×1000). Prefer **Deploy command** `npx wrangler deploy` over relying only on `versions upload` for asset-heavy static sites.
 
 Every push to `main` should build and deploy the Worker. Prefer verifying on `*.workers.dev` / preview URLs before attaching the custom domain.
 
