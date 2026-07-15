@@ -3,7 +3,7 @@
 **Branch:** astro-cloudflare-migration
 **Worktree:** `/Users/dimitri/Library/Mobile Documents/com~apple~CloudDocs/~/Code/scsfoxchase.tech/.worktrees/astro-cloudflare-migration`
 **Plan:** docs/superpowers/plans/2026-07-14-astro-cloudflare-migration.md
-**Last updated:** 2026-07-15T01:57:32Z
+**Last updated:** 2026-07-15T02:03:37Z
 **Status:** in progress
 
 ## Decisions (locked)
@@ -18,7 +18,7 @@
 - Subagent model: `cursor-grok-4.5-high` (fallback `composer-2.5`)
 
 ## Current task
-Task 7: Inventory page
+Task 8: Workers cutover (dry-run / docs)
 
 ## Completed
 - [x] Step 0: Worktree created (base: `bacc732` gitignore)
@@ -47,10 +47,17 @@ Task 7: Inventory page
   - Notes: Dropped Font Awesome CDN entirely (inline SVGs via `src/scripts/icons.ts` + template SVGs); `public/_headers` sole CSP source (n8n connect-src + camera Permissions-Policy; no cdnjs); deleted `cloudflare-pages.toml` SPA rewrite + root `_headers`; `public/_redirects` for games/newhome/hub/offline; hand `public/sitemap.xml` (`/` + `/games`); `public/robots.txt` host `scsfoxchase.tech`
   - Verify: `npm run build` PASS — dist has `_headers`/`_redirects`/robots/sitemap; no cdnjs/FA in dist HTML; no catch-all SPA rewrite
 
+- [x] Task 7: Inventory page (full Astro port)
+  - Commit: _(pending)_
+  - Notes: `src/pages/inventory/index.astro` + `src/styles/inventory.css` + `src/scripts/inventory.ts`; jsQR at `public/vendor/jsQR.min.js`; device images in `public/images/`; webhook via `PUBLIC_INVENTORY_WEBHOOK` fallback `https://n8n.mlabz.io/webhook/scs-inventory`; FA icons → inline SVG; CSP camera + n8n unchanged; legacy `inventory/` kept for Task 9
+  - Verify: `npm run build` PASS — `dist/client/inventory/index.html` + vendor/jsQR + DOM hooks; QR/camera not exercised headlessly
+
 ## In progress
-- Task 7
+- Task 8
 
 ## Blockers / risks
+- Task 7: QR/camera + live n8n lookup not exercised headlessly — needs human browser pass with camera permission
+- Legacy `inventory/` + `js/inventory.js` still present until Task 9
 - Cloudflare dashboard domain cutover requires human tomorrow
 - Wrangler deploy needs CF credentials (attempt dry-run in Task 8)
 - Adapter emits `dist/client/` (not flat `dist/`) — follow generated wrangler on deploy
@@ -61,6 +68,8 @@ Task 7: Inventory page
 - Task 6: Astro config redirects + `public/_redirects` both emit rules (duplicate lines in dist `_redirects` — harmless). Root legacy `robots.txt`/`sitemap.xml` still exist until Task 9 cleanup.
 
 ## Verification log
+- 2026-07-15T02:03:37Z — Task 7 `npm run build` Pass (full permissions). `dist/client/inventory/index.html` has DOM hooks + jsQR + inventory module; CSP camera=(self) + n8n.mlabz.io; device images + fallback in dist.
+- 2026-07-15T01:58:52Z — Checkpoint Tasks 4–6: build PASS; /games embed; offline/404; SW /offline; FA CDN removed; public/_headers; cloudflare-pages.toml removed. Pass.
 - 2026-07-15T01:57:32Z — Task 6 `npm run build` Pass (full permissions). `dist/client/_headers` CSP without cdnjs, camera + n8n preserved; `_redirects` has games/newhome/hub/offline; robots/sitemap host `scsfoxchase.tech`; no FA/cdnjs in dist HTML; `cloudflare-pages.toml` deleted.
 - 2026-07-15T01:52:35Z — Task 5 `npm run build` Pass (full permissions). `dist/client/offline/index.html` + `404.html`; SW `OFFLINE_PAGE=/offline` + `/_astro` cache-first; icons 192/512 present; preview curl smoke for `/offline` + icons.
 - 2026-07-15T01:46:58Z — Task 4 `npm run build` Pass (full permissions). `dist/client/games/index.html` embeds 95 games + trending; carousel/filter shell present; no `/data/games/` fetch path in HTML.
@@ -88,6 +97,10 @@ Task 7: Inventory page
 | src/pages/games.astro | present (`bodyClass="games-page"`) |
 | src/pages/offline.astro | present (canonical `/offline`) |
 | src/pages/404.astro | present |
+| src/pages/inventory/index.astro | present (staff inventory lookup + QR) |
+| src/styles/inventory.css | present |
+| src/scripts/inventory.ts | present (ESM; PUBLIC_INVENTORY_WEBHOOK fallback) |
+| public/vendor/jsQR.min.js | present |
 | src/layouts/BaseLayout.astro | present (no FA CDN; sole SW registration) |
 | src/components/Header.astro | present |
 | src/components/Footer.astro | present |

@@ -425,13 +425,13 @@ Tune CSP after FA decision. Keep `connect-src` entries for n8n if inventory rema
 - Consumes: n8n webhook URL (keep as constant or `import.meta.env.PUBLIC_INVENTORY_WEBHOOK`)
 - Produces: `/inventory` parity including camera QR
 
-- [ ] **Step 1: Port page + styles + client script** as an Astro page with `BaseLayout` or a staff layout.
+- [x] **Step 1: Port page + styles + client script** as an Astro page with `BaseLayout` or a staff layout.
 
-- [ ] **Step 2: Confirm CSP `connect-src` and `Permissions-Policy camera=(self)` allow scanner + webhook.
+- [x] **Step 2: Confirm CSP `connect-src` and `Permissions-Policy camera=(self)` allow scanner + webhook.
 
-- [ ] **Step 3: Manual test** lookup + QR (or mock mode).
+- [x] **Step 3: Manual test** lookup + QR (or mock mode).
 
-- [ ] **Step 4: Commit** (if approved)
+- [x] **Step 4: Commit** (if approved)
 
 If inventory is out of scope for v1 cutover, skip this task and leave `inventory/` as a static folder under `public/inventory/` temporarily — but prefer full Astro port for the “entirely Astro” goal.
 
