@@ -1,7 +1,11 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
+import SmartSearch from '../components/SmartSearch.astro';
+import AppLauncher from '../components/AppLauncher.astro';
+import '../styles/home.css';
 ---
-<BaseLayout title="St. Cecilia Technology">
-  <p>Astro scaffold OK — BaseLayout active.</p>
+<BaseLayout title="St. Cecilia Technology" bodyClass="home-page">
+  <SmartSearch />
+  <AppLauncher />
 </BaseLayout>

@@ -1,0 +1,17 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M15 4C16.1046 4 17 4.89543 17 6V18C17 19.1046 16.1046 20 15 20H4.75C3.36929 20 2.25 18.8807 2.25 17.5V9C2.25 6.23858 4.48858 4 7.25 4H15Z" fill="url(#paint0_linear_1_187)"/>
+<g clip-path="url(#paint1_diamond_1_187_clip_path)" data-figma-skip-parse="true"><g transform="matrix(-4.1445e-10 0.0115 -0.00929215 -3.30323e-10 17 12)"><rect x="0" y="0" width="707.162" height="1601.61" fill="url(#paint1_diamond_1_187)" opacity="1" shape-rendering="crispEdges"/><rect x="0" y="0" width="707.162" height="1601.61" transform="scale(1 -1)" fill="url(#paint1_diamond_1_187)" opacity="1" shape-rendering="crispEdges"/><rect x="0" y="0" width="707.162" height="1601.61" transform="scale(-1 1)" fill="url(#paint1_diamond_1_187)" opacity="1" shape-rendering="crispEdges"/><rect x="0" y="0" width="707.162" height="1601.61" transform="scale(-1)" fill="url(#paint1_diamond_1_187)" opacity="1" shape-rendering="crispEdges"/></g></g><path fill-rule="evenodd" clip-rule="evenodd" d="M15 4C16.1046 4 17 4.89543 17 6V18C17 19.1046 16.1046 20 15 20H4.75C3.36929 20 2.25 18.8807 2.25 17.5V9C2.25 6.23858 4.48858 4 7.25 4H15Z" data-figma-gradient-fill="{&#34;type&#34;:&#34;GRADIENT_DIAMOND&#34;,&#34;stops&#34;:[{&#34;color&#34;:{&#34;r&#34;:0.99215686321258545,&#34;g&#34;:0.7294117808341980,&#34;b&#34;:0.85098040103912354,&#34;a&#34;:1.0},&#34;position&#34;:0.14163926243782043},{&#34;color&#34;:{&#34;r&#34;:1.0,&#34;g&#34;:0.90062564611434937,&#34;b&#34;:0.42307692766189575,&#34;a&#34;:0.0},&#34;position&#34;:1.0}],&#34;stopsVar&#34;:[{&#34;color&#34;:{&#34;r&#34;:0.99215686321258545,&#34;g&#34;:0.7294117808341980,&#34;b&#34;:0.85098040103912354,&#34;a&#34;:1.0},&#34;position&#34;:0.14163926243782043},{&#34;color&#34;:{&#34;r&#34;:1.0,&#34;g&#34;:0.90062564611434937,&#34;b&#34;:0.42307692766189575,&#34;a&#34;:0.0},&#34;position&#34;:1.0}],&#34;transform&#34;:{&#34;m00&#34;:-8.2890034036608995e-07,&#34;m01&#34;:-18.584297180175781,&#34;m02&#34;:26.292148590087891,&#34;m10&#34;:23.0,&#34;m11&#34;:-6.6064529846698861e-07,&#34;m12&#34;:0.50000071525573730},&#34;opacity&#34;:1.0,&#34;blendMode&#34;:&#34;NORMAL&#34;,&#34;visible&#34;:true}"/>
+<path d="M4.25 16.5C4.25021 15.6167 4.96626 14.9006 5.84961 14.9004C6.73313 14.9004 7.44998 15.6165 7.4502 16.5C7.4502 17.3837 6.73326 18.1006 5.84961 18.1006C4.96613 18.1004 4.25 17.3835 4.25 16.5Z" fill="white"/>
+<path d="M17 15.5V9L20.9631 6.47801C21.6288 6.05437 22.5 6.53258 22.5 7.32167V17.1783C22.5 17.9674 21.6288 18.4456 20.9631 18.022L17 15.5Z" fill="#F9AC02"/>
+<defs>
+<clipPath id="paint1_diamond_1_187_clip_path"><path fill-rule="evenodd" clip-rule="evenodd" d="M15 4C16.1046 4 17 4.89543 17 6V18C17 19.1046 16.1046 20 15 20H4.75C3.36929 20 2.25 18.8807 2.25 17.5V9C2.25 6.23858 4.48858 4 7.25 4H15Z"/></clipPath><linearGradient id="paint0_linear_1_187" x1="17" y1="9.5" x2="1.97684" y2="14.4294" gradientUnits="userSpaceOnUse">
+<stop stop-color="#FADE13"/>
+<stop offset="0.4" stop-color="#FADE13"/>
+<stop offset="1" stop-color="#FCCA03"/>
+</linearGradient>
+<linearGradient id="paint1_diamond_1_187" x1="0" y1="0" x2="500" y2="500" gradientUnits="userSpaceOnUse">
+<stop offset="0.141639" stop-color="#FDBAD9"/>
+<stop offset="1" stop-color="#FFE66C" stop-opacity="0"/>
+</linearGradient>
+</defs>
+</svg>

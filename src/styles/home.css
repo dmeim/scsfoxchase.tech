@@ -1,0 +1,409 @@
+/* Home page styles — ported from css/home-mockups.css */
+.home-mockup main { flex: 1; }
+.mockup-shell { width: 100%; max-width: 1500px; margin: 0 auto; padding: clamp(12px, 2vw, 28px) 20px; }
+.mockup-title { text-align:center; color: var(--primary-color); margin-bottom: 12px; font-size: clamp(1.2rem, 2vw, 2rem); }
+.mockup-kicker { text-align:center; font-weight:700; opacity:.75; margin-bottom: 18px; }
+.mockup-search-grid { display:grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.mockup-search-grid .google-search-bar { max-width:none; min-width:0; }
+.mockup-card, .mockup-link { background: rgba(249,249,249,.58); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 2px solid var(--border-color); border-radius: 2px; }
+[data-theme="dark"] .mockup-card, [data-theme="dark"] .mockup-link { background: rgba(45,45,45,.58); }
+.mockup-link { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--text-color); font-weight:700; text-align:center; transition:var(--transition); }
+.mockup-link:hover { border-color: var(--primary-color); color: var(--secondary-color); transform: translateY(-2px); }
+.mockup-link img { width:42px; height:42px; object-fit:contain; border-radius:8px; }
+.mockup-section-title { color: var(--primary-color); font-size: 1rem; margin-bottom: 10px; text-align:center; }
+
+/* home1: command center */
+.home1-board { display:grid; grid-template-columns: 1.15fr 1fr 1fr; gap:14px; align-items:stretch; }
+.home1-board .mockup-card { padding:14px; }
+.home1-big { display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+.home1-big .mockup-link { min-height:105px; flex-direction:column; }
+.home1-list { display:grid; gap:8px; }
+.home1-list .mockup-link { min-height:58px; justify-content:flex-start; padding:8px 12px; }
+
+/* home2: launchpad */
+.home2-launchpad { display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; }
+.home2-launchpad .mockup-link { min-height:108px; flex-direction:column; padding:12px 8px; }
+.home2-wide { grid-column: span 2; }
+
+/* home3: lanes */
+.home3-lanes { display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; }
+.home3-lane { padding:14px; display:flex; flex-direction:column; gap:9px; }
+.home3-lane .mockup-link { min-height:62px; justify-content:flex-start; padding:8px 10px; }
+.home3-lane .mockup-link:first-of-type { min-height:112px; flex-direction:column; justify-content:center; }
+
+/* home4: dashboard */
+.home4-dashboard { display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; }
+.home4-hero { padding:18px; display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+.home4-hero h2 { grid-column: 1 / -1; color:var(--primary-color); text-align:center; }
+.home4-hero .mockup-link { min-height:118px; flex-direction:column; }
+.home4-side { display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+.home4-side .mockup-link { min-height:86px; flex-direction:column; padding:10px; }
+
+@media (max-width: 1100px) {
+  .mockup-search-grid { grid-template-columns: repeat(2, 1fr); }
+  .home1-board, .home3-lanes, .home4-dashboard { grid-template-columns: 1fr 1fr; }
+  .home2-launchpad { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 768px) {
+  .mockup-search-grid, .home1-board, .home3-lanes, .home4-dashboard, .home4-hero, .home4-side { grid-template-columns: 1fr; }
+  .home2-launchpad { grid-template-columns: repeat(2, 1fr); }
+  .home2-wide { grid-column: span 1; }
+}
+@media (max-height: 800px) and (min-width: 901px) {
+  .mockup-shell { padding-top: 10px; padding-bottom: 8px; }
+  .mockup-title { margin-bottom: 4px; font-size: 1.35rem; }
+  .mockup-kicker { display:none; }
+  .mockup-search-grid { margin-bottom: 10px; }
+  .mockup-link img { width:34px; height:34px; }
+  .home2-launchpad .mockup-link { min-height:82px; }
+  .home1-big .mockup-link, .home3-lane .mockup-link:first-of-type, .home4-hero .mockup-link { min-height:82px; }
+  .home1-list .mockup-link, .home3-lane .mockup-link { min-height:46px; }
+}
+
+/* /newhome workflow concept */
+.newhome-groups { padding: clamp(10px, 1.8vw, 26px) 0; }
+.newhome-workflow-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: clamp(10px, 1.4vw, 20px);
+    align-items: start;
+}
+.newhome-group-card {
+    background: rgba(249,249,249,.58);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 2px solid var(--border-color);
+    border-radius: 2px;
+    padding: clamp(10px, 1.2vw, 16px);
+}
+[data-theme="dark"] .newhome-group-card { background: rgba(45,45,45,.58); }
+.newhome-group-links {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(7px, .9vw, 12px);
+}
+.newhome-group-links .mockup-link {
+    min-height: clamp(68px, 7vw, 104px);
+    flex-direction: column;
+    padding: 8px 6px;
+    font-size: clamp(.72rem, .85vw, .95rem);
+}
+.newhome-group-links .newhome-main-link {
+    grid-column: 1 / -1;
+    min-height: clamp(92px, 9vw, 140px);
+    font-size: clamp(.95rem, 1.1vw, 1.2rem);
+}
+.newhome-group-links .newhome-main-link img { width: clamp(48px, 5vw, 72px); height: clamp(48px, 5vw, 72px); }
+.newhome-leftovers {
+    margin-top: clamp(12px, 1.6vw, 24px);
+}
+.newhome-leftover-links {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: clamp(8px, 1vw, 14px);
+    max-width: 760px;
+    margin: 0 auto;
+}
+.newhome-leftover-links .mockup-link {
+    min-height: 66px;
+    padding: 8px 10px;
+}
+@media (max-width: 1100px) {
+    .newhome-workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 768px) {
+    .newhome-workflow-grid, .newhome-leftover-links { grid-template-columns: 1fr; }
+}
+@media (max-height: 800px) and (min-width: 901px) {
+    .newhome-groups { padding: 8px 0; }
+    .newhome-group-card { padding: 9px; }
+    .newhome-group-links .mockup-link { min-height: 54px; }
+    .newhome-group-links .newhome-main-link { min-height: 74px; }
+    .newhome-leftovers { margin-top: 8px; }
+    .newhome-leftover-links .mockup-link { min-height: 48px; }
+}
+
+/* /newhome two-group workflow revision */
+.newhome-workflow-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 1180px;
+    margin: 0 auto;
+}
+.newhome-group-links-rows {
+    display: flex;
+    flex-direction: column;
+}
+.newhome-link-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(7px, .9vw, 12px);
+}
+.newhome-link-row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newhome-link-row-1 { grid-template-columns: minmax(0, 1fr); }
+.newhome-link-row .mockup-link {
+    min-height: clamp(68px, 7vw, 104px);
+    flex-direction: column;
+    padding: 8px 6px;
+    font-size: clamp(.72rem, .85vw, .95rem);
+}
+.newhome-link-row .newhome-feature-link,
+.newhome-link-row .newhome-main-link {
+    min-height: clamp(92px, 9vw, 140px);
+    font-size: clamp(.95rem, 1.1vw, 1.2rem);
+}
+.newhome-link-row .newhome-feature-link img,
+.newhome-link-row .newhome-main-link img {
+    width: clamp(48px, 5vw, 72px);
+    height: clamp(48px, 5vw, 72px);
+}
+@media (max-width: 768px) {
+    .newhome-workflow-grid-2 { grid-template-columns: 1fr; }
+}
+@media (max-height: 800px) and (min-width: 901px) {
+    .newhome-link-row .mockup-link { min-height: 54px; }
+    .newhome-link-row .newhome-feature-link,
+    .newhome-link-row .newhome-main-link { min-height: 74px; }
+}
+
+/* Keep main links side-by-side inside explicit rows */
+.newhome-link-row .newhome-main-link,
+.newhome-link-row .newhome-feature-link {
+    grid-column: auto;
+}
+
+/* Smart search dropdown mockup */
+.smart-search-bar {
+    position: relative;
+    overflow: hidden;
+}
+.smart-search-picker {
+    position: relative;
+    flex-shrink: 0;
+}
+.smart-search-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 100%;
+    padding: 0 6px 0 clamp(10px, 1vw, 16px);
+    border: 0;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+.smart-search-icon {
+    width: clamp(18px, 1.5vw, 24px);
+    height: clamp(18px, 1.5vw, 24px);
+    object-fit: contain;
+}
+.smart-search-label {
+    font-size: clamp(.78rem, .85vw, .95rem);
+    white-space: nowrap;
+}
+.smart-search-toggle .fa-chevron-down {
+    font-size: .65rem;
+    opacity: .55;
+}
+.smart-search-separator {
+    color: var(--border-color);
+    font-weight: 700;
+    padding: 0 2px;
+}
+.smart-search-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 8px;
+    min-width: 150px;
+    padding: 6px;
+    background: var(--light-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    z-index: 200;
+}
+[data-theme="dark"] .smart-search-menu { background: var(--dark-bg); }
+.smart-search-menu.open { display: grid; gap: 4px; }
+.smart-search-option {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-color);
+    padding: 8px 10px;
+    font: inherit;
+    font-weight: 650;
+    text-align: left;
+    cursor: pointer;
+}
+.smart-search-option:hover,
+.smart-search-option.active {
+    background: rgba(18, 95, 49, .1);
+}
+.smart-search-option img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+@media (max-width: 768px) {
+    .smart-search-label { max-width: 68px; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* Keep smart search separator fixed as labels change */
+.smart-search-picker {
+    width: 144px;
+}
+.smart-search-toggle {
+    width: 100%;
+    justify-content: flex-start;
+}
+.smart-search-label {
+    flex: 1;
+    text-align: left;
+}
+
+/* Smart bars use the same clipped pill edge behavior as the regular search bars. */
+.smart-search-bar .smart-search-menu {
+    position: fixed;
+}
+
+
+/* Titles above the smart search bars */
+.smart-search-bars-titled {
+    align-items: flex-end;
+}
+.smart-search-field {
+    flex: 1;
+    max-width: 500px;
+    min-width: 0;
+}
+.smart-search-field .smart-search-bar {
+    max-width: none;
+    width: 100%;
+}
+.smart-search-title {
+    width: fit-content;
+    min-width: 150px;
+    margin: 0 auto -2px;
+    padding: 5px 22px 7px;
+    color: var(--light-text);
+    background: var(--primary-color);
+    border: clamp(3px, 0.3vw, 5px) solid var(--border-color);
+    border-bottom: 0;
+    border-radius: 999px 999px 0 0;
+    font-size: clamp(.95rem, 1.05vw, 1.15rem);
+    line-height: 1;
+    font-weight: 850;
+    text-align: center;
+    position: relative;
+    z-index: 1;
+}
+@media (max-width: 900px) {
+    .smart-search-field {
+        max-width: 100%;
+    }
+}
+
+/* Search title tabs sit behind the main pill and mirror hover/focus states. */
+.smart-search-field .smart-search-bar {
+    position: relative;
+    z-index: 2;
+}
+.smart-search-title {
+    z-index: 0;
+    transition: var(--transition);
+}
+.smart-search-field:hover .smart-search-title {
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(246, 215, 36, 0.15);
+}
+.smart-search-field:focus-within .smart-search-title {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(18, 95, 49, 0.12);
+}
+
+[data-theme="dark"] .newhome-group-card .app-row-header {
+    color: var(--light-text);
+}
+
+/* iPad/tablet portrait: use the old-home responsive behavior, but keep the
+   new grouped app layout. Search fields wrap instead of shrinking into unusable pills. */
+@media (min-width: 740px) and (max-width: 900px) {
+    .newhome-groups {
+        padding-top: 10px;
+    }
+
+    .newhome-workflow-grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .newhome-group-card {
+        padding: 10px;
+    }
+
+    .newhome-link-row {
+        gap: 7px;
+    }
+
+    .newhome-link-row .mockup-link {
+        min-height: 64px;
+        font-size: 0.72rem;
+        padding: 6px 4px;
+    }
+
+    .newhome-link-row .newhome-feature-link,
+    .newhome-link-row .newhome-main-link {
+        min-height: 76px;
+        font-size: 0.85rem;
+    }
+
+    .newhome-link-row .newhome-feature-link img,
+    .newhome-link-row .newhome-main-link img {
+        width: 42px;
+        height: 42px;
+    }
+
+    .mockup-link img {
+        width: 34px;
+        height: 34px;
+    }
+
+    .smart-search-bars-titled {
+        align-items: flex-end;
+    }
+
+    .smart-search-field {
+        flex: 1 1 calc(50% - 8px);
+        max-width: 360px;
+        min-width: 250px;
+    }
+
+    .smart-search-field:nth-child(3) {
+        flex-basis: 50%;
+    }
+
+    .smart-search-picker {
+        width: 118px;
+    }
+
+    .smart-search-toggle {
+        gap: 4px;
+        padding-left: 8px;
+    }
+
+    .smart-search-label {
+        max-width: 62px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .smart-search-title {
+        min-width: 120px;
+        padding: 4px 14px 6px;
+    }
+}
