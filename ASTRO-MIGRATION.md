@@ -53,7 +53,7 @@ Task 8: Workers cutover — overnight docs/build complete; **dashboard/domain st
   - Verify: `npm run build` PASS — `dist/client/inventory/index.html` + vendor/jsQR + DOM hooks; QR/camera not exercised headlessly
 
 - [x] Task 8 (overnight only): Docs + local build + auth attempt
-  - Commit: *(this commit)*
+  - Commit: `3b0fb16`
   - Notes: Rewrote `DEPLOYMENT.md` + `AGENTS.md` for Astro Workers; `wrangler.jsonc` assets → `./dist/client`; confirmed `cloudflare-pages.toml` absent; `npx wrangler whoami` → **not logged in** (token expired) — **no workers.dev preview deploy overnight**; full domain cutover checklist below for human tomorrow
   - Verify: `npm run build` PASS; Worker name remains `scsfoxchase-tech`
 
