@@ -24,6 +24,7 @@
 | Inventory camera/QR | — | deferred | — | Human hardware test |
 | Production DNS cutover | — | deferred | — | Human |
 | BUG-015 | Medium | fixed | `6dfc3e8` | Games wave bg + 4-col grid |
+| BUG-016 | Low | fixed | (pending) | Home header max-width matched games |
 
 ## What’s left for human
 
@@ -105,5 +106,10 @@
   1. `GamesCatalog.astro` used `class="game-grid"` but `global.css` styles `.games-grid` (incl. `repeat(4, 1fr)` at ≥1280px).
   2. Legacy `js/dot-waves.js` (creates `.dot-wave-canvas`) was never ported; CSS for the canvas already existed in `global.css`.
 - **Fix:** Rename wrapper to `games-grid`; add `src/scripts/dot-waves.ts` and call `initDotWaves()` from `GamesCatalog.astro`.
+
+### BUG-016 — Home header spacing differs from games
+- **Status:** fixed
+- **Root cause:** `.home-page .container { max-width: none }` also applied to `header .container`, so on wide screens the home navbar stretched edge-to-edge while games kept `max-width: 1600px`.
+- **Fix:** Scope the override to `.home-page main .container` so the shared Header matches games.
 
 ---

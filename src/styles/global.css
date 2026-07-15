@@ -1123,7 +1123,8 @@ footer {
         min-height: 0;
     }
 
-    .home-page .container {
+    /* Scope to main so shared header keeps the same max-width as games */
+    .home-page main .container {
         max-width: none;
     }
 
