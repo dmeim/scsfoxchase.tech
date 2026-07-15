@@ -321,7 +321,15 @@
     border-color: var(--secondary-color);
     box-shadow: 0 0 0 3px rgba(246, 215, 36, 0.15);
 }
+.smart-search-field:hover .smart-search-bar {
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(246, 215, 36, 0.15);
+}
 .smart-search-field:focus-within .smart-search-title {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(18, 95, 49, 0.12);
+}
+.smart-search-field:focus-within .smart-search-bar {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(18, 95, 49, 0.12);
 }
