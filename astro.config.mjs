@@ -9,5 +9,7 @@ export default defineConfig({
   redirects: {
     '/games.html': '/games',
     '/newhome': '/',
+    '/hub.html': '/',
+    '/offline.html': '/offline',
   },
 });

@@ -1,5 +1,6 @@
 import { Carousel, type Game } from './carousel';
 import { initPlaceholderImages } from './placeholder-images';
+import { iconExclamationCircle, iconExclamationTriangle } from './icons';
 
 export type { Game };
 
@@ -316,7 +317,7 @@ class GamesManager {
     const message = document.createElement('div');
     message.classList.add('no-games-message');
     message.innerHTML = `
-      <i class="fas fa-exclamation-circle"></i>
+      ${iconExclamationCircle}
       <h3>No Games Found</h3>
       <p>There are no games available for the selected grade level.</p>
     `;
@@ -327,7 +328,7 @@ class GamesManager {
     if (this.gamesGrid) {
       this.gamesGrid.innerHTML = `
         <div class="error-message">
-          <i class="fas fa-exclamation-triangle"></i>
+          ${iconExclamationTriangle}
           <h3>Error Loading Games</h3>
           <p>There was a problem loading the games. Please try again later.</p>
         </div>

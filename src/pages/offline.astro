@@ -11,7 +11,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
   <section class="offline-container">
     <div class="offline-icon">
-      <i class="fas fa-wifi"></i>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
     </div>
     <h2 class="offline-title">You're Offline</h2>
     <p class="offline-message">
@@ -20,7 +20,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     </p>
     <div class="offline-actions">
       <button class="btn" id="refresh-btn" type="button">
-        <i class="fas fa-sync-alt"></i> Try Again
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.36"/><polyline points="21 3 21 9 15 9"/></svg> Try Again
       </button>
     </div>
 
@@ -47,6 +47,17 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     font-size: 80px;
     color: var(--primary-color);
     margin-bottom: 20px;
+  }
+
+  .offline-icon svg {
+    width: 1em;
+    height: 1em;
+  }
+
+  .offline-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
   }
 
   .offline-title {

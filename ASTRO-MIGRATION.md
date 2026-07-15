@@ -3,7 +3,7 @@
 **Branch:** astro-cloudflare-migration
 **Worktree:** `/Users/dimitri/Library/Mobile Documents/com~apple~CloudDocs/~/Code/scsfoxchase.tech/.worktrees/astro-cloudflare-migration`
 **Plan:** docs/superpowers/plans/2026-07-14-astro-cloudflare-migration.md
-**Last updated:** 2026-07-15T01:52:35Z
+**Last updated:** 2026-07-15T01:57:32Z
 **Status:** in progress
 
 ## Decisions (locked)
@@ -18,7 +18,7 @@
 - Subagent model: `cursor-grok-4.5-high` (fallback `composer-2.5`)
 
 ## Current task
-Task 6: Headers, redirects, Font Awesome decision, sitemap/robots
+Task 7: Inventory page
 
 ## Completed
 - [x] Step 0: Worktree created (base: `bacc732` gitignore)
@@ -42,21 +42,26 @@ Task 6: Headers, redirects, Font Awesome decision, sitemap/robots
   - Commit: `c19e565`
   - Notes: `src/pages/offline.astro` + `404.astro` via BaseLayout; `public/sw.js` rewritten (`st-cecilia-tech-astro-v1`, precache `/offline`, network-first navigations, cache-first `/_astro/*`, no cdnjs special-case); real `icon-192.png`/`icon-512.png` from `scs-logo.png`; `/offline.html` → `/offline` redirect; SW register remains BaseLayout-only
   - Verify: `npm run build` PASS — `dist/client/offline/index.html`, `dist/client/404.html`, icons + SW in dist; grep confirms network-first/`/offline`/`/_astro`; preview curl `/offline` (follows 307→`/offline/`) + icons 200
+- [x] Task 6: Headers, redirects, Font Awesome drop, sitemap/robots
+  - Commit: TBD
+  - Notes: Dropped Font Awesome CDN entirely (inline SVGs via `src/scripts/icons.ts` + template SVGs); `public/_headers` sole CSP source (n8n connect-src + camera Permissions-Policy; no cdnjs); deleted `cloudflare-pages.toml` SPA rewrite + root `_headers`; `public/_redirects` for games/newhome/hub/offline; hand `public/sitemap.xml` (`/` + `/games`); `public/robots.txt` host `scsfoxchase.tech`
+  - Verify: `npm run build` PASS — dist has `_headers`/`_redirects`/robots/sitemap; no cdnjs/FA in dist HTML; no catch-all SPA rewrite
 
 ## In progress
-- Task 6
+- Task 7
 
 ## Blockers / risks
 - Cloudflare dashboard domain cutover requires human tomorrow
 - Wrangler deploy needs CF credentials (attempt dry-run in Task 8)
 - Adapter emits `dist/client/` (not flat `dist/`) — follow generated wrangler on deploy
-- Font Awesome still via CDN (Task 6 may drop/self-host)
 - No interactive browser viewport smoke for games filters/carousel (build + HTML/JS embed parity only)
 - iCloud Drive under worktree can briefly desync `public/images` / `src` — re-copy if assets vanish mid-session
 - Legacy `data/games/` + `games.html` still present until Task 9 (Astro does not depend on them)
 - Task 5: `astro preview` redirects `/offline`→`/offline/` (307); SW uses fetch+put under `/offline` key. Confirm Workers Assets serves `/offline` without redirect in Task 8. Full DevTools offline toggle still needs human pass.
+- Task 6: Astro config redirects + `public/_redirects` both emit rules (duplicate lines in dist `_redirects` — harmless). Root legacy `robots.txt`/`sitemap.xml` still exist until Task 9 cleanup.
 
 ## Verification log
+- 2026-07-15T01:57:32Z — Task 6 `npm run build` Pass (full permissions). `dist/client/_headers` CSP without cdnjs, camera + n8n preserved; `_redirects` has games/newhome/hub/offline; robots/sitemap host `scsfoxchase.tech`; no FA/cdnjs in dist HTML; `cloudflare-pages.toml` deleted.
 - 2026-07-15T01:52:35Z — Task 5 `npm run build` Pass (full permissions). `dist/client/offline/index.html` + `404.html`; SW `OFFLINE_PAGE=/offline` + `/_astro` cache-first; icons 192/512 present; preview curl smoke for `/offline` + icons.
 - 2026-07-15T01:46:58Z — Task 4 `npm run build` Pass (full permissions). `dist/client/games/index.html` embeds 95 games + trending; carousel/filter shell present; no `/data/games/` fetch path in HTML.
 - 2026-07-15T01:43:33Z — Checkpoint Tasks 1–3: npm run build PASS; dist home has SmartSearch + AppLauncher + BaseLayout. Pass.
@@ -69,8 +74,13 @@ Task 6: Headers, redirects, Font Awesome decision, sitemap/robots
 | Path | Status |
 |------|--------|
 | package.json | present |
-| astro.config.mjs | present |
+| astro.config.mjs | present (redirects: games.html, newhome, hub.html, offline.html) |
 | wrangler.jsonc | present |
+| cloudflare-pages.toml | deleted (SPA rewrite removed) |
+| public/_headers | present (sole headers source; n8n + camera; `/_astro/*` cache) |
+| public/_redirects | present (games/newhome/hub/offline) |
+| public/robots.txt | present (`scsfoxchase.tech`) |
+| public/sitemap.xml | present (`/` + `/games` only) |
 | src/content.config.ts | present (games collection) |
 | src/content/games/*.json | present (95 games; copied from data/games) |
 | src/data/trending.json | present |
@@ -78,20 +88,20 @@ Task 6: Headers, redirects, Font Awesome decision, sitemap/robots
 | src/pages/games.astro | present (`bodyClass="games-page"`) |
 | src/pages/offline.astro | present (canonical `/offline`) |
 | src/pages/404.astro | present |
-| src/layouts/BaseLayout.astro | present (sole SW registration) |
+| src/layouts/BaseLayout.astro | present (no FA CDN; sole SW registration) |
 | src/components/Header.astro | present |
 | src/components/Footer.astro | present |
-| src/components/SmartSearch.astro | present |
+| src/components/SmartSearch.astro | present (SVG chevrons) |
 | src/components/AppLauncher.astro | present |
-| src/components/GamesCatalog.astro | present (JSON embed + client init) |
+| src/components/GamesCatalog.astro | present (SVG carousel/search icons) |
 | src/styles/global.css | present (bg → `/images/background.png`) |
 | src/styles/home.css | present (from home-mockups.css) |
 | src/styles/carousel.css | present |
-| src/scripts/theme-toggle.ts | present |
+| src/scripts/theme-toggle.ts | present (inline SVG sun/moon) |
+| src/scripts/icons.ts | present (shared SVG helpers) |
 | src/scripts/smart-search.ts | present |
 | src/scripts/games-catalog.ts | present (`initGamesCatalog`) |
 | src/scripts/carousel.ts | present |
 | src/scripts/placeholder-images.ts | present (image fallbacks only) |
-| public/_redirects | present (`/games.html` → `/games`, `/offline.html` → `/offline`) |
 | public/manifest.json, sw.js, favicons, images/* (home + game thumbs + icon-192/512) | present |
 | Legacy HTML / data/games | still present (expected until Task 9) |

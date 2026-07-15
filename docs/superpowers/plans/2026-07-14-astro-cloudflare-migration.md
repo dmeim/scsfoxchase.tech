@@ -371,13 +371,13 @@ Change:
 **Interfaces:**
 - Produces: CSP compatible with final asset strategy; inventory camera policy preserved if inventory ships
 
-- [ ] **Step 1: Prefer dropping Font Awesome CDN**
+- [x] **Step 1: Prefer dropping Font Awesome CDN**
 
 Replace theme/nav icons with inline SVG or local static SVGs in `public/icons/`. Then CSP can drop `cdnjs` / font CDNs.
 
 If dropping FA is too large for one pass, keep CDN temporarily and document a follow-up; do not leave both unused FA link tags and SVGs.
 
-- [ ] **Step 2: Write `public/_headers`** based on current `_headers` (the authoritative one with n8n + camera), updated for Astro paths:
+- [x] **Step 2: Write `public/_headers`** based on current `_headers` (the authoritative one with n8n + camera), updated for Astro paths:
 
 ```
 /*
@@ -400,7 +400,7 @@ If dropping FA is too large for one pass, keep CDN temporarily and document a fo
 
 Tune CSP after FA decision. Keep `connect-src` entries for n8n if inventory remains.
 
-- [ ] **Step 3: `public/_redirects`**
+- [x] **Step 3: `public/_redirects`**
 
 ```
 /games.html /games 301
@@ -409,9 +409,9 @@ Tune CSP after FA decision. Keep `connect-src` entries for n8n if inventory rema
 /hub.html / 301
 ```
 
-- [ ] **Step 4: Fix `robots.txt`** to real host `scsfoxchase.tech` and sitemap URL.
+- [x] **Step 4: Fix `robots.txt`** to real host `scsfoxchase.tech` and sitemap URL.
 
-- [ ] **Step 5: Commit** (if approved)
+- [x] **Step 5: Commit** (if approved)
 
 ---
 

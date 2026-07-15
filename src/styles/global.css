@@ -285,7 +285,9 @@ nav ul li a:hover, nav ul li a.active {
     transform: translateY(-50%);
     color: var(--text-color);
     opacity: 0.5;
-    font-size: 0.9rem;
+    width: 0.9rem;
+    height: 0.9rem;
+    pointer-events: none;
 }
 
 .search-bar input {

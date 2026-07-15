@@ -202,9 +202,9 @@
     font-size: clamp(.78rem, .85vw, .95rem);
     white-space: nowrap;
 }
-.smart-search-toggle .fa-chevron-down {
-    font-size: .65rem;
+.smart-search-toggle .icon-chevron {
     opacity: .55;
+    flex-shrink: 0;
 }
 .smart-search-separator {
     color: var(--border-color);
