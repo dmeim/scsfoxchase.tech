@@ -3,8 +3,8 @@
 **Branch:** astro-cloudflare-migration
 **Worktree:** `/Users/dimitri/Library/Mobile Documents/com~apple~CloudDocs/~/Code/scsfoxchase.tech/.worktrees/astro-cloudflare-migration`
 **Plan:** docs/superpowers/plans/2026-07-14-astro-cloudflare-migration.md
-**Last updated:** 2026-07-15T02:09:18Z
-**Status:** ready for cutover
+**Last updated:** 2026-07-15 (bugfix pass)
+**Status:** bugfix in progress — legacy shadowing cleared
 
 ## Decisions (locked)
 - Offline URL: `/offline` (canonical; not offline.html)
@@ -18,13 +18,17 @@
 - Subagent model: `cursor-grok-4.5-high` (fallback `composer-2.5`)
 
 ## Current task
-Overnight run complete. Next: human Task 8 live deploy + domain cutover, then Task 9 legacy deletion.
+Bugfix pass after overnight migration. See `BUGFIX-LOG.md`.
+
+## Milestone: BUG-004 legacy unshadow (2026-07-15)
+- Legacy root HTML/CSS/JS/data/images + hub/newhome/oldhome/old-site/inventory + root `sw.js` moved to `archive/pre-astro/` (outside `public/`, not deployed)
+- Unblocks Astro pages winning in `astro dev` (`/`, `/games`, `/offline`, `/inventory`)
+- Task 9 deletion deferred further — archive is safer until human cutover verify; archive may be deleted later
 
 ## Task 9 (deferred)
-- **Status:** deferred overnight (safer rule — no workers.dev preview without Wrangler auth)
-- Legacy still present on branch (root HTML/CSS/JS, data/games, inventory/, hub/newhome/oldhome/testing/old-site)
-- Astro dist/client already serves only Astro routes (/, /games, /offline, /404, /inventory)
-- After workers.dev or production preview checklist passes, delete legacy per plan Task 9 and commit
+- **Status:** partially done via archive move (not deleted)
+- Legacy is under `archive/pre-astro/` — safe for git history, not served
+- After workers.dev or production preview checklist passes, optionally delete `archive/pre-astro/` per plan Task 9 and commit
 
 ## Completed
 - [x] Step 0: Worktree created (base: `bacc732` gitignore)
