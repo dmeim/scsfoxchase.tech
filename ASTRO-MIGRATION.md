@@ -43,7 +43,7 @@ Task 7: Inventory page
   - Notes: `src/pages/offline.astro` + `404.astro` via BaseLayout; `public/sw.js` rewritten (`st-cecilia-tech-astro-v1`, precache `/offline`, network-first navigations, cache-first `/_astro/*`, no cdnjs special-case); real `icon-192.png`/`icon-512.png` from `scs-logo.png`; `/offline.html` → `/offline` redirect; SW register remains BaseLayout-only
   - Verify: `npm run build` PASS — `dist/client/offline/index.html`, `dist/client/404.html`, icons + SW in dist; grep confirms network-first/`/offline`/`/_astro`; preview curl `/offline` (follows 307→`/offline/`) + icons 200
 - [x] Task 6: Headers, redirects, Font Awesome drop, sitemap/robots
-  - Commit: TBD
+  - Commit: `6e39079`
   - Notes: Dropped Font Awesome CDN entirely (inline SVGs via `src/scripts/icons.ts` + template SVGs); `public/_headers` sole CSP source (n8n connect-src + camera Permissions-Policy; no cdnjs); deleted `cloudflare-pages.toml` SPA rewrite + root `_headers`; `public/_redirects` for games/newhome/hub/offline; hand `public/sitemap.xml` (`/` + `/games`); `public/robots.txt` host `scsfoxchase.tech`
   - Verify: `npm run build` PASS — dist has `_headers`/`_redirects`/robots/sitemap; no cdnjs/FA in dist HTML; no catch-all SPA rewrite
 
