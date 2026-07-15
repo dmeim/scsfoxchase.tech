@@ -3,8 +3,8 @@
 **Branch:** astro-cloudflare-migration
 **Worktree:** `/Users/dimitri/Library/Mobile Documents/com~apple~CloudDocs/~/Code/scsfoxchase.tech/.worktrees/astro-cloudflare-migration`
 **Plan:** docs/superpowers/plans/2026-07-14-astro-cloudflare-migration.md
-**Last updated:** 2026-07-15T02:10:00Z
-**Status:** in progress (Task 8 overnight docs/build done; domain cutover = human tomorrow)
+**Last updated:** 2026-07-15T02:09:18Z
+**Status:** ready for cutover
 
 ## Decisions (locked)
 - Offline URL: `/offline` (canonical; not offline.html)
@@ -18,7 +18,13 @@
 - Subagent model: `cursor-grok-4.5-high` (fallback `composer-2.5`)
 
 ## Current task
-Task 8: Workers cutover — overnight docs/build complete; **dashboard/domain steps = human tomorrow**
+Overnight run complete. Next: human Task 8 live deploy + domain cutover, then Task 9 legacy deletion.
+
+## Task 9 (deferred)
+- **Status:** deferred overnight (safer rule — no workers.dev preview without Wrangler auth)
+- Legacy still present on branch (root HTML/CSS/JS, data/games, inventory/, hub/newhome/oldhome/testing/old-site)
+- Astro dist/client already serves only Astro routes (/, /games, /offline, /404, /inventory)
+- After workers.dev or production preview checklist passes, delete legacy per plan Task 9 and commit
 
 ## Completed
 - [x] Step 0: Worktree created (base: `bacc732` gitignore)
@@ -139,6 +145,7 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 - Task 6: Astro config redirects + `public/_redirects` both emit rules (duplicate lines in dist `_redirects` — harmless). Root legacy `robots.txt`/`sitemap.xml` still exist until Task 9 cleanup.
 
 ## Verification log
+- 2026-07-15T02:09:18Z — Final overnight checkpoint: npm run build PASS (5 pages). Task 9 deferred. Status ready for cutover.
 - 2026-07-15T02:06:59Z — Task 8 overnight: `npm run build` PASS; `wrangler deploy --dry-run` PASS (169 assets from `dist/client`, Worker `scsfoxchase-tech`); `wrangler whoami` FAIL (auth expired) — no workers.dev deploy. Docs rewritten; `cloudflare-pages.toml` confirmed absent.
 - 2026-07-15T02:03:37Z — Task 7 `npm run build` Pass (full permissions). `dist/client/inventory/index.html` has DOM hooks + jsQR + inventory module; CSP camera=(self) + n8n.mlabz.io; device images + fallback in dist.
 - 2026-07-15T01:58:52Z — Checkpoint Tasks 4–6: build PASS; /games embed; offline/404; SW /offline; FA CDN removed; public/_headers; cloudflare-pages.toml removed. Pass.
