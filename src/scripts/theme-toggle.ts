@@ -1,5 +1,5 @@
 // Ported from js/theme-toggle.js — ESM, same localStorage key + data-theme behavior
-import { iconMoon, iconSun } from './icons';
+import { createElement, Moon, Sun } from 'lucide';
 
 class ThemeToggle {
   currentTheme: string;
@@ -22,8 +22,15 @@ class ThemeToggle {
       : 'light';
   }
 
-  themeIconHtml() {
-    return this.currentTheme === 'dark' ? iconSun('theme-icon') : iconMoon('theme-icon');
+  /** Lucide sun in dark mode, moon in light mode. */
+  themeIconElement(): SVGElement {
+    const Icon = this.currentTheme === 'dark' ? Sun : Moon;
+    return createElement(Icon, {
+      id: 'theme-icon',
+      'aria-hidden': 'true',
+      width: '1em',
+      height: '1em',
+    });
   }
 
   createThemeToggle() {
@@ -37,7 +44,7 @@ class ThemeToggle {
     btn.className = 'theme-toggle-btn';
     btn.id = 'theme-toggle-btn';
     btn.setAttribute('aria-label', 'Toggle theme');
-    btn.innerHTML = this.themeIconHtml();
+    btn.replaceChildren(this.themeIconElement());
     headerRight.appendChild(btn);
   }
 
@@ -80,7 +87,7 @@ class ThemeToggle {
   updateIcon() {
     const btn = document.getElementById('theme-toggle-btn');
     if (!btn) return;
-    btn.innerHTML = this.themeIconHtml();
+    btn.replaceChildren(this.themeIconElement());
   }
 
   getStoredTheme(): string | null {
