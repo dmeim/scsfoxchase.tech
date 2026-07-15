@@ -24,7 +24,7 @@
 | Inventory camera/QR | — | deferred | — | Human hardware test |
 | Production DNS cutover | — | deferred | — | Human |
 | BUG-015 | Medium | fixed | `6dfc3e8` | Games wave bg + 4-col grid |
-| BUG-016 | Low | fixed | (pending) | Home header max-width matched games |
+| BUG-016 | Low | fixed | `8fba87a` | Home header max-width matched games |
 
 ## What’s left for human
 
@@ -109,6 +109,7 @@
 
 ### BUG-016 — Home header spacing differs from games
 - **Status:** fixed
+- **Commit(s):** `8fba87a`
 - **Root cause:** `.home-page .container { max-width: none }` also applied to `header .container`, so on wide screens the home navbar stretched edge-to-edge while games kept `max-width: 1600px`.
 - **Fix:** Scope the override to `.home-page main .container` so the shared Header matches games.
 
