@@ -190,20 +190,20 @@ EOF
 - Consumes: existing CSS variables and header markup patterns from `index.html`
 - Produces: `BaseLayout` with props `title`, `bodyClass?`; slots `default`, optional `head`
 
-- [ ] **Step 1: Move shell CSS**
+- [x] **Step 1: Move shell CSS**
 
 Copy `css/styles.css` to `src/styles/global.css` unchanged except path comments. Do not “clean up” responsive rules in this task.
 
-- [ ] **Step 2: Create `Header.astro` and `Footer.astro`** matching production markup from `index.html` (logo, Home/Games links to `/` and `/games`, `.header-right` empty div for theme button).
+- [x] **Step 2: Create `Header.astro` and `Footer.astro`** matching production markup from `index.html` (logo, Home/Games links to `/` and `/games`, `.header-right` empty div for theme button).
 
-- [ ] **Step 3: Port `theme-toggle.js` to `src/scripts/theme-toggle.ts`**
+- [x] **Step 3: Port `theme-toggle.js` to `src/scripts/theme-toggle.ts`**
 
 Requirements:
 - Same `localStorage` key and `data-theme` behavior as today
 - Mount into `.header-right`
 - Importable: `import '../scripts/theme-toggle'` from layout script
 
-- [ ] **Step 4: Create `BaseLayout.astro`**
+- [x] **Step 4: Create `BaseLayout.astro`**
 
 Must include:
 - charset, viewport, title, theme-color `#125F31`
@@ -214,9 +214,9 @@ Must include:
 - Client script: `import '../scripts/theme-toggle'`
 - SW registration pointing at `/sw.js` with `{ updateViaCache: 'none' }` as a module script (not duplicated per page)
 
-- [ ] **Step 5: Point stub `index.astro` at `BaseLayout`** and verify header/footer/theme on desktop width and a narrow viewport.
+- [x] **Step 5: Point stub `index.astro` at `BaseLayout`** and verify header/footer/theme on desktop width and a narrow viewport.
 
-- [ ] **Step 6: Commit** (if approved)
+- [x] **Step 6: Commit** (if approved)
 
 ```bash
 git commit -m "$(cat <<'EOF'

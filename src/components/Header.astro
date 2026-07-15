@@ -1,0 +1,21 @@
+---
+const pathname = Astro.url.pathname;
+const homeActive = pathname === '/' || pathname === '';
+const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
+---
+<header>
+  <div class="container">
+    <div class="header-brand">
+      <img src="/images/scs-logo.png" alt="SCS Logo" class="header-logo">
+      <h1>St. Cecilia Technology</h1>
+    </div>
+    <div class="header-right">
+      <nav>
+        <ul>
+          <li><a href="/" class:list={[{ active: homeActive }]}>Home</a></li>
+          <li><a href="/games" class:list={[{ active: gamesActive }]}>Games</a></li>
+        </ul>
+      </nav>
+    </div>
+  </div>
+</header>
