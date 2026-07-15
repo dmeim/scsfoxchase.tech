@@ -3,8 +3,8 @@
 **Branch:** astro-cloudflare-migration
 **Worktree:** `/Users/dimitri/Library/Mobile Documents/com~apple~CloudDocs/~/Code/scsfoxchase.tech/.worktrees/astro-cloudflare-migration`
 **Plan:** docs/superpowers/plans/2026-07-14-astro-cloudflare-migration.md
-**Last updated:** 2026-07-15 (bugfix pass)
-**Status:** bugfix in progress — legacy shadowing cleared
+**Last updated:** 2026-07-15 (bugfix pass complete)
+**Status:** ready for human preview / cutover checklist
 
 ## Decisions (locked)
 - Offline URL: `/offline` (canonical; not offline.html)
@@ -18,12 +18,18 @@
 - Subagent model: `cursor-grok-4.5-high` (fallback `composer-2.5`)
 
 ## Current task
-Bugfix pass after overnight migration. See `BUGFIX-LOG.md`.
+Bugfix pass complete. Human: restart `npm run dev` in worktree, click-check, then Task 8 cutover when ready. See `BUGFIX-LOG.md`.
 
 ## Milestone: BUG-004 legacy unshadow (2026-07-15)
 - Legacy root HTML/CSS/JS/data/images + hub/newhome/oldhome/old-site/inventory + root `sw.js` moved to `archive/pre-astro/` (outside `public/`, not deployed)
 - Unblocks Astro pages winning in `astro dev` (`/`, `/games`, `/offline`, `/inventory`)
 - Task 9 deletion deferred further — archive is safer until human cutover verify; archive may be deleted later
+
+## Milestone: bugfix pass (2026-07-15)
+- Inventory flattened; `build.format: 'file'`; trailingSlash loops gone
+- Smart-search hover CSS; redirects verified with `Accept: text/html`
+- Adapter IMAGES/SESSION warnings silenced; duplicate `_redirects` cleaned
+- `npm run build` emits HTML in `dist/client`
 
 ## Task 9 (deferred)
 - **Status:** partially done via archive move (not deleted)
