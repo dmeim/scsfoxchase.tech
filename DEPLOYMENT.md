@@ -83,7 +83,7 @@ npx wrangler tail        # live logs
 | File | Role |
 |---|---|
 | `wrangler.jsonc` | Worker name + assets directory |
-| `astro.config.mjs` | Astro + `@astrojs/cloudflare` adapter; legacy redirects (`/games.html` → `/games`, `/hub`, `/offline.html`, etc.) |
+| `astro.config.mjs` | Astro + `@astrojs/cloudflare` adapter; legacy redirects (`/games.html` → `/games`, `/newgames` → `/games`, `/hub`, `/offline.html`, etc.) |
 | `public/_headers` | CSP, HSTS, cache rules (sole headers source) |
 | `public/_redirects` | Path redirects for `/newhome/` and `/inventory/` only |
 | `public/sw.js` | Service worker (network-first navigations) |

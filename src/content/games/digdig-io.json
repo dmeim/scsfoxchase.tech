@@ -1,0 +1,22 @@
+{
+  "id": "digdig-io",
+  "name": "Digdig.io",
+  "url": "https://digdig.io/",
+  "image": "/images/digdig-io.png",
+  "description": "Dig underground, grow bigger, and outmaneuver other players.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Action",
+    "Survival",
+    "Competitive"
+  ]
+}

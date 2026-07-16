@@ -1,0 +1,22 @@
+{
+  "id": "wings-io",
+  "name": "Wings.io",
+  "url": "https://wings.io/",
+  "image": "/images/wings-io.jpg",
+  "description": "Steer a plane, dodge, and compete in aerial dogfights.",
+  "minGrade": 5,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Action",
+    "FPS / Shooter",
+    "Competitive"
+  ]
+}

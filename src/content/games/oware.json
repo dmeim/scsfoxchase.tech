@@ -1,0 +1,22 @@
+{
+  "id": "oware",
+  "name": "Oware (Awale)",
+  "url": "https://playawale.com/",
+  "image": "/images/awale.png",
+  "description": "Play Oware/Awale, a classic mancala strategy game, against AI or another player.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Online",
+    "Turn-Based",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Board Games",
+    "Strategy",
+    "Logic",
+    "Classics"
+  ]
+}

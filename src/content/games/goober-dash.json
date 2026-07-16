@@ -1,0 +1,24 @@
+{
+  "id": "goober-dash",
+  "name": "Goober Dash",
+  "url": "https://gooberdash.winterpixel.io/",
+  "image": "/images/goober-dash.png",
+  "description": "Race cute goobers through obstacle courses in a 32-player royale.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Battle Royale",
+    "Obstacle Course",
+    "Party",
+    "Platformer",
+    "Action",
+    "Competitive"
+  ]
+}

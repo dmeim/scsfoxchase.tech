@@ -1,0 +1,22 @@
+{
+  "id": "splix-io",
+  "name": "Splix.io",
+  "url": "https://splix.io/",
+  "image": "/images/splix-io.jpg",
+  "description": "Loop your trail to claim territory in this fast multiplayer arena.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Action",
+    "Strategy",
+    "Competitive"
+  ]
+}

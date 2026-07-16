@@ -1,0 +1,23 @@
+{
+  "id": "yohoho-io",
+  "name": "YoHoHo.io",
+  "url": "https://yohoho.io/",
+  "image": "/images/yohoho.jpg",
+  "description": "Loot, grow, and duel as a cartoon pirate—be the last standing on the island.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Battle Royale",
+    "IO Games",
+    "Action",
+    "Competitive",
+    "Survival"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "nugget-royale",
+  "name": "Nugget Royale",
+  "url": "https://nuggetroyale.io/",
+  "image": "/images/nugget-royale.png",
+  "description": "Bump cartoon chickens off a tilting disk—last nugget standing wins.",
+  "minGrade": 2,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Battle Royale",
+    "IO Games",
+    "Action",
+    "Party",
+    "Competitive",
+    "Casual"
+  ]
+}

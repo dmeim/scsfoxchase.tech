@@ -1,0 +1,15 @@
+---
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+import TempCardMockups from '../components/TempCardMockups.astro';
+import '../styles/temp.css';
+---
+<BaseLayout title="Temp Mockups - St. Cecilia Technology" bodyClass="temp-mockup-page">
+  <meta
+    slot="head"
+    name="description"
+    content="Temporary mockup space: ten 16:9 game card design candidates for /games"
+  />
+  <meta slot="head" name="robots" content="noindex, nofollow" />
+  <TempCardMockups />
+</BaseLayout>

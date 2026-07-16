@@ -1,32 +1,43 @@
-// Ported from js/theme-toggle.js — ESM, same localStorage key + data-theme behavior
-import { createElement, Moon, Sun } from 'lucide';
+// Ported from js/theme-toggle.js — ESM, localStorage key + data-theme behavior
+import { createElement, Moon, Sun, SunMoon } from 'lucide';
+
+type ThemePreference = 'light' | 'dark' | 'system';
+
+function isThemePreference(value: string | null): value is ThemePreference {
+  return value === 'light' || value === 'dark' || value === 'system';
+}
 
 class ThemeToggle {
-  currentTheme: string;
-  userOverride = false;
+  /** Stored choice: light, dark, or follow OS. */
+  preference: ThemePreference;
+  /** Resolved appearance applied to the page. */
+  currentTheme: 'light' | 'dark';
 
   constructor() {
-    this.currentTheme = this.getStoredTheme() || this.getSystemTheme();
+    this.preference = this.getStoredPreference() ?? 'system';
+    this.currentTheme = this.resolveTheme(this.preference);
     this.init();
   }
 
   init() {
     this.createThemeToggle();
-    this.applyTheme(this.currentTheme);
+    this.applyPreference(this.preference);
     this.setupEventListeners();
   }
 
-  getSystemTheme(): string {
+  getSystemTheme(): 'light' | 'dark' {
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
       ? 'dark'
       : 'light';
   }
 
-  /** Lucide sun in dark mode, moon in light mode. */
-  themeIconElement(): SVGElement {
-    const Icon = this.currentTheme === 'dark' ? Sun : Moon;
+  resolveTheme(preference: ThemePreference): 'light' | 'dark' {
+    return preference === 'system' ? this.getSystemTheme() : preference;
+  }
+
+  iconEl(Icon: typeof Sun, id: string): SVGElement {
     return createElement(Icon, {
-      id: 'theme-icon',
+      id,
       'aria-hidden': 'true',
       width: '1em',
       height: '1em',
@@ -37,44 +48,87 @@ class ThemeToggle {
     const headerRight = document.querySelector('.header-right');
     if (!headerRight) return;
 
-    // Avoid duplicate buttons on client navigations / re-imports
-    if (document.getElementById('theme-toggle-btn')) return;
+    if (document.getElementById('theme-toggle')) return;
 
-    const btn = document.createElement('button');
-    btn.className = 'theme-toggle-btn';
-    btn.id = 'theme-toggle-btn';
-    btn.setAttribute('aria-label', 'Toggle theme');
-    btn.replaceChildren(this.themeIconElement());
-    headerRight.appendChild(btn);
+    const group = document.createElement('div');
+    group.className = 'theme-toggle';
+    group.id = 'theme-toggle';
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', 'Color theme');
+
+    const thumb = document.createElement('span');
+    thumb.className = 'theme-toggle-thumb';
+    thumb.setAttribute('aria-hidden', 'true');
+    group.appendChild(thumb);
+
+    const options: { preference: ThemePreference; label: string; Icon: typeof Sun }[] = [
+      { preference: 'light', label: 'Light', Icon: Sun },
+      { preference: 'system', label: 'System', Icon: SunMoon },
+      { preference: 'dark', label: 'Dark', Icon: Moon },
+    ];
+
+    for (const { preference, label, Icon } of options) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'theme-toggle-option';
+      btn.dataset.themeOption = preference;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-label', label);
+      btn.replaceChildren(this.iconEl(Icon, `theme-icon-${preference}`));
+      group.appendChild(btn);
+    }
+
+    headerRight.appendChild(group);
+    this.syncOptionState();
   }
 
   setupEventListeners() {
-    const toggleBtn = document.getElementById('theme-toggle-btn');
-    if (!toggleBtn) return;
+    const group = document.getElementById('theme-toggle');
+    if (!group) return;
 
-    toggleBtn.addEventListener('click', () => {
-      const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
-      this.userOverride = true;
-      this.setTheme(newTheme);
+    group.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      const option = target?.closest<HTMLElement>('[data-theme-option]');
+      if (!option || !group.contains(option)) return;
+
+      const next = option.dataset.themeOption;
+      if (!isThemePreference(next)) return;
+
+      this.setPreference(next);
     });
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-      if (!this.getStoredTheme()) {
-        this.setTheme(e.matches ? 'dark' : 'light', false);
-      }
+      if (this.preference !== 'system') return;
+      this.currentTheme = e.matches ? 'dark' : 'light';
+      this.applyResolvedTheme(this.currentTheme);
     });
   }
 
-  setTheme(theme: string, store = true) {
-    this.currentTheme = theme;
-    this.applyTheme(theme);
-    if (store) this.storeTheme(theme);
-    this.updateIcon();
+  setPreference(preference: ThemePreference) {
+    this.preference = preference;
+    this.storePreference(preference);
+    this.applyPreference(preference);
   }
 
-  applyTheme(theme: string) {
+  applyPreference(preference: ThemePreference) {
+    this.preference = preference;
+    this.currentTheme = this.resolveTheme(preference);
+    document.documentElement.setAttribute('data-theme-pref', preference);
+    this.applyResolvedTheme(this.currentTheme);
+    this.syncOptionState();
+  }
+
+  applyResolvedTheme(theme: 'light' | 'dark') {
     document.documentElement.setAttribute('data-theme', theme);
     this.updateThemeIcons(theme);
+  }
+
+  syncOptionState() {
+    document.querySelectorAll<HTMLElement>('[data-theme-option]').forEach((btn) => {
+      const selected = btn.dataset.themeOption === this.preference;
+      btn.setAttribute('aria-checked', selected ? 'true' : 'false');
+      btn.tabIndex = selected ? 0 : -1;
+    });
   }
 
   updateThemeIcons(theme: string) {
@@ -84,23 +138,20 @@ class ThemeToggle {
     });
   }
 
-  updateIcon() {
-    const btn = document.getElementById('theme-toggle-btn');
-    if (!btn) return;
-    btn.replaceChildren(this.themeIconElement());
-  }
-
-  getStoredTheme(): string | null {
+  getStoredPreference(): ThemePreference | null {
     try {
-      return localStorage.getItem('theme');
+      const value = localStorage.getItem('theme');
+      // Legacy: older builds stored only light/dark; keep those as explicit prefs.
+      if (isThemePreference(value)) return value;
+      return null;
     } catch {
       return null;
     }
   }
 
-  storeTheme(theme: string) {
+  storePreference(preference: ThemePreference) {
     try {
-      localStorage.setItem('theme', theme);
+      localStorage.setItem('theme', preference);
     } catch {
       // ignore quota / private mode
     }

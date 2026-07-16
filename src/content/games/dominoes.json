@@ -1,0 +1,22 @@
+{
+  "id": "dominoes",
+  "name": "Dominoes",
+  "url": "https://dominoes.mx/",
+  "image": "/images/dominoes.jpg",
+  "description": "Play classic Dominoes solo against the CPU or in a private multiplayer room.",
+  "minGrade": 2,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Multiplayer",
+    "Online",
+    "Turn-Based",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Board Games",
+    "Classics",
+    "Strategy",
+    "Number Puzzles"
+  ]
+}

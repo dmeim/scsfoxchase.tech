@@ -1,0 +1,22 @@
+{
+  "id": "diep-io",
+  "name": "Diep.io",
+  "url": "https://diep.io/",
+  "image": "/images/diep-io.png",
+  "description": "Upgrade abstract tanks and clear shapes in a live multiplayer arena.",
+  "minGrade": 4,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Action",
+    "FPS / Shooter",
+    "Competitive"
+  ]
+}

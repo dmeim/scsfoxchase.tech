@@ -1,0 +1,14 @@
+---
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+import GamesCatalog from '../components/GamesCatalog.astro';
+import '../styles/carousel.css';
+---
+<BaseLayout title="Games (Legacy) - St. Cecilia Technology" bodyClass="games-page">
+  <meta
+    slot="head"
+    name="description"
+    content="Legacy educational games catalog"
+  />
+  <GamesCatalog />
+</BaseLayout>

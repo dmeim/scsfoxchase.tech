@@ -1,0 +1,20 @@
+{
+  "id": "piskel",
+  "name": "Piskel for Kids",
+  "url": "https://www.piskelapp.com/kids",
+  "image": "/images/piskel.png",
+  "description": "Make pixel art and simple sprites in a kid-friendly editor.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Sandbox",
+    "Crafting",
+    "Casual"
+  ]
+}

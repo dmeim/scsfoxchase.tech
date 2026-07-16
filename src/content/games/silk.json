@@ -1,0 +1,21 @@
+{
+  "id": "silk",
+  "name": "Silk",
+  "url": "http://weavesilk.com/",
+  "image": "/images/weave-silk.jpg",
+  "description": "Create glowing symmetrical silk art with simple drag-and-draw controls.",
+  "minGrade": 0,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Sandbox",
+    "Casual",
+    "Kids",
+    "Mindfulness"
+  ]
+}

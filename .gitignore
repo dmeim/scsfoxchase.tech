@@ -1,6 +1,7 @@
 **/.DS_Store
 # Git worktrees (local isolation)
 .worktrees/
+.superpowers/
 
 # Node / Astro
 node_modules/

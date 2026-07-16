@@ -1,0 +1,20 @@
+{
+  "id": "wiggly-paint",
+  "name": "WigglyPaint",
+  "url": "https://beyondloom.com/tools/wigglypaint.html",
+  "image": "/images/wigglepaint.png",
+  "description": "Doodle with strokes that wiggle into fun animated GIF art.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Casual",
+    "Kids",
+    "Sandbox"
+  ]
+}

@@ -1,0 +1,167 @@
+---
+import { getCollection } from 'astro:content';
+import trending from '../data/trending.json';
+
+const games = (await getCollection('games')).map((entry) => entry.data);
+const trendingIds = trending as string[];
+const catalogPayload = JSON.stringify({ games, trendingIds });
+
+const trendingGames = trendingIds
+  .map((id) => games.find((g) => g.id === id))
+  .filter((g): g is (typeof games)[number] => Boolean(g));
+
+const featured = trendingGames[0];
+const heroPayload = JSON.stringify(trendingGames);
+---
+
+<section class="games-section newgames-layout">
+  <div class="container">
+    <div class="newgames-split">
+      <aside class="newgames-sidebar" aria-label="Game filters">
+        <div class="filter-container">
+          <div class="search-bar">
+            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="game-search" placeholder={`Search All ${games.length} Games...`} autocomplete="off" />
+          </div>
+          <div class="filter-group">
+            <span class="filter-group-label">Grade</span>
+            <div class="filter-chips-row" id="grade-chips">
+              <span class="filter-chip" data-grade="1">1</span>
+              <span class="filter-chip" data-grade="2">2</span>
+              <span class="filter-chip" data-grade="3">3</span>
+              <span class="filter-chip" data-grade="4">4</span>
+              <span class="filter-chip" data-grade="5">5</span>
+              <span class="filter-chip" data-grade="6">6</span>
+              <span class="filter-chip" data-grade="7">7</span>
+              <span class="filter-chip" data-grade="8">8</span>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-group-label">Type</span>
+            <div class="filter-chips-row" id="primary-category-chips"></div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-group-label">Genre</span>
+            <div class="filter-chips-row" id="secondary-category-chips"></div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="newgames-main">
+        {
+          featured ? (
+            <section class="ng-hero" data-ng-hero aria-label="Trending games">
+              <a
+                class="ng-hero-link"
+                href={featured.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-ng-hero-link
+              >
+                <div
+                  class="ng-hero-bg"
+                  data-ng-hero-bg
+                  style={`background-image:url('${featured.image}')`}
+                />
+                <div class="ng-hero-body">
+                  <h3 data-ng-hero-title>{featured.name}</h3>
+                  <p data-ng-hero-desc>{featured.description}</p>
+                </div>
+              </a>
+              <div class="ng-hero-pager">
+                <button type="button" data-ng-hero-prev aria-label="Previous">‹</button>
+                <button type="button" data-ng-hero-next aria-label="Next">›</button>
+              </div>
+            </section>
+          ) : null
+        }
+
+        <div class="games-grid games-grid--max" id="games-grid" data-card-style="max">
+          <div class="loading-container">
+            <div class="loading-spinner"></div>
+            <p>Loading games...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script type="application/json" id="games-catalog-data" set:html={catalogPayload} />
+<script type="application/json" id="ng-hero-data" set:html={heroPayload} />
+
+<script>
+  import { initGamesCatalog } from '../scripts/games-catalog';
+  import { initDotWaves } from '../scripts/dot-waves';
+
+  initDotWaves();
+
+  const dataEl = document.getElementById('games-catalog-data');
+  if (dataEl?.textContent) {
+    const { games, trendingIds } = JSON.parse(dataEl.textContent) as {
+      games: Parameters<typeof initGamesCatalog>[0];
+      trendingIds: string[];
+    };
+    // Filters + grid only — no #trending-carousel; hero is handled below.
+    initGamesCatalog(games, trendingIds);
+  }
+
+  type HeroGame = {
+    id: string;
+    name: string;
+    url: string;
+    image: string;
+    description: string;
+  };
+
+  const heroEl = document.getElementById('ng-hero-data');
+  const heroGames: HeroGame[] = heroEl?.textContent ? JSON.parse(heroEl.textContent) : [];
+  const root = document.querySelector<HTMLElement>('[data-ng-hero]');
+
+  if (root && heroGames.length > 0) {
+    const bg = root.querySelector<HTMLElement>('[data-ng-hero-bg]');
+    const title = root.querySelector('[data-ng-hero-title]');
+    const desc = root.querySelector('[data-ng-hero-desc]');
+    const link = root.querySelector<HTMLAnchorElement>('[data-ng-hero-link]');
+    let index = 0;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const paint = () => {
+      const g = heroGames[index]!;
+      if (bg) bg.style.backgroundImage = `url('${g.image}')`;
+      if (title) title.textContent = g.name;
+      if (desc) desc.textContent = g.description;
+      if (link) {
+        link.href = g.url;
+        link.setAttribute('aria-label', `Play ${g.name}`);
+      }
+    };
+
+    const go = (i: number) => {
+      index = (i + heroGames.length) % heroGames.length;
+      paint();
+    };
+
+    const restart = () => {
+      if (timer) clearInterval(timer);
+      if (heroGames.length <= 1) return;
+      timer = setInterval(() => go(index + 1), 5000);
+    };
+
+    root.querySelector('[data-ng-hero-prev]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      go(index - 1);
+      restart();
+    });
+    root.querySelector('[data-ng-hero-next]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      go(index + 1);
+      restart();
+    });
+
+    paint();
+    restart();
+  }
+</script>

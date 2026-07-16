@@ -40,13 +40,24 @@ body {
     flex-direction: column;
 }
 
+/* Image on ::before (not body + background-attachment:fixed): fixed attachment
+   breaks when body.home-page also sets overflow-x/y for dashboard scaling. */
 body.home-page {
+    position: relative;
+    isolation: isolate;
     min-height: 100dvh;
+}
+
+body.home-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background-image: url('/images/background.png');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    background-attachment: fixed;
 }
 
 body.games-page {
@@ -112,10 +123,10 @@ img {
     color: var(--text-color);
 }
 
-/* Header Styles */
+/* Header Styles — no bar fill; page background shows straight through */
 header {
-    background-color: var(--primary-color);
-    color: var(--light-text);
+    background: transparent;
+    color: var(--primary-color);
     padding: 6px 0;
     position: sticky;
     top: 0;
@@ -132,6 +143,11 @@ header .container {
     display: flex;
     align-items: center;
     gap: 10px;
+    padding: 0 12px 0 8px;
+    height: 36px;
+    box-sizing: border-box;
+    text-decoration: none;
+    color: var(--primary-color);
 }
 
 .header-logo {
@@ -143,53 +159,161 @@ header .container {
 header h1 {
     font-size: 1.4rem;
     margin: 0;
+    line-height: 1;
 }
 
 .header-right {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 10px;
+}
+
+nav,
+nav ul {
+    display: flex;
+    align-items: center;
+    height: 36px;
 }
 
 nav ul {
-    display: flex;
+    gap: 10px;
 }
 
 nav ul li {
-    margin-left: 20px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    height: 36px;
 }
 
 nav ul li a {
-    color: var(--light-text);
+    color: var(--primary-color);
     font-weight: 500;
-    padding: 5px 10px;
-    border-radius: 2px;
-}
-
-nav ul li a:hover, nav ul li a.active {
-    background-color: rgba(255, 255, 255, 0.15);
-}
-
-/* Theme Toggle Styles */
-.theme-toggle-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: var(--light-text);
-    width: 36px;
+    padding: 0 12px;
     height: 36px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
     border-radius: 2px;
-    cursor: pointer;
-    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+/* Frosted chips: brand (logo+title), nav links, and theme toggle share the same glass */
+.header-brand,
+nav ul li a,
+.theme-toggle {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 2px;
+}
+
+[data-theme="dark"] .header-brand,
+[data-theme="dark"] nav ul li a,
+[data-theme="dark"] .theme-toggle {
+    background: rgba(0, 0, 0, 0.58);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--light-text);
+}
+
+.header-brand:hover,
+.header-brand.active,
+nav ul li a:hover,
+nav ul li a.active {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+[data-theme="dark"] .header-brand:hover,
+[data-theme="dark"] .header-brand.active,
+[data-theme="dark"] nav ul li a:hover,
+[data-theme="dark"] nav ul li a.active {
+    background: rgba(0, 0, 0, 0.78);
+}
+
+/* Text hover: yellow in light, green in dark — logo image is unaffected */
+.header-brand:hover,
+.header-brand:hover h1,
+nav ul li a:hover {
+    color: var(--secondary-color);
+}
+
+[data-theme="dark"] .header-brand:hover,
+[data-theme="dark"] .header-brand:hover h1,
+[data-theme="dark"] nav ul li a:hover {
+    color: var(--primary-color);
+}
+
+/* Theme switch: Light · System · Dark */
+.theme-toggle {
+    color: var(--primary-color);
+    width: 108px;
+    height: 36px;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    font-size: 0.9rem;
+    line-height: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+    position: relative;
+    padding: 0;
+    transition: var(--transition);
+}
+
+.theme-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc((100% - 4px) / 3);
+    height: calc(100% - 4px);
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+    pointer-events: none;
+    transition: transform 0.2s ease;
+    z-index: 0;
+}
+
+[data-theme-pref="system"] .theme-toggle-thumb {
+    transform: translateX(100%);
+}
+
+[data-theme-pref="dark"] .theme-toggle-thumb {
+    transform: translateX(200%);
+}
+
+[data-theme="dark"] .theme-toggle-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.theme-toggle-option {
+    all: unset;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: var(--transition);
-    padding: 0;
+    height: 100%;
+    width: 100%;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    color: inherit;
+    opacity: 0.55;
 }
 
-.theme-toggle-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
-    text-align: center;
+.theme-toggle-option[aria-checked="true"] {
+    opacity: 1;
+}
+
+.theme-toggle-option:focus-visible {
+    outline: 2px solid var(--secondary-color);
+    outline-offset: -2px;
+}
+
+[data-theme="dark"] .theme-toggle {
+    color: var(--light-text);
 }
 
 /* Hero Section */
@@ -890,34 +1014,47 @@ footer {
         font-size: 1.1rem;
     }
 
+    .header-brand {
+        height: 28px;
+        padding: 0 10px 0 6px;
+    }
+
     .header-logo {
         height: 24px;
     }
 
     .header-right {
         flex-direction: row;
-        gap: 12px;
+        gap: 8px;
         align-items: center;
         justify-content: center;
     }
 
+    nav,
+    nav ul,
+    nav ul li {
+        height: 28px;
+    }
+
     nav ul {
         margin: 0;
+        gap: 8px;
     }
 
     nav ul li {
-        margin: 0 4px;
+        margin: 0;
     }
 
     nav ul li a {
-        padding: 3px 8px;
+        padding: 0 8px;
+        height: 28px;
         font-size: 0.85rem;
     }
 
-    .theme-toggle-btn {
-        width: 28px;
+    .theme-toggle {
+        width: 84px;
         height: 28px;
-        font-size: 0.8rem;
+        font-size: 0.75rem;
     }
 
     /* Search bars: stack vertically with consistent spacing */
@@ -1060,7 +1197,6 @@ footer {
     }
 
     nav ul li a {
-        padding: 5px 10px;
         font-size: 0.95rem;
     }
 

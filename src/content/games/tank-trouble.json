@@ -1,0 +1,22 @@
+{
+  "id": "tank-trouble",
+  "name": "Tank Trouble",
+  "url": "https://tanktrouble.com/",
+  "image": "/images/tank-trouble.jpg",
+  "description": "Maze tank duels with bouncing shots and quick rounds.",
+  "minGrade": 4,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Action",
+    "Arcade",
+    "Competitive",
+    "Casual"
+  ]
+}

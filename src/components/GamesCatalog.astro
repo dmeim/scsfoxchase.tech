@@ -33,7 +33,7 @@ const catalogPayload = JSON.stringify({ games, trendingIds });
       <div class="search-grade-row">
         <div class="search-bar">
           <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" id="game-search" placeholder="Search games..." autocomplete="off" />
+          <input type="text" id="game-search" placeholder={`Search All ${games.length} Games...`} autocomplete="off" />
         </div>
         <div class="filter-group filter-group-inline">
           <span class="filter-group-label">Grade</span>

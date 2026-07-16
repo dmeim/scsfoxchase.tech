@@ -1,0 +1,20 @@
+{
+  "id": "bomomo",
+  "name": "Bomomo",
+  "url": "https://bomomo.com/",
+  "image": "/images/bomomo.jpg",
+  "description": "Paint abstract art with quirky animated brushes on a simple canvas.",
+  "minGrade": 1,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Sandbox",
+    "Casual",
+    "Kids"
+  ]
+}

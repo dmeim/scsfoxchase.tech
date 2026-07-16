@@ -1,0 +1,19 @@
+{
+  "id": "kleki",
+  "name": "Kleki",
+  "url": "https://kleki.com/",
+  "image": "/images/kleki.png",
+  "description": "Draw and paint in the browser with brushes, layers, and shapes.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Sandbox",
+    "Casual"
+  ]
+}

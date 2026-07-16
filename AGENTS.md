@@ -27,10 +27,12 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 | Route | Source | Purpose |
 |-------|--------|---------|
 | `/` | `src/pages/index.astro` | Homepage — search bars + app launcher grid |
-| `/games` | `src/pages/games.astro` | Game catalog with filtering/carousel |
+| `/games` | `src/pages/games.astro` | Game catalog (current layout) |
+| `/oldgames` | `src/pages/oldgames.astro` | Legacy game catalog (kept until removed) |
 | `/offline` | `src/pages/offline.astro` | Offline fallback |
 | `/inventory` | `src/pages/inventory.astro` | Staff device inventory lookup + QR |
 | `/games.html` | redirect | → `/games` |
+| `/newgames` | redirect | → `/games` |
 
 ## Device Compatibility (Important)
 

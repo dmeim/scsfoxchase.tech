@@ -1,0 +1,20 @@
+{
+  "id": "unicorns-run",
+  "name": "Unicorns Run",
+  "url": "https://www.unicornsrun.com/",
+  "image": "/images/unicornsrun.png",
+  "description": "Explore themed lands in a kid-friendly pixel platform adventure.",
+  "minGrade": 1,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Action",
+    "Platformer",
+    "Adventure",
+    "Casual"
+  ]
+}

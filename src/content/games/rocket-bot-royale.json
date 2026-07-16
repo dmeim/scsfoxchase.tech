@@ -1,0 +1,23 @@
+{
+  "id": "rocket-bot-royale",
+  "name": "Rocket Bot Royale",
+  "url": "https://rocketbotroyale.winterpixel.io/",
+  "image": "/images/rocker-bot-royale.png",
+  "description": "Battle cartoon robot tanks on sinking islands in a last-standing royale.",
+  "minGrade": 4,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Battle Royale",
+    "Action",
+    "Competitive",
+    "Survival",
+    "IO Games"
+  ]
+}

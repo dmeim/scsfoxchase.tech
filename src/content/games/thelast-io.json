@@ -1,0 +1,23 @@
+{
+  "id": "thelast-io",
+  "name": "Thelast.io",
+  "url": "https://thelast.io/",
+  "image": "/images/thelastroyale.png",
+  "description": "Gather melee and magic loot in a 2D fantasy battle royale.",
+  "minGrade": 4,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Battle Royale",
+    "IO Games",
+    "Action",
+    "Competitive",
+    "Survival"
+  ]
+}

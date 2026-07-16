@@ -1,8 +1,8 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
-import GamesCatalog from '../components/GamesCatalog.astro';
-import '../styles/carousel.css';
+import NewGamesCatalog from '../components/NewGamesCatalog.astro';
+import '../styles/newgames.css';
 ---
 <BaseLayout title="Games - St. Cecilia Technology" bodyClass="games-page">
   <meta
@@ -10,5 +10,5 @@ import '../styles/carousel.css';
     name="description"
     content="Browse educational games for grade-school students by grade level"
   />
-  <GamesCatalog />
+  <NewGamesCatalog />
 </BaseLayout>

@@ -1,0 +1,24 @@
+{
+  "id": "suroi",
+  "name": "Suroi",
+  "url": "https://suroi.io/",
+  "image": "/images/suroibattleroyale.png",
+  "description": "Loot gear and compete in a top-down 2D battle royale arena.",
+  "minGrade": 5,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Battle Royale",
+    "IO Games",
+    "Action",
+    "Competitive",
+    "Survival",
+    "FPS / Shooter"
+  ]
+}

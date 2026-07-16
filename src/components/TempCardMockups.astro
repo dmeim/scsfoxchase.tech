@@ -1,0 +1,328 @@
+---
+import { getCollection } from 'astro:content';
+import trending from '../data/trending.json';
+
+interface Game {
+  id: string;
+  name: string;
+  url: string;
+  image: string;
+  description: string;
+  minGrade: number;
+  maxGrade: number;
+}
+
+const allGames = (await getCollection('games')).map((entry) => entry.data) as Game[];
+const byId = new Map(allGames.map((g) => [g.id, g]));
+const trendingIds = trending as string[];
+
+const fromTrending = trendingIds
+  .map((id) => byId.get(id))
+  .filter((g): g is Game => Boolean(g));
+
+/** Six real games — two rows at 3-wide density */
+const samples =
+  fromTrending.length >= 6
+    ? fromTrending.slice(0, 6)
+    : [...fromTrending, ...allGames.filter((g) => !trendingIds.includes(g.id))].slice(0, 6);
+
+const shortDesc = (g: Game) => {
+  const d = g.description?.trim() ?? '';
+  if (d.length <= 72) return d;
+  return `${d.slice(0, 69).trimEnd()}…`;
+};
+---
+
+<div class="temp-page">
+  <div class="temp-wrap">
+    <header class="temp-intro">
+      <h1>Temp mockups — game card candidates</h1>
+      <p>
+        Ten fresh 16:9 card designs for the <code>/games</code> right-column grid (3-wide). No
+        type/genre chips — image first, title (+ optional short copy) only. Production
+        <code>/games</code> and <code>/oldgames</code> are unchanged.
+      </p>
+    </header>
+
+    <nav class="temp-toc" aria-label="Card candidate jump links">
+      <a href="#c1">1 Classic stack</a>
+      <a href="#c2">2 Soft shadow</a>
+      <a href="#c3">3 Editorial flush</a>
+      <a href="#c4">4 Zoom reveal</a>
+      <a href="#c5">5 Ranked ordinal</a>
+      <a href="#c6">6 Green spine</a>
+      <a href="#c7">7 Cinema letterbox</a>
+      <a href="#c8">8 Hover title</a>
+      <a href="#c9">9 Yellow rule</a>
+      <a href="#c10">10 Max media</a>
+    </nav>
+
+    <!-- 1 · Classic stack -->
+    <section class="temp-candidate" id="c1">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 1</span>
+        <h2>Classic stack</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Pure 16:9 art with title centered below — generous gaps, quiet border, no meta.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid" aria-label="Candidate 1 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-classic" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                <div class="tc-body">
+                  <h3>{g.name}</h3>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">16:9 + title · 3-up · no chips</p>
+      </div>
+    </section>
+
+    <!-- 2 · Soft shadow + caption bar -->
+    <section class="temp-candidate" id="c2">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 2</span>
+        <h2>Soft shadow caption</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Borderless soft shadow; image fills the top, title sits in a light caption strip.
+      </p>
+      <div class="temp-stage temp-stage-padded temp-stage-muted">
+        <div class="temp-card-grid" aria-label="Candidate 2 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-shadow" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                <div class="tc-caption">
+                  <h3>{g.name}</h3>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Soft lift · caption bar · no border chrome</p>
+      </div>
+    </section>
+
+    <!-- 3 · Editorial flush -->
+    <section class="temp-candidate" id="c3">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 3</span>
+        <h2>Editorial flush</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Squared-off (radius 0) flush tiles — large title left-aligned with a green hairline rule.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid temp-card-grid-tight" aria-label="Candidate 3 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-editorial" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                <div class="tc-body">
+                  <h3>{g.name}</h3>
+                  <p class="tc-lede">{shortDesc(g)}</p>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">No radius · flush image · title + one-line lede</p>
+      </div>
+    </section>
+
+    <!-- 4 · Zoom reveal -->
+    <section class="temp-candidate" id="c4">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 4</span>
+        <h2>Zoom reveal</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Image zooms slightly on hover; title stays below and brightens — quiet motion, school green.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid" aria-label="Candidate 4 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-zoom" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media-clip">
+                  <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                </div>
+                <div class="tc-body">
+                  <h3>{g.name}</h3>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Hover — image scale · title green punch</p>
+      </div>
+    </section>
+
+    <!-- 5 · Ranked ordinal -->
+    <section class="temp-candidate" id="c5">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 5</span>
+        <h2>Ranked ordinal</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Numbered rank badge on the 16:9 frame for a “featured list” feel — still a vertical card.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid" aria-label="Candidate 5 sample grid">
+          {
+            samples.map((g, i) => (
+              <a class="tc tc-rank" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`}>
+                  <span class="tc-ordinal" aria-hidden="true">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                </div>
+                <div class="tc-body">
+                  <h3>{g.name}</h3>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Yellow ordinal · full 16:9 · title below</p>
+      </div>
+    </section>
+
+    <!-- 6 · Green spine -->
+    <section class="temp-candidate" id="c6">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 6</span>
+        <h2>Green spine</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Vertical stack with a thick brand-green left edge — image and title stay stacked, not split.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid" aria-label="Candidate 6 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-spine" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                <div class="tc-body">
+                  <h3>{g.name}</h3>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Green left rule · 16:9 intact · 3-up</p>
+      </div>
+    </section>
+
+    <!-- 7 · Cinema letterbox -->
+    <section class="temp-candidate" id="c7">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 7</span>
+        <h2>Cinema letterbox</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Dark frame bars around the 16:9 art — theater poster vibe, title on the lower bar.
+      </p>
+      <div class="temp-stage temp-stage-padded temp-stage-darkish">
+        <div class="temp-card-grid" aria-label="Candidate 7 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-cinema" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-cinema-frame">
+                  <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                </div>
+                <div class="tc-cinema-bar">
+                  <h3>{g.name}</h3>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Letterbox rails · title on cinema bar</p>
+      </div>
+    </section>
+
+    <!-- 8 · Title only on hover -->
+    <section class="temp-candidate" id="c8">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 8</span>
+        <h2>Hover title</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Card height equals the 16:9 image; title fades in over a green gradient only on hover.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid" aria-label="Candidate 8 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-hover-title" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`}>
+                  <div class="tc-hover-fade">
+                    <h3>{g.name}</h3>
+                  </div>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Hover a tile — title over brand green wash</p>
+      </div>
+    </section>
+
+    <!-- 9 · Yellow bottom rule -->
+    <section class="temp-candidate" id="c9">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 9</span>
+        <h2>Yellow bottom rule</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Clean 16:9 + title; a thick yellow accent rule anchors the bottom edge of every card.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid" aria-label="Candidate 9 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-yrule" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                <div class="tc-body">
+                  <h3>{g.name}</h3>
+                </div>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Brand yellow underline · quiet body · 3-up</p>
+      </div>
+    </section>
+
+    <!-- 10 · Ultra-minimal max media -->
+    <section class="temp-candidate" id="c10">
+      <div class="temp-candidate-label">
+        <span class="temp-badge">Candidate 10</span>
+        <h2>Max media</h2>
+      </div>
+      <p class="temp-candidate-desc">
+        Ultra-minimal: largest possible 16:9 in the cell, one-line title, almost no chrome.
+      </p>
+      <div class="temp-stage temp-stage-padded">
+        <div class="temp-card-grid temp-card-grid-max" aria-label="Candidate 10 sample grid">
+          {
+            samples.map((g) => (
+              <a class="tc tc-max" href={g.url} target="_blank" rel="noopener noreferrer">
+                <div class="tc-media" style={`background-image:url('${g.image}')`} />
+                <h3>{g.name}</h3>
+              </a>
+            ))
+          }
+        </div>
+        <p class="temp-stage-note">Max image · one-line title · zero padding waste</p>
+      </div>
+    </section>
+  </div>
+</div>

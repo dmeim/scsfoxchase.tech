@@ -1,0 +1,20 @@
+{
+  "id": "autodraw",
+  "name": "AutoDraw",
+  "url": "https://www.autodraw.com/",
+  "image": "/images/autodraw.png",
+  "description": "Doodle freely and pick polished icon suggestions that match your sketch.",
+  "minGrade": 0,
+  "maxGrade": 5,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Art & Creativity",
+    "Kids",
+    "Casual",
+    "Early Learning"
+  ]
+}

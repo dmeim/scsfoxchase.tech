@@ -5,10 +5,10 @@ const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
 ---
 <header>
   <div class="container">
-    <div class="header-brand">
+    <a href="/" class:list={['header-brand', { active: homeActive }]} aria-label="St. Cecilia Technology home">
       <img src="/images/scs-logo.png" alt="SCS Logo" class="header-logo" width="32" height="32">
       <h1>St. Cecilia Technology</h1>
-    </div>
+    </a>
     <div class="header-right">
       <nav>
         <ul>

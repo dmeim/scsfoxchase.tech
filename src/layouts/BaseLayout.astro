@@ -23,13 +23,13 @@ const { title, bodyClass = '' } = Astro.props;
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <script is:inline>
       try {
-        var t = localStorage.getItem('theme');
-        if (!t) {
-          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? 'dark'
-            : 'light';
-        }
-        document.documentElement.setAttribute('data-theme', t);
+        var pref = localStorage.getItem('theme');
+        if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'system';
+        var resolved = pref === 'system'
+          ? (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : pref;
+        document.documentElement.setAttribute('data-theme-pref', pref);
+        document.documentElement.setAttribute('data-theme', resolved);
       } catch (e) {}
     </script>
     <slot name="head" />

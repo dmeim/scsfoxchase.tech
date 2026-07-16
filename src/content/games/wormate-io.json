@@ -1,0 +1,22 @@
+{
+  "id": "wormate-io",
+  "name": "Wormate.io",
+  "url": "https://wormate.io/",
+  "image": "/images/wormate-io.png",
+  "description": "Grow a candy-eating worm and outmaneuver other players.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Action",
+    "Arcade",
+    "Competitive"
+  ]
+}

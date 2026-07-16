@@ -22,6 +22,7 @@ export default defineConfig({
   },
   redirects: {
     '/games.html': '/games',
+    '/newgames': '/games',
     '/hub.html': '/',
     '/hub': '/',
     '/newhome': '/',

@@ -1,0 +1,22 @@
+{
+  "id": "little-big-snake",
+  "name": "Little Big Snake",
+  "url": "https://littlebigsnake.com/",
+  "image": "/images/littlebigsnake.png",
+  "description": "Grow your snake, complete missions, and compete in a lively arena.",
+  "minGrade": 3,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP",
+    "Real-Time",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "IO Games",
+    "Action",
+    "Arcade",
+    "Competitive"
+  ]
+}

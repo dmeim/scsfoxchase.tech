@@ -1,0 +1,20 @@
+{
+  "id": "hextris",
+  "name": "Hextris",
+  "url": "https://hextris.io/",
+  "image": "/images/hextris.png",
+  "description": "Match and clear colored hexagons in a fast arcade puzzle challenge.",
+  "minGrade": 4,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Single Player",
+    "Online",
+    "Free to Play"
+  ],
+  "secondaryCategories": [
+    "Arcade",
+    "Puzzle",
+    "Casual",
+    "Reaction Speed"
+  ]
+}

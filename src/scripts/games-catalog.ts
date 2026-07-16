@@ -248,6 +248,11 @@ class GamesManager {
   }
 
   createGameCard(game: Game): HTMLElement {
+    // /games Candidate #10 — max media (image + one-line title only)
+    if (this.gamesGrid?.dataset.cardStyle === 'max') {
+      return this.createMaxMediaCard(game);
+    }
+
     const card = document.createElement('div');
     card.classList.add('game-card');
     card.addEventListener('click', () => {
@@ -308,6 +313,27 @@ class GamesManager {
 
     card.appendChild(cardImage);
     card.appendChild(cardContent);
+
+    return card;
+  }
+
+  /** Candidate #10 Max media — minimal chrome, 16:9 image, one-line ellipsis title */
+  createMaxMediaCard(game: Game): HTMLElement {
+    const card = document.createElement('div');
+    card.classList.add('game-card', 'game-card--max');
+    card.addEventListener('click', () => {
+      window.open(game.url, '_blank');
+    });
+
+    const cardImage = document.createElement('div');
+    cardImage.classList.add('game-card-image');
+    cardImage.style.backgroundImage = `url(${game.image})`;
+
+    const title = document.createElement('h4');
+    title.textContent = game.name;
+
+    card.appendChild(cardImage);
+    card.appendChild(title);
 
     return card;
   }
