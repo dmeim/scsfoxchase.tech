@@ -508,7 +508,6 @@ nav ul li a:hover {
 }
 
 .game-card {
-    background-color: var(--light-bg);
     border: 1px solid var(--border-color);
     border-radius: 2px;
     overflow: hidden;
@@ -516,10 +515,6 @@ nav ul li a:hover {
     cursor: pointer;
     display: flex;
     flex-direction: column;
-}
-
-[data-theme="dark"] .game-card {
-    background-color: var(--dark-bg);
 }
 
 .game-card:hover {
@@ -546,13 +541,11 @@ nav ul li a:hover {
     margin: 0;
     padding: 12px 14px;
     color: var(--primary-color);
-    background-color: #fff;
     text-align: center;
 }
 
 [data-theme="dark"] .game-card-content h4 {
     color: var(--light-text);
-    background-color: #050505;
 }
 
 .game-card-badge-columns {

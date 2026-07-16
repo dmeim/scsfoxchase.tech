@@ -190,7 +190,6 @@
 
 .newgames-main .game-card--max {
     border: none;
-    background: transparent;
     gap: 8px;
     overflow: visible;
 }
@@ -216,11 +215,10 @@
 .newgames-main .game-card--max h4 {
     margin: 0;
     padding: 0 2px;
-    font-size: 0.88rem;
+    font-size: 1.1rem;
     font-weight: 600;
     line-height: 1.2;
     color: var(--text-color);
-    background: transparent;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
