@@ -1,0 +1,87 @@
+---
+export const prerender = true;
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import '../../styles/forms.css';
+---
+<BaseLayout title="Request A Game - St. Cecilia Technology" bodyClass="home-page">
+  <meta
+    slot="head"
+    name="description"
+    content="Request a new educational game for the St. Cecilia Technology catalog"
+  />
+
+  <section class="form-page" aria-labelledby="game-request-title">
+    <div class="container form-shell">
+      <div class="form-panel">
+        <div class="form-panel-header">
+          <h2 id="game-request-title">Request A Game</h2>
+        </div>
+
+        <div class="form-intro">
+          <p>
+            Please submit this form with all information to request a new game to be added.
+          </p>
+          <ul>
+            <li>Game must be school appropriate</li>
+            <li>No websites that host multiple games on them at once (Poki, CrazyGames, etc)</li>
+          </ul>
+          <p class="form-intro-note">
+            <strong>Note:</strong> Requesting a game does not mean that it will be added. This is just for reviewing. If it's approved, it will be added. If not, it will not be added.
+          </p>
+        </div>
+
+        <form id="game-request-form" class="tech-form">
+          <div class="form-field">
+            <label for="game-name">Game Name</label>
+            <p class="form-field-hint">Official name of the game, if you know it. If not, just the name you know.</p>
+            <input
+              id="game-name"
+              name="gameName"
+              type="text"
+              autocomplete="off"
+              required
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="game-url">URL</label>
+            <p class="form-field-hint">Full link to game site</p>
+            <input
+              id="game-url"
+              name="gameUrl"
+              type="url"
+              inputmode="url"
+              placeholder="https://"
+              autocomplete="off"
+              required
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="game-description">Game Description</label>
+            <p class="form-field-hint">Please keep this to under a paragraph.</p>
+            <textarea
+              id="game-description"
+              name="gameDescription"
+              rows="4"
+              required
+            ></textarea>
+          </div>
+
+          <div class="form-actions">
+            <a href="/forms" class="form-back-link">Back to Forms</a>
+            <button class="btn form-submit" type="submit">Submit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // UI only for now — n8n webhook comes later.
+    // Native required/type checks still run; this only blocks page navigation.
+    document.getElementById('game-request-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+    });
+  </script>
+</BaseLayout>

@@ -28,11 +28,15 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 |-------|--------|---------|
 | `/` | `src/pages/index.astro` | Homepage — search bars + app launcher grid |
 | `/games` | `src/pages/games.astro` | Game catalog (current layout) |
+| `/forms` | `src/pages/forms.astro` | Forms hub — launch help/request forms |
+| `/forms/*` | `src/pages/forms/*.astro` | Individual form stubs (n8n later) |
 | `/oldgames` | `src/pages/oldgames.astro` | Legacy game catalog (kept until removed) |
 | `/offline` | `src/pages/offline.astro` | Offline fallback |
 | `/inventory` | `src/pages/inventory.astro` | Staff device inventory lookup + QR |
 | `/games.html` | redirect | → `/games` |
 | `/newgames` | redirect | → `/games` |
+
+See `FORMS.md` for form routes, icons, and future webhook notes.
 
 ## Device Compatibility (Important)
 
@@ -60,4 +64,4 @@ Responsive queries in `src/styles/global.css` / `home.css`:
 
 - Colors: primary `#125F31` (green), secondary `#F6D724` (yellow)
 - Border radius: `2px` for cards/buttons, `999px` for pills/search bars
-- No CSS framework — styles in `src/styles/` (`global.css`, `home.css`, `carousel.css`, `inventory.css`)
+- No CSS framework — styles in `src/styles/` (`global.css`, `home.css`, `carousel.css`, `inventory.css`, `forms.css`)

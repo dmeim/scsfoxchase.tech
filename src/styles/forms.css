@@ -1,0 +1,246 @@
+/* Forms hub — frosted tiles reuse .mockup-link from home.css */
+
+.forms-hub {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  padding: clamp(12px, 2vw, 28px) 0;
+}
+
+.forms-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(10px, 1.4vw, 20px);
+  width: 100%;
+}
+
+.forms-tile {
+  min-height: clamp(120px, 16vh, 160px);
+  flex-direction: column;
+  padding: clamp(12px, 1.5vw, 20px) 12px;
+  font-size: clamp(0.85rem, 1.1vw, 1.05rem);
+}
+
+.forms-tile-icon {
+  display: inline-flex;
+  color: var(--primary-color);
+  line-height: 0;
+}
+
+.forms-tile-icon svg {
+  width: clamp(40px, 5vw, 52px);
+  height: clamp(40px, 5vw, 52px);
+}
+
+.forms-tile-label {
+  max-width: 12em;
+  line-height: 1.25;
+}
+
+.forms-stub {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(24px, 4vw, 48px) 20px;
+  text-align: center;
+}
+
+.forms-stub h2 {
+  color: var(--primary-color);
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  margin-bottom: 8px;
+}
+
+.forms-stub p {
+  opacity: 0.75;
+  margin-bottom: 20px;
+}
+
+/* Individual form pages */
+.form-page {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  padding: clamp(12px, 2.5vw, 36px) 0;
+}
+
+/* Match inventory `.container.asset-shell` (1120px).
+   Beat `.home-page main .container { max-width: none }` from global.css. */
+.container.form-shell,
+.home-page main .container.form-shell {
+  max-width: 1120px;
+  width: 100%;
+}
+
+.form-panel {
+  background: rgba(249, 249, 249, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px solid var(--border-color);
+  border-radius: 2px;
+  padding: clamp(16px, 2.5vw, 28px);
+}
+
+[data-theme="dark"] .form-panel {
+  background: rgba(45, 45, 45, 0.72);
+}
+
+.form-panel-header {
+  margin-bottom: clamp(10px, 1.4vw, 14px);
+}
+
+.form-panel-header h2 {
+  color: var(--primary-color);
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  line-height: 1.15;
+}
+
+.form-intro {
+  margin-bottom: clamp(14px, 2vw, 22px);
+  color: var(--text-color);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.form-intro p {
+  margin: 0 0 8px;
+}
+
+.form-intro ul {
+  margin: 0 0 10px;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.form-intro li {
+  margin-bottom: 4px;
+}
+
+.form-intro-note {
+  opacity: 0.85;
+  font-size: 0.9rem;
+}
+
+.form-back-link {
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.form-back-link:hover {
+  color: var(--secondary-color);
+}
+
+.tech-form {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.6vw, 18px);
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-field label {
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.form-field-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.72;
+  line-height: 1.35;
+}
+
+.form-field input,
+.form-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid var(--border-color);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-color);
+  font: inherit;
+  transition: var(--transition);
+}
+
+[data-theme="dark"] .form-field input,
+[data-theme="dark"] .form-field textarea {
+  background: rgba(26, 26, 26, 0.85);
+}
+
+.form-field input:focus,
+.form-field textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.form-field textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.btn.form-submit {
+  min-width: 120px;
+  padding: 10px 22px;
+}
+
+@media (max-width: 768px) {
+  .forms-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .forms-tile {
+    min-height: 88px;
+  }
+}
+
+@media (max-height: 800px) and (min-width: 901px) {
+  .form-page {
+    padding: 8px 0;
+  }
+
+  .form-panel {
+    padding: 14px 18px;
+  }
+
+  .form-panel-header {
+    margin-bottom: 12px;
+  }
+
+  .tech-form {
+    gap: 10px;
+  }
+
+  .form-field textarea {
+    min-height: 72px;
+  }
+
+  .forms-hub {
+    padding: 8px 0;
+  }
+
+  .forms-tile {
+    min-height: 96px;
+  }
+
+  .forms-tile-icon svg {
+    width: 36px;
+    height: 36px;
+  }
+}

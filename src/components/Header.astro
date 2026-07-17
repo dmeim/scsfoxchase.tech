@@ -2,6 +2,7 @@
 const pathname = Astro.url.pathname;
 const homeActive = pathname === '/' || pathname === '';
 const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
+const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
 ---
 <header>
   <div class="container">
@@ -14,6 +15,7 @@ const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
         <ul>
           <li><a href="/" class:list={[{ active: homeActive }]}>Home</a></li>
           <li><a href="/games" class:list={[{ active: gamesActive }]}>Games</a></li>
+          <li><a href="/forms" class:list={[{ active: formsActive }]}>Forms</a></li>
         </ul>
       </nav>
     </div>
