@@ -58,6 +58,7 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 | Deploy command | `npx wrangler deploy` |
 | Worker name | `scsfoxchase-tech` |
 | Node version | **22+** (set `NODE_VERSION=22` in Workers Builds vars, or rely on `.nvmrc` / `package.json` `engines`) |
+| Build env var | `PUBLIC_TLDRAW_LICENSE_KEY` — required so Astro inlines the tldraw license at build time |
 
 **Important:** Workers Builds must use Node **≥ 20.17** (prefer **22**). Older Node can fail to upload nested static dirs like `/_astro/`, which leaves HTML unstyled (header logo at full 1000×1000). Prefer **Deploy command** `npx wrangler deploy` over relying only on `versions upload` for asset-heavy static sites.
 
