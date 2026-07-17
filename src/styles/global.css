@@ -51,13 +51,15 @@ body.home-page {
 body.home-page::before {
     content: "";
     position: fixed;
-    inset: 0;
+    inset: -28px;
     z-index: -1;
     pointer-events: none;
     background-image: url('/images/background.png');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
+    filter: blur(4px);
+    transform: scale(1.04);
 }
 
 body.games-page {

@@ -6,37 +6,23 @@ body.asset-lookup-page {
     background-color: #eef4ef;
 }
 
-/* 33% blur/tint test: the background image remains 67% visible behind the page. */
+/* Soft blur on the page background image. */
 body.asset-lookup-page::before {
     content: "";
     position: fixed;
     inset: -28px;
-    z-index: -2;
+    z-index: -1;
     pointer-events: none;
     background-image: url('/images/background.png');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    filter: blur(12px);
-    opacity: 0.67;
+    filter: blur(4px);
     transform: scale(1.04);
-}
-
-body.asset-lookup-page::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background: rgba(249, 249, 249, 0.33);
 }
 
 [data-theme="dark"] body.asset-lookup-page {
     background-color: #101510;
-}
-
-[data-theme="dark"] body.asset-lookup-page::after {
-    background: rgba(0, 0, 0, 0.33);
 }
 
 .asset-main {
@@ -790,7 +776,6 @@ body.asset-scanner-open {
     }
 
     body.asset-lookup-page::before,
-    body.asset-lookup-page::after,
     body.asset-lookup-page > header,
     body.asset-lookup-page > footer,
     .asset-lookup-panel,
