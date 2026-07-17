@@ -34,7 +34,8 @@ body.asset-lookup-page::before {
     width: 100%;
 }
 
-.asset-shell {
+/* Beat .container max-width from global.css (loads after this file in prod). */
+.container.asset-shell {
     max-width: 1120px;
 }
 
@@ -143,9 +144,9 @@ body.asset-lookup-page::before {
     box-shadow: 0 0 0 3px rgba(18, 95, 49, 0.14);
 }
 
-.asset-lookup-button,
-.asset-scan-button,
-.asset-print-button {
+.btn.asset-lookup-button,
+.btn.asset-scan-button,
+.btn.asset-print-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -155,34 +156,43 @@ body.asset-lookup-page::before {
     padding: 13px 22px;
 }
 
-.asset-lookup-button svg,
-.asset-scan-button svg,
-.asset-print-button svg,
+.btn.asset-lookup-button svg,
+.btn.asset-scan-button svg,
+.btn.asset-print-button svg,
 .asset-scanner-close svg {
     width: 1em;
     height: 1em;
     flex-shrink: 0;
 }
 
-.asset-print-button {
+.btn.asset-print-button {
     min-width: 160px;
 }
 
-.asset-scan-button {
+/* Higher specificity than .btn so yellow wins in production CSS order. */
+.btn.asset-scan-button {
     background: var(--secondary-color);
-    color: var(--text-color);
+    background-color: var(--secondary-color);
+    color: #333;
 }
 
-.asset-scan-button:hover {
+.btn.asset-scan-button:hover {
     background: var(--primary-color);
+    background-color: var(--primary-color);
     color: var(--light-text);
 }
 
-.asset-lookup-button[disabled],
-.asset-scan-button[disabled],
-.asset-print-button[disabled] {
+.btn.asset-lookup-button[disabled],
+.btn.asset-scan-button[disabled],
+.btn.asset-print-button[disabled] {
     cursor: not-allowed;
     opacity: 0.55;
+}
+
+/* Keep loading Lookup green so the white spinner stays visible on hover. */
+.btn.asset-lookup-button[disabled]:hover {
+    background-color: var(--primary-color);
+    color: var(--light-text);
 }
 
 .asset-helper,
@@ -245,6 +255,12 @@ body.asset-lookup-page::before {
     border-top-color: var(--primary-color);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+}
+
+/* Primary-green button: green spinner is invisible unless hovered yellow. */
+.btn.asset-lookup-button .asset-loading-spinner {
+    border-color: rgba(255, 255, 255, 0.28);
+    border-top-color: #fff;
 }
 
 .asset-result {
@@ -694,9 +710,9 @@ body.asset-scanner-open {
         grid-column: 1 / -1;
     }
 
-    .asset-lookup-button,
-    .asset-scan-button,
-    .asset-print-button {
+    .btn.asset-lookup-button,
+    .btn.asset-scan-button,
+    .btn.asset-print-button {
         width: 100%;
         min-width: 0;
         padding-left: 10px;
@@ -792,7 +808,8 @@ body.asset-scanner-open {
 
     .asset-main,
     .asset-lookup-section,
-    .asset-shell {
+    .asset-shell,
+    .container.asset-shell {
         display: block !important;
         margin: 0 !important;
         padding: 0 !important;

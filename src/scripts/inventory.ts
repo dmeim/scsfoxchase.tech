@@ -16,8 +16,8 @@ const ASSET_LOOKUP_WEBHOOK_URL =
     import.meta.env.PUBLIC_INVENTORY_WEBHOOK || 'https://n8n.mlabz.io/webhook/scs-inventory';
 const USE_MOCK_WHEN_NO_WEBHOOK = true;
 const REQUEST_SERIAL_FIELD = 'serial';
-const NO_DATA_LABEL = '🚫 No Data 🚫';
-const NOT_APPLICABLE_LABEL = '⚠ Does Not Apply ⚠️';
+const NO_DATA_LABEL = 'No Data';
+const NOT_APPLICABLE_LABEL = 'Does Not Apply';
 
 const FALLBACK_DEVICE_IMAGE = '/images/inventory/fallback-device.svg';
 const MODEL_IMAGES = {
@@ -698,7 +698,10 @@ function normalizeText(value) {
 
 function isNoDataValue(value) {
     const normalized = normalizeText(value);
-    const stripped = normalized.replace(/[.!]/g, '');
+    const stripped = normalized
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
     return !normalized ||
         normalized === normalizeText(NO_DATA_LABEL) ||
         stripped === 'no data' ||
@@ -708,9 +711,12 @@ function isNoDataValue(value) {
 
 function isNotApplicableValue(value) {
     const normalized = normalizeText(value);
-    const stripped = normalized.replace(/[.!]/g, '');
+    const stripped = normalized
+        .replace(/[^a-z0-9\s']/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
     return normalized === normalizeText(NOT_APPLICABLE_LABEL) ||
-        stripped === 'n/a' ||
+        stripped === 'n a' ||
         stripped === 'na' ||
         stripped === 'not applicable' ||
         stripped === 'does not apply' ||
