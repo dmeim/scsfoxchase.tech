@@ -10,6 +10,50 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
       <img src="/images/scs-logo.png" alt="SCS Logo" class="header-logo" width="32" height="32">
       <h1>St. Cecilia Technology</h1>
     </a>
+
+    <div class="header-center" data-whiteboard-menu>
+      <button
+        type="button"
+        class="whiteboard-toggle"
+        data-whiteboard-toggle
+        aria-expanded="false"
+        aria-haspopup="true"
+        aria-controls="whiteboard-menu-panel"
+        id="whiteboard-menu-toggle"
+      >
+        Whiteboard
+      </button>
+      <div
+        class="whiteboard-menu"
+        id="whiteboard-menu-panel"
+        data-whiteboard-panel
+        role="dialog"
+        aria-label="Whiteboard options"
+        aria-hidden="true"
+      >
+        <a href="/tldraw" class="whiteboard-menu-action">New board</a>
+        <div class="whiteboard-menu-divider" role="separator"></div>
+        <form class="whiteboard-join" data-whiteboard-join>
+          <label class="whiteboard-join-label" for="whiteboard-join-input">Join board</label>
+          <div class="whiteboard-join-row">
+            <input
+              id="whiteboard-join-input"
+              class="whiteboard-join-input"
+              type="text"
+              name="room"
+              data-whiteboard-join-input
+              placeholder="Code or URL"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="200"
+            />
+            <button type="submit" class="whiteboard-join-btn">Join</button>
+          </div>
+          <p class="whiteboard-join-hint" data-whiteboard-join-hint hidden></p>
+        </form>
+      </div>
+    </div>
+
     <div class="header-right">
       <nav>
         <ul>

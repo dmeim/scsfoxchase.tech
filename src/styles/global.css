@@ -136,9 +136,10 @@ header {
 }
 
 header .container {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
+    gap: 10px;
 }
 
 .header-brand {
@@ -150,6 +151,7 @@ header .container {
     box-sizing: border-box;
     text-decoration: none;
     color: var(--primary-color);
+    justify-self: start;
 }
 
 .header-logo {
@@ -164,10 +166,197 @@ header h1 {
     line-height: 1;
 }
 
+.header-center {
+    position: relative;
+    justify-self: center;
+    z-index: 110;
+}
+
 .header-right {
     display: flex;
     align-items: center;
     gap: 10px;
+    justify-self: end;
+}
+
+/* Whiteboard navbar pop-out */
+.whiteboard-toggle {
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0 14px;
+    height: 36px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 2px;
+    box-sizing: border-box;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+[data-theme="dark"] .whiteboard-toggle {
+    background: rgba(0, 0, 0, 0.58);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--light-text);
+}
+
+.whiteboard-toggle:hover,
+.header-center.is-open .whiteboard-toggle {
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--secondary-color);
+}
+
+[data-theme="dark"] .whiteboard-toggle:hover,
+[data-theme="dark"] .header-center.is-open .whiteboard-toggle {
+    background: rgba(0, 0, 0, 0.78);
+    color: var(--primary-color);
+}
+
+.whiteboard-toggle:focus-visible {
+    outline: 2px solid var(--secondary-color);
+    outline-offset: 2px;
+}
+
+.whiteboard-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    width: min(260px, calc(100vw - 24px));
+    padding: 10px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(18, 95, 49, 0.18);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+    transform-origin: top center;
+    transform: translateX(-50%) translateY(-6px) scale(0.96);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity 0.16s ease,
+        transform 0.16s ease,
+        visibility 0.16s ease;
+}
+
+.header-center.is-open .whiteboard-menu {
+    transform: translateX(-50%) translateY(0) scale(1);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+[data-theme="dark"] .whiteboard-menu {
+    background: rgba(20, 24, 22, 0.96);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.whiteboard-menu-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 34px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border-radius: 2px;
+    background: var(--primary-color);
+    color: var(--light-text);
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: none;
+}
+
+.whiteboard-menu-action:hover {
+    background: #0e4c28;
+    color: var(--secondary-color);
+}
+
+.whiteboard-menu-divider {
+    height: 1px;
+    margin: 10px 0;
+    background: rgba(18, 95, 49, 0.16);
+}
+
+[data-theme="dark"] .whiteboard-menu-divider {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.whiteboard-join-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+[data-theme="dark"] .whiteboard-join-label {
+    color: var(--light-text);
+}
+
+.whiteboard-join-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+
+.whiteboard-join-input {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 2px;
+    border: 1px solid rgba(18, 95, 49, 0.28);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    box-sizing: border-box;
+}
+
+[data-theme="dark"] .whiteboard-join-input {
+    background: rgba(0, 0, 0, 0.35);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: var(--light-text);
+}
+
+.whiteboard-join-input:focus {
+    outline: 2px solid var(--secondary-color);
+    outline-offset: 0;
+}
+
+.whiteboard-join-btn {
+    flex-shrink: 0;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 2px;
+    border: 1px solid var(--primary-color);
+    background: var(--secondary-color);
+    color: var(--primary-color);
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.whiteboard-join-btn:hover {
+    filter: brightness(0.97);
+}
+
+.whiteboard-join-hint {
+    margin: 6px 0 0;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    color: var(--primary-color);
+}
+
+[data-theme="dark"] .whiteboard-join-hint {
+    color: var(--secondary-color);
 }
 
 nav,
@@ -997,8 +1186,9 @@ footer {
 
 /* Narrow viewport (phones + tablets in portrait) */
 @media (max-width: 900px) {
-    /* Header: brand on top, nav + theme toggle on second line */
+    /* Header: brand, whiteboard, then nav + theme toggle */
     header .container {
+        display: flex;
         flex-direction: column;
         gap: 4px;
     }
@@ -1010,10 +1200,25 @@ footer {
     .header-brand {
         height: 28px;
         padding: 0 10px 0 6px;
+        justify-self: center;
     }
 
     .header-logo {
         height: 24px;
+    }
+
+    .header-center {
+        justify-self: center;
+    }
+
+    .whiteboard-toggle {
+        height: 28px;
+        padding: 0 10px;
+        font-size: 0.85rem;
+    }
+
+    .whiteboard-menu {
+        width: min(240px, calc(100vw - 24px));
     }
 
     .header-right {
@@ -1021,6 +1226,7 @@ footer {
         gap: 8px;
         align-items: center;
         justify-content: center;
+        justify-self: center;
     }
 
     nav,
@@ -1173,8 +1379,10 @@ footer {
     }
 
     header .container {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
         flex-direction: row;
-        gap: 20px;
+        gap: 10px;
     }
 
     header h1 {
@@ -1185,8 +1393,13 @@ footer {
         height: 32px;
     }
 
+    .header-brand {
+        justify-self: start;
+    }
+
     .header-right {
         justify-content: flex-end;
+        justify-self: end;
     }
 
     nav ul li a {
