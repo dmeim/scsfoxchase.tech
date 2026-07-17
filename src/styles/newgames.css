@@ -156,10 +156,19 @@
     bottom: 14px;
     z-index: 3;
     display: flex;
-    gap: 6px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+    width: 62px;
 }
 
-.ng-hero-pager button {
+.ng-hero-pager-btns {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+
+.ng-hero-pager-btns button {
     width: 28px;
     height: 28px;
     border: 1px solid rgba(255, 255, 255, 0.4);
@@ -175,10 +184,105 @@
     transition: var(--transition);
 }
 
-.ng-hero-pager button:hover {
+.ng-hero-pager-btns button:hover {
     background: var(--secondary-color);
     color: #1a1a1a;
     border-color: var(--secondary-color);
+}
+
+/* Clickable progress segments — fill animates over autoplay duration */
+.ng-hero-progress {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    min-height: 14px;
+    --ng-hero-autoplay: 5s;
+}
+
+.ng-hero-progress[hidden] {
+    display: none;
+}
+
+.ng-hero-progress-seg {
+    flex: 1;
+    height: 14px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 1px;
+    cursor: pointer;
+    background: transparent;
+    position: relative;
+}
+
+/* Track */
+.ng-hero-progress-seg::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 6px;
+    transform: translateY(-50%);
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.35);
+    transition: background-color 0.2s ease;
+}
+
+.ng-hero-progress-seg:hover::after {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.ng-hero-progress-seg:focus-visible {
+    outline: 2px solid var(--secondary-color);
+    outline-offset: 2px;
+}
+
+/* Fill bar (grows left → right while slide is showing) */
+.ng-hero-progress-fill {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    z-index: 1;
+    width: 100%;
+    height: 6px;
+    transform: translateY(-50%) scaleX(0);
+    transform-origin: left center;
+    border-radius: 1px;
+    background: var(--secondary-color);
+    pointer-events: none;
+}
+
+.ng-hero-progress-seg.is-active .ng-hero-progress-fill.is-animating {
+    animation: ng-hero-fill var(--ng-hero-autoplay) linear forwards;
+}
+
+@keyframes ng-hero-fill {
+    from {
+        transform: translateY(-50%) scaleX(0);
+    }
+    to {
+        transform: translateY(-50%) scaleX(1);
+    }
+}
+
+[data-theme="dark"] .ng-hero-progress-seg::after {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+[data-theme="dark"] .ng-hero-progress-seg:hover::after {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+[data-theme="dark"] .ng-hero-progress-fill {
+    background: var(--secondary-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ng-hero-progress-seg.is-active .ng-hero-progress-fill.is-animating {
+        animation: none;
+        transform: translateY(-50%) scaleX(1);
+    }
 }
 
 /* Candidate 10 · Max media — 3-wide grid, largest 16:9, one-line title */

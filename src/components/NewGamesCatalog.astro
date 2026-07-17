@@ -69,8 +69,11 @@ const heroPayload = JSON.stringify(trendingGames);
                 </div>
               </a>
               <div class="ng-hero-pager">
-                <button type="button" data-ng-hero-prev aria-label="Previous">‹</button>
-                <button type="button" data-ng-hero-next aria-label="Next">›</button>
+                <div class="ng-hero-pager-btns">
+                  <button type="button" data-ng-hero-prev aria-label="Previous">‹</button>
+                  <button type="button" data-ng-hero-next aria-label="Next">›</button>
+                </div>
+                <div class="ng-hero-progress" data-ng-hero-progress role="tablist" aria-label="Trending slides"></div>
               </div>
             </section>
           ) : null
@@ -119,12 +122,41 @@ const heroPayload = JSON.stringify(trendingGames);
   const root = document.querySelector<HTMLElement>('[data-ng-hero]');
 
   if (root && heroGames.length > 0) {
+    const AUTO_MS = 5000;
     const bg = root.querySelector<HTMLElement>('[data-ng-hero-bg]');
     const title = root.querySelector('[data-ng-hero-title]');
     const desc = root.querySelector('[data-ng-hero-desc]');
     const link = root.querySelector<HTMLAnchorElement>('[data-ng-hero-link]');
+    const progress = root.querySelector<HTMLElement>('[data-ng-hero-progress]');
     let index = 0;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    if (progress) {
+      progress.innerHTML = '';
+      progress.style.setProperty('--ng-hero-autoplay', `${AUTO_MS}ms`);
+      if (heroGames.length <= 1) {
+        progress.hidden = true;
+      } else {
+        heroGames.forEach((g, i) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'ng-hero-progress-seg';
+          btn.setAttribute('role', 'tab');
+          btn.setAttribute('aria-label', `Show ${g.name}`);
+          const fill = document.createElement('span');
+          fill.className = 'ng-hero-progress-fill';
+          fill.setAttribute('aria-hidden', 'true');
+          btn.appendChild(fill);
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            go(i);
+            restart();
+          });
+          progress.appendChild(btn);
+        });
+      }
+    }
 
     const paint = () => {
       const g = heroGames[index]!;
@@ -135,6 +167,16 @@ const heroPayload = JSON.stringify(trendingGames);
         link.href = g.url;
         link.setAttribute('aria-label', `Play ${g.name}`);
       }
+
+      progress?.querySelectorAll<HTMLButtonElement>('.ng-hero-progress-seg').forEach((seg, i) => {
+        const fill = seg.querySelector<HTMLElement>('.ng-hero-progress-fill');
+        const active = i === index;
+        seg.classList.toggle('is-active', active);
+        if (active) seg.setAttribute('aria-current', 'true');
+        else seg.removeAttribute('aria-current');
+        // Reset fill so only the current segment restarts its animation.
+        fill?.classList.remove('is-animating');
+      });
     };
 
     const go = (i: number) => {
@@ -143,9 +185,23 @@ const heroPayload = JSON.stringify(trendingGames);
     };
 
     const restart = () => {
-      if (timer) clearInterval(timer);
+      if (timer) clearTimeout(timer);
+      timer = null;
       if (heroGames.length <= 1) return;
-      timer = setInterval(() => go(index + 1), 5000);
+
+      const active = progress?.querySelector<HTMLElement>(
+        '.ng-hero-progress-seg.is-active .ng-hero-progress-fill',
+      );
+      if (active) {
+        // Force a reflow so removing/adding is-animating restarts the fill.
+        void active.offsetWidth;
+        active.classList.add('is-animating');
+      }
+
+      timer = setTimeout(() => {
+        go(index + 1);
+        restart();
+      }, AUTO_MS);
     };
 
     root.querySelector('[data-ng-hero-prev]')?.addEventListener('click', (e) => {
