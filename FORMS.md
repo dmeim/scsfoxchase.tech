@@ -25,10 +25,10 @@ Student/staff help-request forms on scsfoxchase.tech. Hub launches individual fo
 
 ## UI notes
 
-- Hub tiles match homepage frosted `mockup-link` treatment (not the large `home-nav-btn` squares).
-- Hub uses `bodyClass="home-page"` so the same blurred background and glass tiles apply.
-- Keep Chromebook / iPad fit: three columns on desktop, single column under 768px; compressed heights under `max-height: 800px`.
+- Hub tiles match homepage frosted `mockup-link` treatment (styles live in `forms.css` as `.forms-tile`).
+- Forms pages use `bodyClass="forms-page"` (not `home-page`) so home dashboard container rules cannot override layout.
 - **Page width:** all forms pages use `.container.form-shell` at **1120px** — same as inventory’s `.container.asset-shell`.
+- `forms.css` is imported from `BaseLayout.astro` so it ships in the shared layout CSS bundle (avoids small-CSS inline-before-global prod/dev drift).
 
 ## Adding a form later
 

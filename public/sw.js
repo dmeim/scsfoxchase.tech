@@ -2,7 +2,7 @@
 // Navigations: network-first (never stale HTML; offline page on failure)
 // /_astro/* and other assets: network-first with cache fallback
 // (v2: drop cache-first on /_astro — poisoned immutable 404s broke CSS)
-const CACHE_NAME = 'st-cecilia-tech-astro-v2';
+const CACHE_NAME = 'st-cecilia-tech-astro-v3';
 const OFFLINE_PAGE = '/offline';
 
 self.addEventListener('install', (event) => {
