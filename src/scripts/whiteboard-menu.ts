@@ -2,14 +2,14 @@ function extractRoomId(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  // Full or relative URL: /tldraw?room=… or /tldraw/r/{id}
+  // Full or relative URL: /whiteboard?room=… or /whiteboard/r/{id}
   try {
     const url = new URL(trimmed, window.location.origin);
     const fromQuery = url.searchParams.get('room');
     if (fromQuery) {
       return sanitizeRoomId(fromQuery);
     }
-    const match = url.pathname.match(/\/tldraw\/r\/([^/]+)\/?$/i);
+    const match = url.pathname.match(/\/whiteboard\/r\/([^/]+)\/?$/i);
     if (match?.[1]) {
       return sanitizeRoomId(decodeURIComponent(match[1]));
     }
@@ -17,8 +17,8 @@ function extractRoomId(raw: string): string | null {
     // Not a URL — treat as a bare code below
   }
 
-  // Path-like paste without origin: /tldraw/r/abc
-  const pathMatch = trimmed.match(/\/tldraw\/r\/([^/?#]+)\/?/i);
+  // Path-like paste without origin: /whiteboard/r/abc
+  const pathMatch = trimmed.match(/\/whiteboard\/r\/([^/?#]+)\/?/i);
   if (pathMatch?.[1]) {
     return sanitizeRoomId(decodeURIComponent(pathMatch[1]));
   }
@@ -95,7 +95,7 @@ function initWhiteboardMenu() {
       joinHint.textContent = 'Opening board… sync coming soon.';
     }
 
-    window.location.href = `/tldraw?room=${encodeURIComponent(roomId)}`;
+    window.location.href = `/whiteboard?room=${encodeURIComponent(roomId)}`;
   });
 
   close();

@@ -10,8 +10,8 @@ function readRoomIdFromLocation(): string | undefined {
     return cleaned || undefined
   }
 
-  // Forward-compat: /tldraw/r/{id} if served via future rewrite
-  const pathMatch = window.location.pathname.match(/\/tldraw\/r\/([^/]+)\/?$/i)
+  // Forward-compat: /whiteboard/r/{id} if served via rewrite
+  const pathMatch = window.location.pathname.match(/\/whiteboard\/r\/([^/]+)\/?$/i)
   if (pathMatch?.[1]) {
     const cleaned = decodeURIComponent(pathMatch[1]).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
     return cleaned || undefined
