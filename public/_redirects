@@ -1,2 +1,4 @@
 /newhome/ / 301
 /inventory/ /inventory 301
+# Serve board shell for any /board/{uuid} (client reads UUID from the path)
+/board/* /board 200

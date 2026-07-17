@@ -5,10 +5,12 @@ import react from '@astrojs/react';
 
 export default defineConfig({
   site: 'https://scsfoxchase.tech',
-  output: 'static',
+  // Server output so the custom Worker entry (Durable Objects + /api) is bundled.
+  // All pages set `export const prerender = true` — still shipped as static HTML.
+  output: 'server',
 
   adapter: cloudflare({
-    // Static site: no Cloudflare Images binding needed (avoids IMAGES warning).
+    // Static pages: no Cloudflare Images binding needed (avoids IMAGES warning).
     imageService: 'passthrough',
     // Honor public/_headers + public/_redirects in `astro dev` (fixes /newhome/ etc.).
     experimental: {

@@ -179,6 +179,68 @@ header h1 {
     justify-self: end;
 }
 
+.theme-toggle-host {
+    display: inline-flex;
+    align-items: center;
+}
+
+.header-auth {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+}
+
+.header-auth-btn {
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0 12px;
+    height: 36px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    box-sizing: border-box;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    transition: background 0.15s ease, color 0.15s ease;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.header-auth-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--secondary-color);
+}
+
+.header-auth-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+[data-theme="dark"] .header-auth-btn {
+    background: rgba(0, 0, 0, 0.58);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--light-text);
+}
+
+[data-theme="dark"] .header-auth-btn:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.78);
+    color: var(--primary-color);
+}
+
+.header-auth-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted, #666);
+    max-width: 160px;
+    line-height: 1.2;
+}
+
 /* Whiteboard navbar pop-out */
 .whiteboard-toggle {
     color: var(--primary-color);
@@ -189,6 +251,7 @@ header h1 {
     line-height: 1;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     border-radius: 2px;
     box-sizing: border-box;
     cursor: pointer;
@@ -197,6 +260,12 @@ header h1 {
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.45);
     transition: background 0.15s ease, color 0.15s ease;
+    text-decoration: none;
+    font-family: inherit;
+}
+
+a.whiteboard-toggle:hover {
+    text-decoration: none;
 }
 
 [data-theme="dark"] .whiteboard-toggle {
@@ -243,6 +312,156 @@ header h1 {
         opacity 0.16s ease,
         transform 0.16s ease,
         visibility 0.16s ease;
+    z-index: 120;
+}
+
+.whiteboard-menu--manage {
+    width: min(320px, calc(100vw - 24px));
+}
+
+.whiteboard-manage-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.whiteboard-manage-share-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.whiteboard-manage-share-head .whiteboard-join-label {
+    margin-bottom: 0;
+}
+
+.whiteboard-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.whiteboard-switch--stub {
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.whiteboard-switch-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+[data-theme="dark"] .whiteboard-switch-label {
+    color: var(--light-text);
+}
+
+.whiteboard-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+
+.whiteboard-switch-track {
+    position: relative;
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(18, 95, 49, 0.22);
+    border: 1px solid rgba(18, 95, 49, 0.28);
+    box-sizing: border-box;
+    transition: background 0.15s ease;
+}
+
+.whiteboard-switch-track::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s ease;
+}
+
+.whiteboard-switch input:checked + .whiteboard-switch-track {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.whiteboard-switch input:checked + .whiteboard-switch-track::after {
+    transform: translateX(14px);
+}
+
+[data-theme="dark"] .whiteboard-switch-track {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="dark"] .whiteboard-switch input:checked + .whiteboard-switch-track {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.whiteboard-join-input--code {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.06em;
+}
+
+.whiteboard-join-input:disabled,
+.whiteboard-join-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    filter: none;
+}
+
+.whiteboard-people-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(18, 95, 49, 0.72);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+[data-theme="dark"] .whiteboard-people-head {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.whiteboard-people-empty {
+    margin: 0;
+}
+
+.whiteboard-menu-action--secondary {
+    background: transparent;
+    color: var(--primary-color);
+    border: 1px solid rgba(18, 95, 49, 0.28);
+}
+
+.whiteboard-menu-action--secondary:hover {
+    background: rgba(18, 95, 49, 0.08);
+    color: var(--primary-color);
+}
+
+[data-theme="dark"] .whiteboard-menu-action--secondary {
+    color: var(--light-text);
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+[data-theme="dark"] .whiteboard-menu-action--secondary:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--secondary-color);
 }
 
 .header-center.is-open .whiteboard-menu {
@@ -321,7 +540,7 @@ header h1 {
 }
 
 [data-theme="dark"] .whiteboard-join-input {
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(26, 26, 26, 0.85);
     border-color: rgba(255, 255, 255, 0.16);
     color: var(--light-text);
 }
@@ -1227,6 +1446,17 @@ footer {
         align-items: center;
         justify-content: center;
         justify-self: center;
+    }
+
+    .header-auth-btn {
+        height: 28px;
+        font-size: 0.75rem;
+        padding: 0 8px;
+    }
+
+    .header-auth-hint {
+        max-width: 120px;
+        font-size: 0.7rem;
     }
 
     nav,

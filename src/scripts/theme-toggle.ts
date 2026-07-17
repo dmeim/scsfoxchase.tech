@@ -45,8 +45,10 @@ class ThemeToggle {
   }
 
   createThemeToggle() {
-    const headerRight = document.querySelector('.header-right');
-    if (!headerRight) return;
+    const host =
+      document.getElementById('theme-toggle-host') ??
+      document.querySelector('.header-right');
+    if (!host) return;
 
     if (document.getElementById('theme-toggle')) return;
 
@@ -78,7 +80,7 @@ class ThemeToggle {
       group.appendChild(btn);
     }
 
-    headerRight.appendChild(group);
+    host.appendChild(group);
     this.syncOptionState();
   }
 

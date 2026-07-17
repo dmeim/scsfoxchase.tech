@@ -7,9 +7,11 @@ import '../styles/forms.css';
 interface Props {
   title: string;
   bodyClass?: string;
+  hideFooter?: boolean;
+  boardChrome?: boolean;
 }
 
-const { title, bodyClass = '' } = Astro.props;
+const { title, bodyClass = '', hideFooter = false, boardChrome = false } = Astro.props;
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -36,11 +38,11 @@ const { title, bodyClass = '' } = Astro.props;
     <slot name="head" />
   </head>
   <body class:list={[bodyClass || false]}>
-    <Header />
+    <Header boardChrome={boardChrome} />
     <main>
       <slot />
     </main>
-    <Footer />
+    {!hideFooter && <Footer />}
     <script>
       import '../scripts/theme-toggle';
       import '../scripts/whiteboard-menu';

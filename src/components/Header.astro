@@ -1,4 +1,11 @@
 ---
+import ClerkAuth from './ClerkAuth';
+
+interface Props {
+  boardChrome?: boolean;
+}
+
+const { boardChrome = false } = Astro.props;
 const pathname = Astro.url.pathname;
 const homeActive = pathname === '/' || pathname === '';
 const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
@@ -11,47 +18,113 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
       <h1>St. Cecilia Technology</h1>
     </a>
 
-    <div class="header-center" data-whiteboard-menu>
-      <button
-        type="button"
-        class="whiteboard-toggle"
-        data-whiteboard-toggle
-        aria-expanded="false"
-        aria-haspopup="true"
-        aria-controls="whiteboard-menu-panel"
-        id="whiteboard-menu-toggle"
-      >
-        Whiteboard
-      </button>
-      <div
-        class="whiteboard-menu"
-        id="whiteboard-menu-panel"
-        data-whiteboard-panel
-        role="dialog"
-        aria-label="Whiteboard options"
-        aria-hidden="true"
-      >
-        <a href="/whiteboard" class="whiteboard-menu-action">New board</a>
-        <div class="whiteboard-menu-divider" role="separator"></div>
-        <form class="whiteboard-join" data-whiteboard-join>
-          <label class="whiteboard-join-label" for="whiteboard-join-input">Join board</label>
-          <div class="whiteboard-join-row">
-            <input
-              id="whiteboard-join-input"
-              class="whiteboard-join-input"
-              type="text"
-              name="room"
-              data-whiteboard-join-input
-              placeholder="Code or URL"
-              autocomplete="off"
-              spellcheck="false"
-              maxlength="200"
-            />
-            <button type="submit" class="whiteboard-join-btn">Join</button>
+    <div class="header-center" data-whiteboard-menu data-whiteboard-mode={boardChrome ? 'manage' : 'hub'}>
+      {boardChrome ? (
+        <>
+          <button
+            type="button"
+            class="whiteboard-toggle"
+            data-whiteboard-toggle
+            aria-expanded="false"
+            aria-haspopup="true"
+            aria-controls="whiteboard-menu-panel"
+            id="whiteboard-menu-toggle"
+          >
+            Whiteboard
+          </button>
+          <div
+            class="whiteboard-menu whiteboard-menu--manage"
+            id="whiteboard-menu-panel"
+            data-whiteboard-panel
+            role="dialog"
+            aria-label="Manage whiteboard"
+            aria-hidden="true"
+          >
+            <form class="whiteboard-manage-name" data-wb-manage-name>
+              <label class="whiteboard-join-label" for="wb-manage-title">Name this whiteboard</label>
+              <div class="whiteboard-join-row">
+                <input
+                  id="wb-manage-title"
+                  class="whiteboard-join-input"
+                  type="text"
+                  name="title"
+                  data-wb-manage-title
+                  placeholder="Name this whiteboard"
+                  autocomplete="off"
+                  spellcheck="false"
+                  maxlength="80"
+                />
+                <button type="submit" class="whiteboard-join-btn" data-wb-manage-save>Save</button>
+              </div>
+              <p class="whiteboard-join-hint" data-wb-manage-hint hidden></p>
+            </form>
+
+            <div class="whiteboard-menu-divider" role="separator"></div>
+
+            <div class="whiteboard-manage-block" data-wb-manage-share>
+              <div class="whiteboard-manage-share-head">
+                <p class="whiteboard-join-label">Share code</p>
+                <label class="whiteboard-switch whiteboard-switch--stub" title="Coming soon">
+                  <span class="whiteboard-switch-label" data-wb-share-state>Closed</span>
+                  <input
+                    type="checkbox"
+                    disabled
+                    aria-disabled="true"
+                    aria-label="Open or close share code (coming soon)"
+                    data-wb-share-toggle
+                  />
+                  <span class="whiteboard-switch-track" aria-hidden="true"></span>
+                </label>
+              </div>
+              <div class="whiteboard-join-row">
+                <input
+                  class="whiteboard-join-input whiteboard-join-input--code"
+                  type="text"
+                  value=""
+                  placeholder="Coming soon"
+                  disabled
+                  aria-disabled="true"
+                  data-wb-share-code
+                />
+                <button type="button" class="whiteboard-join-btn" disabled data-wb-share-copy>
+                  Copy
+                </button>
+              </div>
+              <p class="whiteboard-join-hint">
+                Join codes arrive with multiplayer. When live, codes expire after 12 hours —
+                bookmark the board page to come back later.
+              </p>
+            </div>
+
+            <div class="whiteboard-menu-divider" role="separator"></div>
+
+            <div class="whiteboard-manage-block" data-wb-manage-people>
+              <p class="whiteboard-join-label">People</p>
+              <div class="whiteboard-people-head" aria-hidden="true">
+                <span>Name</span>
+                <span>Edit</span>
+              </div>
+              <p class="whiteboard-join-hint whiteboard-people-empty" data-wb-people-empty>
+                People appear when sync is on.
+              </p>
+            </div>
+
+            <div class="whiteboard-menu-divider" role="separator"></div>
+
+            <a href="/whiteboard" class="whiteboard-menu-action whiteboard-menu-action--secondary">
+              Whiteboard library
+            </a>
           </div>
-          <p class="whiteboard-join-hint" data-whiteboard-join-hint hidden></p>
-        </form>
-      </div>
+        </>
+      ) : (
+        <a
+          href="/whiteboard"
+          class="whiteboard-toggle"
+          data-whiteboard-hub-link
+        >
+          Whiteboard
+        </a>
+      )}
     </div>
 
     <div class="header-right">
@@ -62,6 +135,8 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
           <li><a href="/forms" class:list={[{ active: formsActive }]}>Forms</a></li>
         </ul>
       </nav>
+      <div id="theme-toggle-host" class="theme-toggle-host"></div>
+      <ClerkAuth client:load />
     </div>
   </div>
 </header>

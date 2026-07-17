@@ -1,0 +1,44 @@
+---
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+import TldrawBoard from '../components/TldrawBoard';
+import '../styles/whiteboard.css';
+---
+<BaseLayout
+  title="Board - St. Cecilia Technology"
+  bodyClass="board-page"
+  hideFooter={true}
+  boardChrome={true}
+>
+  <meta
+    slot="head"
+    name="description"
+    content="Collaborative whiteboard canvas for St. Cecilia Technology"
+  />
+
+  <div class="board-shell">
+    <div class="board-canvas-root">
+      <TldrawBoard client:only="react" />
+    </div>
+  </div>
+
+  <script>
+    import {
+      readBoardIdFromPath,
+      touchBoard,
+    } from '../scripts/whiteboard-library';
+
+    const boardId = readBoardIdFromPath();
+    if (!boardId) {
+      window.location.replace('/whiteboard');
+    } else {
+      // Updates lastAccessedAt; preserves existing title / creates library stub if new.
+      const entry = touchBoard(boardId);
+      const titleInput = document.querySelector<HTMLInputElement>('[data-wb-manage-title]');
+      if (titleInput) {
+        titleInput.value = entry.title;
+      }
+      document.title = `${entry.title} - St. Cecilia Technology`;
+    }
+  </script>
+</BaseLayout>

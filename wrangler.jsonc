@@ -1,14 +1,50 @@
 {
   "name": "scsfoxchase-tech",
   "compatibility_date": "2026-07-14",
+  "compatibility_flags": ["nodejs_compat"],
   // Ensure workers.dev route is published (DNS must resolve for preview)
   "workers_dev": true,
   "preview_urls": true,
-  // Astro + @astrojs/cloudflare (output: static) emits static assets under dist/client/
+  // Custom entry: Astro handler + /api/whiteboard/* (Durable Objects)
+  "main": "./src/worker.ts",
+  // Astro emits client assets under dist/client/ (Worker code bundled by Cloudflare Vite plugin)
   "assets": {
     "directory": "./dist/client",
+    "binding": "ASSETS",
     // Missing assets must 404 — never SPA-fallback HTML onto CSS (breaks under nosniff)
     "not_found_handling": "404-page",
     "html_handling": "drop-trailing-slash"
-  }
+  },
+  // -------------------------------------------------------------------------
+  // Whiteboards (product resource family: scsfoxchase-tech_whiteboards)
+  // Binding WHITEBOARDS → Durable Object class WhiteboardBoard (SQLite-backed)
+  // Binding WHITEBOARD_ASSETS → R2 bucket scsfoxchase-tech-whiteboards
+  //   R2 bucket names cannot contain `_`; hyphenated name maps to the family.
+  //   Also stores Phase 4b cloud indexes: library/{ownerKey}/boards.json|assets.json
+  // Clerk secrets (not in this file):
+  //   npx wrangler secret put CLERK_SECRET_KEY
+  //   Workers Builds / dashboard vars: PUBLIC_CLERK_PUBLISHABLE_KEY,
+  //     PUBLIC_CLERK_ALLOWED_DOMAINS (optional)
+  //   Local: .dev.vars (see .dev.vars.example)
+  // -------------------------------------------------------------------------
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WHITEBOARDS",
+        "class_name": "WhiteboardBoard"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "whiteboard-v1",
+      "new_sqlite_classes": ["WhiteboardBoard"]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "WHITEBOARD_ASSETS",
+      "bucket_name": "scsfoxchase-tech-whiteboards"
+    }
+  ]
 }

@@ -1,26 +1,97 @@
 ---
-import TldrawBoard from '../components/TldrawBoard'
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+import '../styles/whiteboard.css';
 ---
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#125F31" />
-    <title>Whiteboard - St. Cecilia Technology</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        overflow: hidden;
-      }
-    </style>
-  </head>
-  <body>
-    <TldrawBoard client:only="react" />
-  </body>
-</html>
+<BaseLayout title="Whiteboard - St. Cecilia Technology" bodyClass="whiteboard-hub-page">
+  <meta
+    slot="head"
+    name="description"
+    content="Create, join, and reopen whiteboards for St. Cecilia Technology"
+  />
+
+  <section class="wb-hub" data-wb-hub>
+    <div class="wb-hub-shell">
+      <h2 class="wb-hub-title">Whiteboard</h2>
+      <p class="wb-hub-lede">
+        Create a board for class or group work, join with a link, or reopen one from
+        this device — or your Google library when signed in.
+      </p>
+
+      <div class="wb-actions">
+        <button type="button" class="wb-create-btn" data-wb-create>
+          Create a new whiteboard
+        </button>
+
+        <form class="wb-join" data-wb-join>
+          <div class="wb-join-fields">
+            <div class="wb-join-row">
+              <label class="visually-hidden" for="wb-join-input">Join whiteboard</label>
+              <input
+                id="wb-join-input"
+                class="wb-join-input"
+                type="text"
+                name="join"
+                data-wb-join-input
+                placeholder="Paste board link or UUID"
+                autocomplete="off"
+                spellcheck="false"
+                maxlength="200"
+              />
+              <button type="submit" class="wb-join-btn">Join</button>
+            </div>
+            <p class="wb-join-hint" data-wb-join-hint hidden></p>
+          </div>
+        </form>
+      </div>
+
+      <section class="wb-section" aria-labelledby="wb-recents-heading">
+        <h3 id="wb-recents-heading" class="wb-section-title">Recents</h3>
+        <p class="wb-section-empty" data-wb-recents-empty>
+          No recent boards on this device yet. Create one to get started.
+        </p>
+        <div class="wb-card-grid wb-card-grid--recents" data-wb-recents-grid hidden></div>
+      </section>
+
+      <section class="wb-section wb-section--assets" aria-labelledby="wb-assets-heading">
+        <h3 id="wb-assets-heading" class="wb-section-title">Assets</h3>
+        <p class="wb-section-empty" data-wb-assets-empty>
+          Images and videos you place on a board show up here automatically.
+        </p>
+        <div class="wb-asset-row" data-wb-assets-row hidden></div>
+      </section>
+
+      <section class="wb-section" aria-labelledby="wb-library-heading">
+        <h3 id="wb-library-heading" class="wb-section-title">Library</h3>
+        <p class="wb-section-empty" data-wb-library-empty>
+          Boards you open are saved in this browser’s library.
+        </p>
+        <div class="wb-card-grid" data-wb-library-grid hidden></div>
+      </section>
+
+      <p class="wb-hub-note" data-wb-hub-note>
+        Library, recents, and assets stay on this device while signed out. Sign in with
+        Google to use your cloud library on any Chromebook. Pasted media is stored so
+        classmates on the same board can see it.
+      </p>
+    </div>
+  </section>
+
+  <script>
+    import '../scripts/whiteboard-hub';
+  </script>
+</BaseLayout>
+
+<style>
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

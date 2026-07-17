@@ -1,61 +1,104 @@
-import { Tldraw } from 'tldraw'
+import { useSync } from '@tldraw/sync'
+import { useCallback, useEffect, useRef } from 'react'
+import { Tldraw, type Editor } from 'tldraw'
 import 'tldraw/tldraw.css'
+import { r2AssetStore } from '../lib/whiteboard-assets'
+import {
+  getActiveIdentity,
+  onAuthChange,
+} from '../lib/whiteboard-identity'
+import { getHostSecret, touchBoardActive } from '../scripts/whiteboard-library'
 
-function readRoomIdFromLocation(): string | undefined {
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function readBoardIdFromLocation(): string | undefined {
   if (typeof window === 'undefined') return undefined
 
-  const fromQuery = new URLSearchParams(window.location.search).get('room')
-  if (fromQuery) {
-    const cleaned = fromQuery.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
-    return cleaned || undefined
-  }
-
-  // Forward-compat: /whiteboard/r/{id} if served via rewrite
-  const pathMatch = window.location.pathname.match(/\/whiteboard\/r\/([^/]+)\/?$/i)
+  const pathMatch = window.location.pathname.match(/\/board\/([^/]+)\/?$/i)
   if (pathMatch?.[1]) {
-    const cleaned = decodeURIComponent(pathMatch[1]).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
-    return cleaned || undefined
+    const id = decodeURIComponent(pathMatch[1])
+    if (UUID_RE.test(id)) return id
   }
 
   return undefined
 }
 
-type TldrawBoardProps = {
-  roomId?: string
+function applyPresenceName(editor: Editor) {
+  const identity = getActiveIdentity()
+  if (!identity) return
+  editor.user.updateUserPreferences({
+    name: identity.displayName.slice(0, 32),
+  })
 }
 
-export default function TldrawBoard({ roomId: roomIdProp }: TldrawBoardProps) {
-  const roomId = roomIdProp ?? readRoomIdFromLocation()
-  const persistenceKey = roomId
-    ? `scsfoxchase-tldraw-r-${roomId}`
-    : 'scsfoxchase-tldraw'
+type TldrawBoardProps = {
+  boardId?: string
+}
+
+export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) {
+  const boardId = boardIdProp ?? readBoardIdFromLocation() ?? ''
+  const editorRef = useRef<Editor | null>(null)
+
+  const uri = useCallback(async () => {
+    if (!boardId) {
+      throw new Error('Missing board id for sync')
+    }
+    const url = new URL(
+      `/api/whiteboard/connect/${encodeURIComponent(boardId)}`,
+      window.location.origin,
+    )
+    const hostSecret = getHostSecret(boardId)
+    if (hostSecret) {
+      url.searchParams.set('hostSecret', hostSecret)
+    }
+    return url.toString()
+  }, [boardId])
+
+  // useSync must run unconditionally; uri throws if boardId is empty (redirect handles that).
+  const store = useSync({
+    uri,
+    assets: r2AssetStore,
+  })
+
+  useEffect(() => {
+    if (!boardId) return
+    void touchBoardActive(boardId).catch(() => {
+      // Cloud upsert can fail offline; local create path still works when signed out
+    })
+  }, [boardId])
+
+  useEffect(() => {
+    return onAuthChange(() => {
+      if (editorRef.current) applyPresenceName(editorRef.current)
+    })
+  }, [])
+
+  if (!boardId) {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          color: 'var(--text-muted, #666)',
+          display: 'grid',
+          placeItems: 'center',
+        }}
+      >
+        Invalid board link
+      </div>
+    )
+  }
 
   return (
-    <div style={{ position: 'fixed', inset: 0 }}>
-      {roomId && (
-        <p
-          style={{
-            position: 'fixed',
-            top: 10,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 40,
-            margin: 0,
-            padding: '6px 12px',
-            borderRadius: 2,
-            background: 'rgba(18, 95, 49, 0.92)',
-            color: '#fff',
-            font: '500 0.8rem/1.3 system-ui, -apple-system, sans-serif',
-            pointerEvents: 'none',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-          }}
-        >
-          Room {roomId} — collaborative sync coming soon (local board for now)
-        </p>
-      )}
+    <div style={{ position: 'absolute', inset: 0 }}>
       <Tldraw
         licenseKey={import.meta.env.PUBLIC_TLDRAW_LICENSE_KEY}
-        persistenceKey={persistenceKey}
+        store={store}
+        onMount={(editor) => {
+          editorRef.current = editor
+          applyPresenceName(editor)
+        }}
       />
     </div>
   )

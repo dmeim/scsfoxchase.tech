@@ -1,55 +1,59 @@
-function extractRoomId(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-
-  // Full or relative URL: /whiteboard?room=… or /whiteboard/r/{id}
-  try {
-    const url = new URL(trimmed, window.location.origin);
-    const fromQuery = url.searchParams.get('room');
-    if (fromQuery) {
-      return sanitizeRoomId(fromQuery);
-    }
-    const match = url.pathname.match(/\/whiteboard\/r\/([^/]+)\/?$/i);
-    if (match?.[1]) {
-      return sanitizeRoomId(decodeURIComponent(match[1]));
-    }
-  } catch {
-    // Not a URL — treat as a bare code below
-  }
-
-  // Path-like paste without origin: /whiteboard/r/abc
-  const pathMatch = trimmed.match(/\/whiteboard\/r\/([^/?#]+)\/?/i);
-  if (pathMatch?.[1]) {
-    return sanitizeRoomId(decodeURIComponent(pathMatch[1]));
-  }
-
-  return sanitizeRoomId(trimmed);
-}
-
-function sanitizeRoomId(value: string): string | null {
-  const cleaned = value.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
-  return cleaned.length > 0 ? cleaned : null;
-}
+import { isSignedIn } from '../lib/whiteboard-identity';
+import {
+  getEntryActive,
+  readBoardIdFromPath,
+  setBoardTitleActive,
+} from './whiteboard-library';
 
 function initWhiteboardMenu() {
   const root = document.querySelector<HTMLElement>('[data-whiteboard-menu]');
   if (!root) return;
 
+  const mode = root.getAttribute('data-whiteboard-mode');
+  if (mode !== 'manage') return;
+
   const toggle = root.querySelector<HTMLButtonElement>('[data-whiteboard-toggle]');
   const panel = root.querySelector<HTMLElement>('[data-whiteboard-panel]');
-  const joinForm = root.querySelector<HTMLFormElement>('[data-whiteboard-join]');
-  const joinInput = root.querySelector<HTMLInputElement>('[data-whiteboard-join-input]');
-  const joinHint = root.querySelector<HTMLElement>('[data-whiteboard-join-hint]');
+  const nameForm = root.querySelector<HTMLFormElement>('[data-wb-manage-name]');
+  const titleInput = root.querySelector<HTMLInputElement>('[data-wb-manage-title]');
+  const hint = root.querySelector<HTMLElement>('[data-wb-manage-hint]');
 
   if (!toggle || !panel) return;
+
+  const boardId = readBoardIdFromPath();
+
+  const syncTitleFromLibrary = () => {
+    if (!boardId || !titleInput) return;
+    void getEntryActive(boardId).then((entry) => {
+      if (entry && titleInput) titleInput.value = entry.title;
+    });
+  };
+
+  syncTitleFromLibrary();
+
+  const setHint = (message: string | null) => {
+    if (!hint) return;
+    if (!message) {
+      hint.hidden = true;
+      hint.textContent = '';
+      return;
+    }
+    hint.hidden = false;
+    hint.textContent = message;
+  };
 
   const setOpen = (open: boolean) => {
     root.classList.toggle('is-open', open);
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     panel.setAttribute('aria-hidden', open ? 'false' : 'true');
     if (open) {
-      // Defer focus until after open transition starts
-      window.requestAnimationFrame(() => joinInput?.focus());
+      syncTitleFromLibrary();
+      setHint(null);
+      titleInput?.setCustomValidity('');
+      window.requestAnimationFrame(() => {
+        titleInput?.focus();
+        titleInput?.select();
+      });
     }
   };
 
@@ -61,6 +65,8 @@ function initWhiteboardMenu() {
     toggleMenu();
   });
 
+  // Keep outside-click closer from seeing panel clicks. Do not preventDefault —
+  // that would cancel Save / form submit button activation.
   panel.addEventListener('click', (event) => {
     event.stopPropagation();
   });
@@ -78,24 +84,44 @@ function initWhiteboardMenu() {
     }
   });
 
-  joinForm?.addEventListener('submit', (event) => {
+  titleInput?.addEventListener('input', () => {
+    titleInput.setCustomValidity('');
+    setHint(null);
+  });
+
+  nameForm?.addEventListener('submit', (event) => {
     event.preventDefault();
-    const roomId = extractRoomId(joinInput?.value ?? '');
-    if (!roomId) {
-      if (joinHint) {
-        joinHint.hidden = false;
-        joinHint.textContent = 'Enter a room code or board URL to join.';
-      }
-      joinInput?.focus();
+
+    if (!boardId) {
+      setHint('Open a board from the library to rename it.');
       return;
     }
 
-    if (joinHint) {
-      joinHint.hidden = false;
-      joinHint.textContent = 'Opening board… sync coming soon.';
+    const nextTitle = (titleInput?.value ?? '').trim();
+    if (!nextTitle) {
+      if (titleInput) {
+        titleInput.setCustomValidity('Enter a board name');
+        titleInput.reportValidity();
+        titleInput.focus();
+      }
+      setHint('Enter a name before saving.');
+      return;
     }
 
-    window.location.href = `/whiteboard?room=${encodeURIComponent(roomId)}`;
+    titleInput?.setCustomValidity('');
+    void setBoardTitleActive(boardId, nextTitle)
+      .then((next) => {
+        if (titleInput) titleInput.value = next.title;
+        document.title = `${next.title} - St. Cecilia Technology`;
+        setHint(
+          isSignedIn()
+            ? 'Saved to your Google library.'
+            : 'Saved on this device.',
+        );
+      })
+      .catch(() => {
+        setHint('Could not save the name. Check your connection and try again.');
+      });
   });
 
   close();

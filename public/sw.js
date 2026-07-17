@@ -2,7 +2,7 @@
 // Navigations: network-first (never stale HTML; offline page on failure)
 // /_astro/* and other assets: network-first with cache fallback
 // (v2: drop cache-first on /_astro — poisoned immutable 404s broke CSS)
-const CACHE_NAME = 'st-cecilia-tech-astro-v3';
+const CACHE_NAME = 'st-cecilia-tech-astro-v4';
 const OFFLINE_PAGE = '/offline';
 
 self.addEventListener('install', (event) => {
@@ -44,6 +44,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Never intercept Worker APIs / WebSocket upgrades (whiteboard sync)
+  if (url.pathname.startsWith('/api/')) return;
 
   // HTML navigations — always network; never serve stale HTML
   if (event.request.mode === 'navigate') {
