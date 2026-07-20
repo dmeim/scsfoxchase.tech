@@ -140,7 +140,7 @@ Cloud library indexes (Phase 4b) reuse the same R2 bucket (no extra KV/D1):
   - Local: `.env` for Astro build; `.dev.vars` for Worker runtime (see `.dev.vars.example`)
   - Production: Workers Builds / dashboard `PUBLIC_CLERK_*` vars + `wrangler secret put CLERK_SECRET_KEY`
 - **Allowlist:** `PUBLIC_CLERK_ALLOWED_DOMAINS` (domains and/or full emails). Empty = allow any Google account that Clerk accepts.
-- **Clerk Dashboard checklist:** add `http://localhost:4321` (and production `https://scsfoxchase.tech`) under allowed origins / redirect URLs as needed for local testing.
+- **Clerk Dashboard checklist:** add `http://localhost:4321` and `https://scsfoxchase.tech` under allowed origins / redirect URLs, plus SSO callback paths `http://localhost:4321/sso-callback` and `https://scsfoxchase.tech/sso-callback`.
 
 Local multiplayer + assets + auth test:
 
