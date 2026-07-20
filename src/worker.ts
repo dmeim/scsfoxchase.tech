@@ -5,11 +5,13 @@
  * - Binding WHITEBOARDS → Durable Object class WhiteboardBoard (SQLite)
  * - Binding WHITEBOARD_ASSETS → R2 bucket scsfoxchase-tech-whiteboards
  *   (R2 names disallow `_`; product family keeps the underscore spelling)
+ * - Binding WHITEBOARD_CODES → KV share-code → boardId index (TTL 12h)
  * - Cloud library indexes (Phase 4b): R2 JSON under library/{ownerKey}/*.json
  * - Auth: Clerk (CLERK_SECRET_KEY + PUBLIC_CLERK_PUBLISHABLE_KEY)
  */
 import { handle } from '@astrojs/cloudflare/handler'
 import { handleAssetRequest } from './worker/assetRoutes'
+import { handleCodeRequest } from './worker/codeRoutes'
 import { handleLibraryRequest } from './worker/libraryRoutes'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
 
@@ -34,6 +36,15 @@ export default {
 		if (url.pathname.startsWith('/api/whiteboard/library')) {
 			const libraryResponse = await handleLibraryRequest(request, env)
 			if (libraryResponse) return libraryResponse
+		}
+
+		// Share codes: join lookup + mint/revoke (Phase 5)
+		if (
+			url.pathname.startsWith('/api/whiteboard/join') ||
+			url.pathname.match(/^\/api\/whiteboard\/boards\/[^/]+\/code/i)
+		) {
+			const codeResponse = await handleCodeRequest(request, env)
+			if (codeResponse) return codeResponse
 		}
 
 		// R2 asset upload / download / delete

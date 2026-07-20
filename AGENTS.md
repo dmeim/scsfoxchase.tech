@@ -20,6 +20,7 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 - **Custom Worker entry** `src/worker.ts` — serves prerendered assets via `@astrojs/cloudflare/handler` and handles `/api/whiteboard/*` (WebSocket sync + R2 asset upload/download).
 - **Whiteboard sync** — Durable Object class `WhiteboardBoard`, binding `WHITEBOARDS` (product family `scsfoxchase-tech_whiteboards`). Client uses `@tldraw/sync` `useSync` on `/board/{uuid}`.
 - **Whiteboard assets** — R2 binding `WHITEBOARD_ASSETS` → bucket `scsfoxchase-tech-whiteboards` (R2 names cannot use `_`; product family spelling keeps the underscore). Keys `assets/{ownerKey}/{assetId}`; signed-out owner `local:{deviceInstallId}`; signed-in owner `google:{accountId}` (Google `sub` preferred, else Clerk user id). Hub Assets index: localStorage when signed out; R2 JSON `library/{ownerKey}/assets.json` when signed in.
+- **Share codes (Phase 5)** — KV binding `WHITEBOARD_CODES` indexes `code:{A1B2}` → board UUID (TTL 12h). DO stores `activeCode` + alarm for Open/Closed; hub join + manage-panel Open/Closed/Copy/New code.
 - **Whiteboard auth (Phase 4b)** — Clerk Google sign-in via `@clerk/react` header island (Astro 7; `@clerk/astro` not yet peer-compatible). Custom Clerk Frontend API domain: `clerk.scsfoxchase.tech`. Dual library mode: sign-in/out swaps Recents/Library/Assets without wiping the other namespace. Worker verifies sessions with `@clerk/backend` for cloud library APIs and `google:*` asset writes.
 - **PWA** with service worker (`public/sw.js`) for offline support. Network-first for navigations; `/offline` is the canonical offline page. `/api/*` is never intercepted (WebSocket).
 - **Game data** lives in `src/content/games/` as individual JSON files (Astro content collection). Trending IDs live in `src/data/trending.json`. To add a game: add its JSON under `src/content/games/` (collection picks it up at build time).
@@ -40,6 +41,8 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 | `/whiteboard` | `src/pages/whiteboard.astro` | Whiteboard hub — create, join, Recents, Assets, Library |
 | `/board/{uuid}` | `src/pages/board.astro` (+ `/board/*` rewrite) | Live board — site header + tldraw sync canvas |
 | `/api/whiteboard/connect/:uuid` | `src/worker.ts` → DO | WebSocket upgrade for tldraw sync |
+| `/api/whiteboard/join/:code` | `src/worker.ts` → KV | Resolve share code → board UUID |
+| `/api/whiteboard/boards/:uuid/code` | `src/worker.ts` → DO + KV | GET/POST/DELETE share code (Open/Closed/rotate) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | `src/worker.ts` → R2 | PUT/GET/DELETE whiteboard media |
 | `/api/whiteboard/library/boards` | `src/worker.ts` → R2 JSON | Signed-in cloud board index (Clerk) |
 | `/api/whiteboard/library/assets` | `src/worker.ts` → R2 JSON | Signed-in cloud asset index (Clerk) |
@@ -64,7 +67,7 @@ Responsive queries in `src/styles/global.css` / `home.css`:
 
 ## Deployment Config
 
-- `wrangler.jsonc` — Worker `scsfoxchase-tech`, assets `./dist/client`, `main` `./src/worker.ts`, DO binding `WHITEBOARDS`, R2 binding `WHITEBOARD_ASSETS`
+- `wrangler.jsonc` — Worker `scsfoxchase-tech`, assets `./dist/client`, `main` `./src/worker.ts`, DO binding `WHITEBOARDS`, R2 binding `WHITEBOARD_ASSETS`, KV binding `WHITEBOARD_CODES`
 - `public/_headers` — Security headers (CSP, HSTS, X-Frame-Options, cache rules)
 - `public/_redirects` — Legacy path redirects
 - `public/sw.js` — Service worker (network-first HTML, cache fallback for assets)

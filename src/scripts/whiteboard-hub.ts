@@ -5,6 +5,7 @@ import {
   setAssetTitleActive,
   type WhiteboardAssetEntry,
 } from '../lib/whiteboard-assets';
+import { lookupShareCode } from '../lib/whiteboard-codes';
 import {
   isClerkConfigured,
   isSignedIn,
@@ -530,15 +531,7 @@ function initWhiteboardHub() {
 
     if (!parsed) {
       showActionHint(
-        'Paste a board link (/board/…) or UUID. Short join codes are coming soon.',
-      );
-      joinInput?.focus();
-      return;
-    }
-
-    if (parsed.kind === 'code') {
-      showActionHint(
-        'Short join codes are coming soon. Paste a /board/{uuid} link for now.',
+        'Enter a share code (like A1B2), paste a board link (/board/…), or a UUID.',
       );
       joinInput?.focus();
       return;
@@ -547,13 +540,20 @@ function initWhiteboardHub() {
     void (async () => {
       try {
         await whenAuthReady();
+        let boardId: string;
+        if (parsed.kind === 'code') {
+          showActionHint('Looking up code…');
+          boardId = await lookupShareCode(parsed.code);
+        } else {
+          boardId = parsed.id;
+        }
         try {
-          await touchBoardActive(parsed.id);
+          await touchBoardActive(boardId);
         } catch {
           // Cloud upsert can fail offline; still open the board.
         }
         showActionHint('Opening board…');
-        window.location.href = `/board/${encodeURIComponent(parsed.id)}`;
+        window.location.href = `/board/${encodeURIComponent(boardId)}`;
       } catch (err) {
         const message =
           err instanceof Error && err.message

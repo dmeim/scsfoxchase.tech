@@ -1,6 +1,7 @@
 /**
  * Durable Object for one whiteboard room (product family: scsfoxchase-tech_whiteboards).
  * Persists tldraw document state in DO SQLite via @tldraw/sync-core.
+ * Phase 5: also owns active share code + DO alarm expiry (KV index for join).
  */
 import {
 	DurableObjectSqliteSyncWrapper,
@@ -15,6 +16,13 @@ import {
 	type TLRecord,
 } from '@tldraw/tlschema'
 import { DurableObject } from 'cloudflare:workers'
+import {
+	isExpiredIso,
+	kvCodeKey,
+	sampleShareCode,
+	SHARE_CODE_TTL_MS,
+	SHARE_CODE_TTL_SECONDS,
+} from './shareCode'
 
 const schema = createTLSchema({
 	shapes: { ...defaultShapeSchemas },
@@ -22,6 +30,14 @@ const schema = createTLSchema({
 })
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
+const ACTIVE_CODE_KEY = 'meta:activeCode'
+const CODE_EXPIRES_AT_KEY = 'meta:codeExpiresAt'
+const CODE_MINT_LOG_KEY = 'meta:codeMintLog'
+
+/** Max mint/rotate attempts per board in a rolling window. */
+const MINT_RATE_LIMIT = 12
+const MINT_RATE_WINDOW_MS = 10 * 60 * 1000
+const MINT_SAMPLE_ATTEMPTS = 24
 
 interface SocketAttachment {
 	sessionId: string
@@ -29,13 +45,27 @@ interface SocketAttachment {
 	isHost: boolean
 }
 
+type CodeState = {
+	code: string
+	expiresAt: string
+}
+
 async function sha256Hex(value: string): Promise<string> {
 	const data = new TextEncoder().encode(value)
 	const digest = await crypto.subtle.digest('SHA-256', data)
-	return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+	return Array.from(new Uint8Array(digest), (b) =>
+		b.toString(16).padStart(2, '0'),
+	).join('')
 }
 
-export class WhiteboardBoard extends DurableObject {
+function json(status: number, body: unknown): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' },
+	})
+}
+
+export class WhiteboardBoard extends DurableObject<Env> {
 	private room: TLSocketRoom<TLRecord, void> | null = null
 	/** Map sessionId → ws so onSessionSnapshot can serialize to the right socket. */
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
@@ -111,6 +141,16 @@ export class WhiteboardBoard extends DurableObject {
 		if (connectMatch && request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
 			return this.handleConnect(request, url)
 		}
+
+		const codeMatch = url.pathname.match(
+			/^\/api\/whiteboard\/boards\/([^/]+)\/code\/?$/i,
+		)
+		if (codeMatch) {
+			const boardId =
+				url.searchParams.get('boardId') || decodeURIComponent(codeMatch[1]!)
+			return this.handleCodeHttp(request, url, boardId)
+		}
+
 		return new Response('Not found', { status: 404 })
 	}
 
@@ -139,6 +179,153 @@ export class WhiteboardBoard extends DurableObject {
 		})
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
+	}
+
+	private async handleCodeHttp(
+		request: Request,
+		url: URL,
+		boardId: string,
+	): Promise<Response> {
+		if (!this.env.WHITEBOARD_CODES) {
+			return json(503, {
+				error: 'Share codes are not configured on this Worker.',
+			})
+		}
+
+		if (request.method === 'GET') {
+			const state = await this.readActiveCode()
+			if (!state) {
+				return json(200, { code: null, expiresAt: null, open: false })
+			}
+			return json(200, {
+				code: state.code,
+				expiresAt: state.expiresAt,
+				open: true,
+			})
+		}
+
+		if (request.method === 'POST') {
+			const rotate =
+				url.searchParams.get('rotate') === '1' ||
+				url.searchParams.get('rotate') === 'true'
+			try {
+				const state = await this.mintOrKeepCode(boardId, rotate)
+				return json(200, {
+					code: state.code,
+					expiresAt: state.expiresAt,
+					open: true,
+				})
+			} catch (err) {
+				const message =
+					err instanceof Error ? err.message : 'Could not create share code'
+				const status = message.includes('Rate limit') ? 429 : 503
+				return json(status, { error: message })
+			}
+		}
+
+		if (request.method === 'DELETE') {
+			await this.revokeActiveCode()
+			return json(200, { code: null, expiresAt: null, open: false })
+		}
+
+		return json(405, { error: 'Method not allowed' })
+	}
+
+	private async readActiveCode(): Promise<CodeState | null> {
+		const code = await this.ctx.storage.get<string>(ACTIVE_CODE_KEY)
+		const expiresAt = await this.ctx.storage.get<string>(CODE_EXPIRES_AT_KEY)
+		if (!code || !expiresAt) return null
+		if (isExpiredIso(expiresAt)) {
+			await this.revokeActiveCode()
+			return null
+		}
+		return { code, expiresAt }
+	}
+
+	private async assertMintAllowed(): Promise<void> {
+		const now = Date.now()
+		const log =
+			(await this.ctx.storage.get<number[]>(CODE_MINT_LOG_KEY)) ?? []
+		const recent = log.filter((t) => now - t < MINT_RATE_WINDOW_MS)
+		if (recent.length >= MINT_RATE_LIMIT) {
+			throw new Error(
+				'Rate limit: too many share-code changes. Try again in a few minutes.',
+			)
+		}
+		recent.push(now)
+		await this.ctx.storage.put(CODE_MINT_LOG_KEY, recent)
+	}
+
+	/**
+	 * Open: mint if none, else keep. Rotate: always mint a new code.
+	 */
+	private async mintOrKeepCode(
+		boardId: string,
+		rotate: boolean,
+	): Promise<CodeState> {
+		const existing = await this.readActiveCode()
+		if (existing && !rotate) {
+			return existing
+		}
+
+		await this.assertMintAllowed()
+
+		if (existing) {
+			await this.env.WHITEBOARD_CODES.delete(kvCodeKey(existing.code))
+		}
+
+		const expiresAt = new Date(Date.now() + SHARE_CODE_TTL_MS).toISOString()
+		let code: string | null = null
+
+		for (let i = 0; i < MINT_SAMPLE_ATTEMPTS; i++) {
+			const candidate = sampleShareCode()
+			const key = kvCodeKey(candidate)
+			const clash = await this.env.WHITEBOARD_CODES.get(key)
+			if (clash) continue
+
+			await this.env.WHITEBOARD_CODES.put(
+				key,
+				JSON.stringify({ boardId, exp: expiresAt }),
+				{ expirationTtl: SHARE_CODE_TTL_SECONDS },
+			)
+			code = candidate
+			break
+		}
+
+		if (!code) {
+			throw new Error('Could not allocate a free share code. Try again.')
+		}
+
+		await this.ctx.storage.put(ACTIVE_CODE_KEY, code)
+		await this.ctx.storage.put(CODE_EXPIRES_AT_KEY, expiresAt)
+		await this.ctx.storage.setAlarm(Date.parse(expiresAt))
+
+		return { code, expiresAt }
+	}
+
+	private async revokeActiveCode(): Promise<void> {
+		const code = await this.ctx.storage.get<string>(ACTIVE_CODE_KEY)
+		if (code) {
+			await this.env.WHITEBOARD_CODES.delete(kvCodeKey(code))
+		}
+		await this.ctx.storage.delete(ACTIVE_CODE_KEY)
+		await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+		try {
+			await this.ctx.storage.deleteAlarm()
+		} catch {
+			// no alarm set
+		}
+	}
+
+	/** KV TTL + DO alarm: clear active code when expired. */
+	override async alarm(): Promise<void> {
+		const expiresAt = await this.ctx.storage.get<string>(CODE_EXPIRES_AT_KEY)
+		if (!expiresAt || isExpiredIso(expiresAt)) {
+			await this.revokeActiveCode()
+			return
+		}
+		// Alarm fired early — reschedule (shouldn't happen often).
+		await this.ctx.storage.setAlarm(Date.parse(expiresAt))
 	}
 
 	private getSessionId(ws: WebSocket): string | null {

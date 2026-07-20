@@ -67,13 +67,11 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
             <div class="whiteboard-manage-block" data-wb-manage-share>
               <div class="whiteboard-manage-share-head">
                 <p class="whiteboard-join-label">Share code</p>
-                <label class="whiteboard-switch whiteboard-switch--stub" title="Coming soon">
+                <label class="whiteboard-switch">
                   <span class="whiteboard-switch-label" data-wb-share-state>Closed</span>
                   <input
                     type="checkbox"
-                    disabled
-                    aria-disabled="true"
-                    aria-label="Open or close share code (coming soon)"
+                    aria-label="Open or close share code"
                     data-wb-share-toggle
                   />
                   <span class="whiteboard-switch-track" aria-hidden="true"></span>
@@ -84,19 +82,30 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
                   class="whiteboard-join-input whiteboard-join-input--code"
                   type="text"
                   value=""
-                  placeholder="Coming soon"
-                  disabled
-                  aria-disabled="true"
+                  placeholder="Closed"
+                  readonly
+                  aria-readonly="true"
                   data-wb-share-code
                 />
-                <button type="button" class="whiteboard-join-btn" disabled data-wb-share-copy>
+                <button type="button" class="whiteboard-join-btn" data-wb-share-copy disabled>
                   Copy
                 </button>
               </div>
+              <div class="whiteboard-share-actions">
+                <button
+                  type="button"
+                  class="whiteboard-share-new"
+                  data-wb-share-new
+                  hidden
+                >
+                  New code
+                </button>
+                <p class="whiteboard-join-hint whiteboard-share-expiry" data-wb-share-expiry hidden></p>
+              </div>
               <p class="whiteboard-join-hint">
-                Join codes arrive with multiplayer. When live, codes expire after 12 hours —
-                bookmark the board page to come back later.
+                Codes expire after 12 hours. Bookmark the board page to come back later.
               </p>
+              <p class="whiteboard-join-hint" data-wb-share-hint hidden></p>
             </div>
 
             <div class="whiteboard-menu-divider" role="separator"></div>

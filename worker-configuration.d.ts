@@ -6,6 +6,7 @@
  * - WHITEBOARDS → Durable Object class WhiteboardBoard
  * - WHITEBOARD_ASSETS → R2 bucket scsfoxchase-tech-whiteboards
  *   (also stores Phase 4b cloud library JSON under library/{ownerKey}/)
+ * - WHITEBOARD_CODES → KV share-code → boardId index (TTL 12h, Phase 5)
  *
  * Clerk (Phase 4b) — set via wrangler secret / Workers Builds / .dev.vars:
  * - CLERK_SECRET_KEY (secret)
@@ -15,6 +16,7 @@
 interface Env {
 	WHITEBOARDS: DurableObjectNamespace
 	WHITEBOARD_ASSETS: R2Bucket
+	WHITEBOARD_CODES: KVNamespace
 	ASSETS: Fetcher
 	CLERK_SECRET_KEY?: string
 	PUBLIC_CLERK_PUBLISHABLE_KEY?: string

@@ -358,11 +358,6 @@ a.whiteboard-toggle:hover {
     user-select: none;
 }
 
-.whiteboard-switch--stub {
-    cursor: not-allowed;
-    opacity: 0.72;
-}
-
 .whiteboard-switch-label {
     font-size: 0.72rem;
     font-weight: 600;
@@ -423,6 +418,42 @@ a.whiteboard-toggle:hover {
 [data-theme="dark"] .whiteboard-switch input:checked + .whiteboard-switch-track {
     background: var(--primary-color);
     border-color: var(--primary-color);
+}
+
+.whiteboard-share-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 1.2em;
+}
+
+.whiteboard-share-new {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--primary-color);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.whiteboard-share-new:hover {
+    color: #0d4524;
+}
+
+[data-theme="dark"] .whiteboard-share-new {
+    color: var(--secondary-color);
+}
+
+.whiteboard-share-expiry {
+    margin: 0;
+    flex: 1;
+    text-align: right;
 }
 
 .whiteboard-join-input--code {

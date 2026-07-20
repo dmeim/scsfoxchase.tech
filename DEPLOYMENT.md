@@ -106,6 +106,8 @@ Product resource family: **`scsfoxchase-tech_whiteboards`**.
 | Migration tag | `whiteboard-v1` (`new_sqlite_classes`) |
 | R2 binding | `WHITEBOARD_ASSETS` |
 | R2 bucket | `scsfoxchase-tech-whiteboards` |
+| KV binding | `WHITEBOARD_CODES` |
+| KV namespace | `scsfoxchase-tech-whiteboard-codes` (share code → boardId, TTL 12h) |
 
 **R2 naming note:** Cloudflare R2 bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling with an underscore is unchanged for docs / DO naming.
 
@@ -113,6 +115,13 @@ Create the bucket once (if missing) before the first deploy that uses the bindin
 
 ```bash
 npx wrangler r2 bucket create scsfoxchase-tech-whiteboards
+```
+
+Share-code KV (Phase 5) is already created and bound in `wrangler.jsonc`. To recreate elsewhere:
+
+```bash
+npx wrangler kv namespace create scsfoxchase-tech-whiteboard-codes
+npx wrangler kv namespace create scsfoxchase-tech-whiteboard-codes-preview
 ```
 
 First deploy after adding the DO applies migration `whiteboard-v1` automatically via `wrangler deploy`. No separate create command is required for Durable Objects.
@@ -124,6 +133,14 @@ Asset API (capability URLs; no public list):
 - Signed-out owner: `local:{deviceInstallId}` from `localStorage` (`scsfoxchase.whiteboard.deviceInstallId`)
 - Signed-in owner: `google:{accountId}` (Google OAuth `sub` when available, else Clerk `user.id`)
 - `google:*` PUT/DELETE require a Clerk session whose owner key matches
+
+Share codes (Phase 5):
+
+- KV key: `code:{A1B2}` → `{ boardId, exp }` with `expirationTtl` 12h
+- DO metadata: `activeCode` + `codeExpiresAt` + alarm cleanup
+- `GET /api/whiteboard/join/{code}` → `{ id }` or 404
+- `GET|POST|DELETE /api/whiteboard/boards/{uuid}/code` — status / mint-or-keep (optional `?rotate=1`) / revoke
+- Auth: knowing the board UUID is enough (same capability model as opening the board); mint/rotate rate-limited per board
 
 Cloud library indexes (Phase 4b) reuse the same R2 bucket (no extra KV/D1):
 

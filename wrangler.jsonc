@@ -21,6 +21,7 @@
   // Binding WHITEBOARD_ASSETS → R2 bucket scsfoxchase-tech-whiteboards
   //   R2 bucket names cannot contain `_`; hyphenated name maps to the family.
   //   Also stores Phase 4b cloud indexes: library/{ownerKey}/boards.json|assets.json
+  // Binding WHITEBOARD_CODES → KV share-code → boardId (TTL 12h, Phase 5)
   // Clerk secrets (not in this file):
   //   npx wrangler secret put CLERK_SECRET_KEY
   //   Workers Builds / dashboard vars: PUBLIC_CLERK_PUBLISHABLE_KEY,
@@ -45,6 +46,13 @@
     {
       "binding": "WHITEBOARD_ASSETS",
       "bucket_name": "scsfoxchase-tech-whiteboards"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "WHITEBOARD_CODES",
+      "id": "4d5a29d9dfbf424f82e000571a8d917c",
+      "preview_id": "ef457d2000b94d8faba302321df01faa"
     }
   ]
 }
