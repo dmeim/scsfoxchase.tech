@@ -142,6 +142,13 @@ header .container {
     gap: 10px;
 }
 
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-self: start;
+}
+
 .header-brand {
     display: flex;
     align-items: center;
@@ -151,7 +158,6 @@ header .container {
     box-sizing: border-box;
     text-decoration: none;
     color: var(--primary-color);
-    justify-self: start;
 }
 
 .header-logo {
@@ -1405,7 +1411,7 @@ footer {
 
 /* Narrow viewport (phones + tablets in portrait) */
 @media (max-width: 900px) {
-    /* Header: brand, whiteboard, then nav + theme toggle */
+    /* Header: brand + theme, whiteboard, then nav + auth */
     header .container {
         display: flex;
         flex-direction: column;
@@ -1416,10 +1422,13 @@ footer {
         font-size: 1.1rem;
     }
 
+    .header-left {
+        align-self: center;
+    }
+
     .header-brand {
         height: 28px;
         padding: 0 10px 0 6px;
-        justify-self: center;
     }
 
     .header-logo {

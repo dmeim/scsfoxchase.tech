@@ -13,10 +13,13 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
 ---
 <header>
   <div class="container">
-    <a href="/" class="header-brand" aria-label="St. Cecilia Technology home">
-      <img src="/images/scs-logo.png" alt="SCS Logo" class="header-logo" width="32" height="32">
-      <h1>St. Cecilia Technology</h1>
-    </a>
+    <div class="header-left">
+      <a href="/" class="header-brand" aria-label="St. Cecilia Technology home">
+        <img src="/images/scs-logo.png" alt="SCS Logo" class="header-logo" width="32" height="32">
+        <h1>St. Cecilia Technology</h1>
+      </a>
+      <div id="theme-toggle-host" class="theme-toggle-host"></div>
+    </div>
 
     <div class="header-center" data-whiteboard-menu data-whiteboard-mode={boardChrome ? 'manage' : 'hub'}>
       {boardChrome ? (
@@ -135,7 +138,6 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
           <li><a href="/forms" class:list={[{ active: formsActive }]}>Forms</a></li>
         </ul>
       </nav>
-      <div id="theme-toggle-host" class="theme-toggle-host"></div>
       <ClerkAuth client:load />
     </div>
   </div>
