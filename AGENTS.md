@@ -14,6 +14,8 @@ St. Cecilia Technology — a PWA dashboard and educational games catalog for a g
 
 See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 
+**Detailed docs:** [`docs/README.md`](docs/README.md) — architecture, conventions, features, whiteboard, deploy, and environment.
+
 ## Architecture
 
 - **Astro site** on Cloudflare Workers (`output: 'server'` + all pages prerendered + Cloudflare adapter).
