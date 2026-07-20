@@ -10,8 +10,6 @@ const pathname = Astro.url.pathname;
 const homeActive = pathname === '/' || pathname === '';
 const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
 const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
-// Avoid a second ClerkProvider island next to SsoCallback on the OAuth return page.
-const hideAuth = pathname.startsWith('/sso-callback');
 ---
 <header>
   <div class="container">
@@ -140,7 +138,7 @@ const hideAuth = pathname.startsWith('/sso-callback');
           <li><a href="/forms" class:list={[{ active: formsActive }]}>Forms</a></li>
         </ul>
       </nav>
-      {!hideAuth && <ClerkAuth client:load />}
+      <ClerkAuth client:load />
     </div>
   </div>
 </header>

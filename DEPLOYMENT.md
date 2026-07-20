@@ -133,22 +133,20 @@ Cloud library indexes (Phase 4b) reuse the same R2 bucket (no extra KV/D1):
 
 ### Clerk (Google sign-in)
 
-- **Frontend API domain:** `clerk.scsfoxchase.tech` (custom Clerk domain; OAuth redirect already set to `https://clerk.scsfoxchase.tech/v1/oauth_callback`)
-- **Accounts portal:** `accounts.scsfoxchase.tech` (UserButton / hosted paths; allowed in CSP)
-- **UI:** header **Sign in** (Google OAuth redirect via `SignIn.authenticateWithRedirect`) → `/sso-callback` → return URL; UserButton when signed in
-- **Packages:** `@clerk/react` (client islands) + `@clerk/backend` (Worker). `@clerk/astro` does not declare Astro 7 peer support yet.
-- **ClerkProvider:** publishable key alone is enough for the custom FAPI (key decodes to `clerk.scsfoxchase.tech`). No `proxyUrl` / satellite `domain` needed for this setup.
-- **Secrets / vars:**
-  - Local: `.env` for Astro build; `.dev.vars` for Worker runtime (see `.dev.vars.example`)
-  - Production: Workers Builds / dashboard `PUBLIC_CLERK_*` vars + `wrangler secret put CLERK_SECRET_KEY`
-- **Allowlist:** `PUBLIC_CLERK_ALLOWED_DOMAINS` (domains and/or full emails). Empty = allow any Google account that Clerk accepts.
-- **CSP:** `public/_headers` must allow `clerk.scsfoxchase.tech`, `accounts.scsfoxchase.tech`, `challenges.cloudflare.com` (Turnstile on sign-up), and Google accounts frames/scripts used by OAuth / One Tap.
-- **Clerk Dashboard checklist:**
-  - Allowed origins: `http://localhost:4321`, `https://scsfoxchase.tech` (and `https://www.scsfoxchase.tech` if used)
-  - Redirect URLs / allowlist paths: `http://localhost:4321/sso-callback`, `https://scsfoxchase.tech/sso-callback` (plus home `/` if required by your Clerk version)
-  - Native Google OAuth callback stays on Clerk: `https://clerk.scsfoxchase.tech/v1/oauth_callback`
-  - Google provider enabled; application home URL `https://scsfoxchase.tech`
-- **Local vs production keys:** This app uses a **production** Clerk instance (`pk_live_…` → `clerk.scsfoxchase.tech`). Clerk rejects `Origin: http://localhost:4321` on `/v1/client` with `origin_invalid`, so **Google Sign in cannot complete on localhost with the live key**. Options: (1) test auth on `https://scsfoxchase.tech` after deploy, or (2) add a separate Clerk **development** instance and point local `.env` / `.dev.vars` at `pk_test_…` + matching secret for day-to-day auth work.
+- **Frontend API:** `clerk.scsfoxchase.tech` (encoded in `pk_live_…`; OAuth callback `https://clerk.scsfoxchase.tech/v1/oauth_callback`)
+- **Accounts portal:** `accounts.scsfoxchase.tech`
+- **UI:** header `SignInButton` (modal) + `UserButton` via `@clerk/react` island. Google-only is Dashboard config, not custom redirect code.
+- **ClerkProvider:** `publishableKey` + `afterSignOutUrl` only — no `domain` / `isSatellite` / `proxyUrl`
+- **Packages:** `@clerk/react` (client) + `@clerk/backend` (Worker). `@clerk/astro` not Astro 7–ready yet.
+- **Env:**
+  - Local: `.env` + `.dev.vars` (see examples)
+  - Production: Workers Builds `PUBLIC_CLERK_PUBLISHABLE_KEY` (+ optional `PUBLIC_CLERK_ALLOWED_DOMAINS`) and `wrangler secret put CLERK_SECRET_KEY`
+- **CSP** (`public/_headers`): allow `clerk.scsfoxchase.tech`, `accounts.scsfoxchase.tech`, `challenges.cloudflare.com`, `accounts.google.com`, `img.clerk.com`, `clerk-telemetry.com`
+- **Dashboard checklist:**
+  - Allowed origins: `https://scsfoxchase.tech` (and `www` if used). Localhost only works with a `pk_test_` development instance.
+  - Google connection enabled; application home URL `https://scsfoxchase.tech`
+  - Native Google OAuth callback stays on Clerk FAPI (not the app)
+- **Local vs production:** `pk_live_` → `origin_invalid` on localhost. Test Sign in on production after deploy, or use a separate Clerk development instance locally.
 Local multiplayer + assets + auth test:
 
 ```bash
