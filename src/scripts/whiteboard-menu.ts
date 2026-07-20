@@ -6,11 +6,21 @@ import {
   openBoardShareCode,
   type ShareCodeState,
 } from '../lib/whiteboard-codes'
+import { peopleListLabel } from '../lib/whiteboard-display-name'
+import {
+  setParticipantCanEdit,
+  type ParticipantRow,
+} from '../lib/whiteboard-participants'
 import {
   getEntryActive,
+  getHostSecret,
   readBoardIdFromPath,
   setBoardTitleActive,
 } from './whiteboard-library'
+
+const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
+const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
+const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
 
 function initWhiteboardMenu() {
   const root = document.querySelector<HTMLElement>('[data-whiteboard-menu]')
@@ -33,12 +43,22 @@ function initWhiteboardMenu() {
   const shareExpiry = root.querySelector<HTMLElement>('[data-wb-share-expiry]')
   const shareHint = root.querySelector<HTMLElement>('[data-wb-share-hint]')
 
+  const peopleList = root.querySelector<HTMLUListElement>('[data-wb-people-list]')
+  const peopleEmpty = root.querySelector<HTMLElement>('[data-wb-people-empty]')
+  const peopleHint = root.querySelector<HTMLElement>('[data-wb-people-hint]')
+
   if (!toggle || !panel) return
 
   const boardId = readBoardIdFromPath()
   let shareBusy = false
   let expiryTimer: number | null = null
   let currentShare: ShareCodeState = { code: null, expiresAt: null, open: false }
+
+  let participants: ParticipantRow[] = []
+  let yourSessionId = ''
+  let followingUserId: string | null = null
+  let editBusy = false
+  const isHost = Boolean(boardId && getHostSecret(boardId))
 
   const syncTitleFromLibrary = () => {
     if (!boardId || !titleInput) return
@@ -78,6 +98,17 @@ function initWhiteboardMenu() {
     }
     shareHint.hidden = false
     shareHint.textContent = message
+  }
+
+  const setPeopleHint = (message: string | null) => {
+    if (!peopleHint) return
+    if (!message) {
+      peopleHint.hidden = true
+      peopleHint.textContent = ''
+      return
+    }
+    peopleHint.hidden = false
+    peopleHint.textContent = message
   }
 
   const stopExpiryTimer = () => {
@@ -135,6 +166,133 @@ function initWhiteboardMenu() {
     }
   }
 
+  const renderPeople = () => {
+    if (!peopleList || !peopleEmpty) return
+
+    peopleList.replaceChildren()
+    if (participants.length === 0) {
+      peopleList.hidden = true
+      peopleEmpty.hidden = false
+      return
+    }
+
+    peopleList.hidden = false
+    peopleEmpty.hidden = true
+
+    for (const person of participants) {
+      const isSelf = person.sessionId === yourSessionId
+      const li = document.createElement('li')
+      li.className = 'whiteboard-people-row'
+      li.dataset.sessionId = person.sessionId
+      if (person.userId) li.dataset.userId = person.userId
+
+      const name = document.createElement('span')
+      name.className = 'whiteboard-people-name'
+      const label = peopleListLabel(person.displayName, person.sessionId)
+      name.textContent = isSelf ? `${label} (you)` : label
+      name.title = label
+
+      const followBtn = document.createElement('button')
+      followBtn.type = 'button'
+      followBtn.className = 'whiteboard-people-follow'
+      const canFollow = Boolean(person.userId) && !isSelf
+      followBtn.disabled = !canFollow
+      const isFollowing = Boolean(
+        person.userId && followingUserId && followingUserId === person.userId,
+      )
+      followBtn.textContent = isFollowing ? 'Following' : 'Follow'
+      followBtn.setAttribute('aria-pressed', isFollowing ? 'true' : 'false')
+      if (canFollow) {
+        followBtn.addEventListener('click', () => {
+          window.dispatchEvent(
+            new CustomEvent(FOLLOW_EVENT, {
+              detail: { userId: person.userId },
+            }),
+          )
+        })
+      }
+
+      const editLabel = document.createElement('label')
+      editLabel.className = 'whiteboard-switch whiteboard-people-edit'
+      const editText = document.createElement('span')
+      editText.className = 'visually-hidden'
+      editText.textContent = `Edit for ${label}`
+      const editInput = document.createElement('input')
+      editInput.type = 'checkbox'
+      // Host self always on; demoted guests (including self) show real canEdit.
+      editInput.checked = person.isHost ? true : person.canEdit
+      editInput.setAttribute('aria-label', `Allow ${label} to edit`)
+      // Host/self cannot toggle themselves; only host toggles other guests.
+      if (person.isHost || isSelf) {
+        editInput.disabled = true
+      } else {
+        editInput.disabled = !isHost || editBusy
+      }
+      const track = document.createElement('span')
+      track.className = 'whiteboard-switch-track'
+      track.setAttribute('aria-hidden', 'true')
+      editLabel.append(editText, editInput, track)
+
+      if (isHost && !person.isHost && !isSelf && boardId) {
+        editInput.addEventListener('change', () => {
+          if (editBusy) {
+            editInput.checked = person.canEdit
+            return
+          }
+          editBusy = true
+          setPeopleHint(null)
+          const wantEdit = editInput.checked
+          void (async () => {
+            try {
+              const updated = await setParticipantCanEdit(
+                boardId,
+                person.sessionId,
+                wantEdit,
+              )
+              const idx = participants.findIndex(
+                (p) => p.sessionId === updated.sessionId,
+              )
+              if (idx >= 0) {
+                participants[idx] = { ...participants[idx]!, ...updated }
+              }
+            } catch (err) {
+              editInput.checked = person.canEdit
+              setPeopleHint(
+                err instanceof Error && err.message
+                  ? err.message
+                  : 'Could not update edit permission.',
+              )
+            } finally {
+              editBusy = false
+              renderPeople()
+            }
+          })()
+        })
+      }
+
+      li.append(name, followBtn, editLabel)
+      peopleList.append(li)
+    }
+  }
+
+  window.addEventListener(PARTICIPANTS_EVENT, ((event: CustomEvent) => {
+    const detail = event.detail as {
+      participants?: ParticipantRow[]
+      yourSessionId?: string
+    }
+    participants = Array.isArray(detail.participants) ? detail.participants : []
+    yourSessionId =
+      typeof detail.yourSessionId === 'string' ? detail.yourSessionId : ''
+    renderPeople()
+  }) as EventListener)
+
+  window.addEventListener(FOLLOWING_EVENT, ((event: CustomEvent) => {
+    const detail = event.detail as { followingUserId?: string | null }
+    followingUserId =
+      typeof detail.followingUserId === 'string' ? detail.followingUserId : null
+    renderPeople()
+  }) as EventListener)
+
   const setOpen = (open: boolean) => {
     root.classList.toggle('is-open', open)
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
@@ -144,6 +302,7 @@ function initWhiteboardMenu() {
       setHint(null)
       titleInput?.setCustomValidity('')
       void refreshShareState()
+      renderPeople()
       window.requestAnimationFrame(() => {
         titleInput?.focus()
         titleInput?.select()
@@ -151,6 +310,7 @@ function initWhiteboardMenu() {
     } else {
       stopExpiryTimer()
       setShareHint(null)
+      setPeopleHint(null)
     }
   }
 

@@ -13,6 +13,7 @@ import { handle } from '@astrojs/cloudflare/handler'
 import { handleAssetRequest } from './worker/assetRoutes'
 import { handleCodeRequest } from './worker/codeRoutes'
 import { handleLibraryRequest } from './worker/libraryRoutes'
+import { handleParticipantRequest } from './worker/participantRoutes'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
 
 export { WhiteboardBoard }
@@ -45,6 +46,16 @@ export default {
 		) {
 			const codeResponse = await handleCodeRequest(request, env)
 			if (codeResponse) return codeResponse
+		}
+
+		// Per-session edit permissions (Phase 6)
+		if (
+			url.pathname.match(
+				/^\/api\/whiteboard\/boards\/[^/]+\/participants\/[^/]+/i,
+			)
+		) {
+			const participantResponse = await handleParticipantRequest(request, env)
+			if (participantResponse) return participantResponse
 		}
 
 		// R2 asset upload / download / delete

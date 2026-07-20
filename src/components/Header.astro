@@ -114,11 +114,14 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
               <p class="whiteboard-join-label">People</p>
               <div class="whiteboard-people-head" aria-hidden="true">
                 <span>Name</span>
+                <span>Follow</span>
                 <span>Edit</span>
               </div>
+              <ul class="whiteboard-people-list" data-wb-people-list hidden></ul>
               <p class="whiteboard-join-hint whiteboard-people-empty" data-wb-people-empty>
                 People appear when sync is on.
               </p>
+              <p class="whiteboard-join-hint" data-wb-people-hint hidden></p>
             </div>
 
             <div class="whiteboard-menu-divider" role="separator"></div>

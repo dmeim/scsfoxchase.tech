@@ -329,7 +329,7 @@ a.whiteboard-toggle:hover {
 }
 
 .whiteboard-menu--manage {
-    width: min(320px, calc(100vw - 24px));
+    width: min(360px, calc(100vw - 24px));
 }
 
 .whiteboard-manage-block {
@@ -469,9 +469,10 @@ a.whiteboard-toggle:hover {
 }
 
 .whiteboard-people-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 64px 40px;
+    align-items: center;
+    gap: 6px;
     font-size: 0.7rem;
     font-weight: 600;
     color: rgba(18, 95, 49, 0.72);
@@ -483,8 +484,94 @@ a.whiteboard-toggle:hover {
     color: rgba(255, 255, 255, 0.55);
 }
 
+.whiteboard-people-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.whiteboard-people-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 64px 40px;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+}
+
+.whiteboard-people-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-color, #1a1a1a);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+[data-theme="dark"] .whiteboard-people-name {
+    color: var(--light-text);
+}
+
+.whiteboard-people-follow {
+    appearance: none;
+    border: 1px solid rgba(18, 95, 49, 0.28);
+    background: transparent;
+    color: var(--primary-color);
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 3px 4px;
+    border-radius: 2px;
+    cursor: pointer;
+    line-height: 1.2;
+}
+
+.whiteboard-people-follow:hover:not(:disabled) {
+    background: rgba(18, 95, 49, 0.08);
+}
+
+.whiteboard-people-follow[aria-pressed="true"] {
+    background: rgba(18, 95, 49, 0.12);
+    border-color: var(--primary-color);
+}
+
+.whiteboard-people-follow:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+[data-theme="dark"] .whiteboard-people-follow {
+    color: var(--light-text);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="dark"] .whiteboard-people-follow:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--secondary-color);
+}
+
+.whiteboard-people-edit {
+    justify-self: end;
+}
+
 .whiteboard-people-empty {
     margin: 0;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .whiteboard-menu-action--secondary {
