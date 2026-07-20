@@ -13,6 +13,7 @@ import { handle } from '@astrojs/cloudflare/handler'
 import { handleAssetRequest } from './worker/assetRoutes'
 import { handleCodeRequest } from './worker/codeRoutes'
 import { handleLibraryRequest } from './worker/libraryRoutes'
+import { handleForceFollowRequest } from './worker/forceFollowRoutes'
 import { handleParticipantRequest } from './worker/participantRoutes'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
 
@@ -56,6 +57,14 @@ export default {
 		) {
 			const participantResponse = await handleParticipantRequest(request, env)
 			if (participantResponse) return participantResponse
+		}
+
+		// Host force-follow camera lockdown
+		if (
+			url.pathname.match(/^\/api\/whiteboard\/boards\/[^/]+\/force-follow/i)
+		) {
+			const forceFollowResponse = await handleForceFollowRequest(request, env)
+			if (forceFollowResponse) return forceFollowResponse
 		}
 
 		// R2 asset upload / download / delete

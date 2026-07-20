@@ -17,6 +17,7 @@ import {
 } from '../lib/whiteboard-identity'
 import {
   isCanEditPayload,
+  isForceFollowPayload,
   isParticipantsPayload,
   type ParticipantRow,
 } from '../lib/whiteboard-participants'
@@ -27,6 +28,7 @@ const UUID_RE =
 
 const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
+const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 
 function readBoardIdFromLocation(): string | undefined {
   if (typeof window === 'undefined') return undefined
@@ -62,6 +64,15 @@ function publishParticipants(
   )
 }
 
+function publishForceFollow(forceFollow: boolean, hostUserId: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent(FORCE_FOLLOW_EVENT, {
+      detail: { forceFollow, hostUserId },
+    }),
+  )
+}
+
 function applyReadonly(editor: Editor, canEdit: boolean) {
   // useSync keeps isReadonly in sync with collaboration.mode via a react;
   // updateInstanceState alone is overwritten while mode stays "readwrite".
@@ -84,6 +95,34 @@ export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) 
   const boardId = boardIdProp ?? readBoardIdFromLocation() ?? ''
   const editorRef = useRef<Editor | null>(null)
   const [viewOnly, setViewOnly] = useState(false)
+  const forceFollowRef = useRef({ enabled: false, hostUserId: '' })
+  /** True while this client is under host force-follow (not voluntary Follow). */
+  const isForceFollowingRef = useRef(false)
+  const followingUnsubRef = useRef<(() => void) | null>(null)
+  const forceFollowUnsubRef = useRef<(() => void) | null>(null)
+
+  const isLocalHost = useCallback(() => {
+    return Boolean(boardId && getHostSecret(boardId))
+  }, [boardId])
+
+  const applyForceFollow = useCallback(
+    (editor: Editor) => {
+      const { enabled, hostUserId } = forceFollowRef.current
+      if (!enabled || !hostUserId || isLocalHost()) {
+        if (!enabled && isForceFollowingRef.current) {
+          editor.stopFollowingUser()
+          isForceFollowingRef.current = false
+        }
+        return
+      }
+      const following = editor.getInstanceState().followingUserId
+      if (following !== hostUserId) {
+        editor.startFollowingUser(hostUserId as TLUserId)
+      }
+      isForceFollowingRef.current = true
+    },
+    [isLocalHost],
+  )
 
   const uri = useCallback(async () => {
     if (!boardId) {
@@ -111,17 +150,30 @@ export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) 
     return url.toString()
   }, [boardId])
 
-  const onCustomMessageReceived = useCallback((data: unknown) => {
-    if (isCanEditPayload(data)) {
-      const editor = editorRef.current
-      if (editor) applyReadonly(editor, data.canEdit)
-      setViewOnly(!data.canEdit)
-      return
-    }
-    if (isParticipantsPayload(data)) {
-      publishParticipants(data.participants, data.yourSessionId)
-    }
-  }, [])
+  const onCustomMessageReceived = useCallback(
+    (data: unknown) => {
+      if (isCanEditPayload(data)) {
+        const editor = editorRef.current
+        if (editor) applyReadonly(editor, data.canEdit)
+        setViewOnly(!data.canEdit)
+        return
+      }
+      if (isParticipantsPayload(data)) {
+        publishParticipants(data.participants, data.yourSessionId)
+        return
+      }
+      if (isForceFollowPayload(data)) {
+        forceFollowRef.current = {
+          enabled: data.forceFollow,
+          hostUserId: data.hostUserId,
+        }
+        publishForceFollow(data.forceFollow, data.hostUserId)
+        const editor = editorRef.current
+        if (editor) applyForceFollow(editor)
+      }
+    },
+    [applyForceFollow],
+  )
 
   // useSync must run unconditionally; uri throws if boardId is empty (redirect handles that).
   const store = useSync({
@@ -159,7 +211,13 @@ export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) 
       if (!editor) return
       const detail = (event as CustomEvent<{ userId?: string; stop?: boolean }>)
         .detail
+      const forced = forceFollowRef.current
+
       if (detail?.stop) {
+        if (forced.enabled && !isLocalHost()) {
+          applyForceFollow(editor)
+          return
+        }
         editor.stopFollowingUser()
         return
       }
@@ -167,21 +225,30 @@ export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) 
       if (!userId) return
       const following = editor.getInstanceState().followingUserId
       if (following === userId) {
+        // Trying to unfollow — re-assert while force-follow is on.
+        if (forced.enabled && !isLocalHost()) {
+          applyForceFollow(editor)
+          return
+        }
         editor.stopFollowingUser()
       } else {
         editor.startFollowingUser(userId as TLUserId)
+        // If force-follow is on, the store listener will pull them back to host.
+        if (forced.enabled && !isLocalHost()) {
+          applyForceFollow(editor)
+        }
       }
     }
     window.addEventListener(FOLLOW_EVENT, onFollow)
     return () => window.removeEventListener(FOLLOW_EVENT, onFollow)
-  }, [])
-
-  const followingUnsubRef = useRef<(() => void) | null>(null)
+  }, [applyForceFollow, isLocalHost])
 
   useEffect(() => {
     return () => {
       followingUnsubRef.current?.()
       followingUnsubRef.current = null
+      forceFollowUnsubRef.current?.()
+      forceFollowUnsubRef.current = null
     }
   }, [])
 
@@ -232,6 +299,7 @@ export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) 
         onMount={(editor) => {
           editorRef.current = editor
           applyPresenceName(editor)
+          applyForceFollow(editor)
 
           followingUnsubRef.current?.()
           const publishFollowing = () => {
@@ -248,6 +316,16 @@ export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) 
             source: 'user',
             scope: 'session',
           })
+
+          // Re-assert force-follow if the guest pans away or unfollows.
+          forceFollowUnsubRef.current?.()
+          forceFollowUnsubRef.current = editor.store.listen(
+            () => {
+              if (!forceFollowRef.current.enabled || isLocalHost()) return
+              applyForceFollow(editor)
+            },
+            { source: 'user', scope: 'session' },
+          )
         }}
       />
     </div>

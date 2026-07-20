@@ -3,6 +3,7 @@
  * Persists tldraw document state in DO SQLite via @tldraw/sync-core.
  * Phase 5: also owns active share code + DO alarm expiry (KV index for join).
  * Phase 6: per-session canEdit + live participant list for the manage panel.
+ * Force-follow: host can lock all guests to the host camera.
  */
 import {
 	DurableObjectSqliteSyncWrapper,
@@ -31,6 +32,7 @@ const schema = createTLSchema({
 })
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
+const FORCE_FOLLOW_KEY = 'meta:forceFollow'
 const ACTIVE_CODE_KEY = 'meta:activeCode'
 const CODE_EXPIRES_AT_KEY = 'meta:codeExpiresAt'
 const CODE_MINT_LOG_KEY = 'meta:codeMintLog'
@@ -129,6 +131,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
 	/** Sessions that have completed sync handshake (Connected). */
 	private readonly announcedSessions = new Set<string>()
+	/** Cached force-follow flag (null until first storage read). */
+	private forceFollowCache: boolean | null = null
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -243,6 +247,13 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return this.handleParticipantPatch(request, url, sessionId)
 		}
 
+		const forceFollowMatch = url.pathname.match(
+			/^\/api\/whiteboard\/boards\/([^/]+)\/force-follow\/?$/i,
+		)
+		if (forceFollowMatch) {
+			return this.handleForceFollowPatch(request, url)
+		}
+
 		return new Response('Not found', { status: 404 })
 	}
 
@@ -284,6 +295,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		// Push the live People list to everyone (including the newcomer).
 		this.broadcastParticipants()
+		// Force-follow state (Connected sessions only; also re-sent on announce).
+		void this.broadcastForceFollow()
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
 	}
@@ -335,6 +348,75 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(404, { error: 'Session not connected' })
 		}
 		return json(200, row)
+	}
+
+	private async handleForceFollowPatch(
+		request: Request,
+		url: URL,
+	): Promise<Response> {
+		if (request.method !== 'PATCH') {
+			return json(405, { error: 'Method not allowed' })
+		}
+
+		const hostSecret = url.searchParams.get('hostSecret')
+		if (!(await this.assertHost(hostSecret))) {
+			return json(403, { error: 'Host secret required' })
+		}
+
+		const forceFollowParam = url.searchParams.get('forceFollow')
+		const forceFollow =
+			forceFollowParam === '1' || forceFollowParam === 'true'
+
+		await this.setForceFollow(forceFollow)
+		const hostUserId = this.resolveHostUserId()
+		void this.broadcastForceFollow()
+		return json(200, { forceFollow, hostUserId })
+	}
+
+	private async getForceFollow(): Promise<boolean> {
+		if (this.forceFollowCache !== null) return this.forceFollowCache
+		const stored = await this.ctx.storage.get<boolean>(FORCE_FOLLOW_KEY)
+		this.forceFollowCache = Boolean(stored)
+		return this.forceFollowCache
+	}
+
+	private async setForceFollow(forceFollow: boolean): Promise<void> {
+		this.forceFollowCache = forceFollow
+		if (forceFollow) {
+			await this.ctx.storage.put(FORCE_FOLLOW_KEY, true)
+		} else {
+			await this.ctx.storage.delete(FORCE_FOLLOW_KEY)
+		}
+	}
+
+	/** Prefer a connected host session's tldraw userId for startFollowingUser. */
+	private resolveHostUserId(): string {
+		for (const row of this.listParticipants()) {
+			if (row.isHost && row.userId) return row.userId
+		}
+		return ''
+	}
+
+	private async broadcastForceFollow(): Promise<void> {
+		const room = this.getOrCreateRoom()
+		const forceFollow = await this.getForceFollow()
+		const hostUserId = this.resolveHostUserId()
+		const payload = {
+			type: 'wb:forceFollow' as const,
+			forceFollow,
+			hostUserId,
+		}
+		for (const sessionId of this.sessionIdToWs.keys()) {
+			const session = room
+				.getSessions()
+				.find((s) => s.sessionId === sessionId)
+			if (!session?.isConnected) continue
+			try {
+				room.sendCustomMessage(sessionId, payload)
+			} catch {
+				// Session may have raced out mid-broadcast.
+			}
+		}
 	}
 
 	private isSessionHost(sessionId: string): boolean {
@@ -615,6 +697,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			if (session?.isConnected) {
 				this.announcedSessions.add(sessionId)
 				this.broadcastParticipants()
+				void this.broadcastForceFollow()
 			}
 		}
 	}

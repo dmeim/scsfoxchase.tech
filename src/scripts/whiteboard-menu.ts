@@ -8,6 +8,7 @@ import {
 } from '../lib/whiteboard-codes'
 import { peopleListLabel } from '../lib/whiteboard-display-name'
 import {
+  setForceFollow,
   setParticipantCanEdit,
   type ParticipantRow,
 } from '../lib/whiteboard-participants'
@@ -21,6 +22,7 @@ import {
 const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
 const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
+const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 
 function initWhiteboardMenu() {
   const root = document.querySelector<HTMLElement>('[data-whiteboard-menu]')
@@ -47,6 +49,22 @@ function initWhiteboardMenu() {
   const peopleEmpty = root.querySelector<HTMLElement>('[data-wb-people-empty]')
   const peopleHint = root.querySelector<HTMLElement>('[data-wb-people-hint]')
 
+  const forceFollowBlock = root.querySelector<HTMLElement>(
+    '[data-wb-manage-force-follow]',
+  )
+  const forceFollowDivider = root.querySelector<HTMLElement>(
+    '[data-wb-force-follow-divider]',
+  )
+  const forceFollowToggle = root.querySelector<HTMLInputElement>(
+    '[data-wb-force-follow-toggle]',
+  )
+  const forceFollowState = root.querySelector<HTMLElement>(
+    '[data-wb-force-follow-state]',
+  )
+  const forceFollowHint = root.querySelector<HTMLElement>(
+    '[data-wb-force-follow-hint]',
+  )
+
   if (!toggle || !panel) return
 
   const boardId = readBoardIdFromPath()
@@ -58,7 +76,12 @@ function initWhiteboardMenu() {
   let yourSessionId = ''
   let followingUserId: string | null = null
   let editBusy = false
+  let forceFollowBusy = false
+  let forceFollowOn = false
   const isHost = Boolean(boardId && getHostSecret(boardId))
+
+  if (forceFollowBlock) forceFollowBlock.hidden = !isHost
+  if (forceFollowDivider) forceFollowDivider.hidden = !isHost
 
   const syncTitleFromLibrary = () => {
     if (!boardId || !titleInput) return
@@ -109,6 +132,23 @@ function initWhiteboardMenu() {
     }
     peopleHint.hidden = false
     peopleHint.textContent = message
+  }
+
+  const setForceFollowHint = (message: string | null) => {
+    if (!forceFollowHint) return
+    if (!message) {
+      forceFollowHint.hidden = true
+      forceFollowHint.textContent = ''
+      return
+    }
+    forceFollowHint.hidden = false
+    forceFollowHint.textContent = message
+  }
+
+  const renderForceFollowUi = (on: boolean) => {
+    forceFollowOn = on
+    if (forceFollowToggle) forceFollowToggle.checked = on
+    if (forceFollowState) forceFollowState.textContent = on ? 'On' : 'Off'
   }
 
   const stopExpiryTimer = () => {
@@ -293,6 +333,11 @@ function initWhiteboardMenu() {
     renderPeople()
   }) as EventListener)
 
+  window.addEventListener(FORCE_FOLLOW_EVENT, ((event: CustomEvent) => {
+    const detail = event.detail as { forceFollow?: boolean }
+    renderForceFollowUi(Boolean(detail.forceFollow))
+  }) as EventListener)
+
   const setOpen = (open: boolean) => {
     root.classList.toggle('is-open', open)
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
@@ -303,6 +348,7 @@ function initWhiteboardMenu() {
       titleInput?.setCustomValidity('')
       void refreshShareState()
       renderPeople()
+      renderForceFollowUi(forceFollowOn)
       window.requestAnimationFrame(() => {
         titleInput?.focus()
         titleInput?.select()
@@ -311,6 +357,7 @@ function initWhiteboardMenu() {
       stopExpiryTimer()
       setShareHint(null)
       setPeopleHint(null)
+      setForceFollowHint(null)
     }
   }
 
@@ -443,6 +490,31 @@ function initWhiteboardMenu() {
         // Fallback: select the input so Chromebooks without clipboard grant still work.
         shareCodeInput?.select()
         setShareHint('Select the code and copy it (Ctrl+C / ⌘C).')
+      }
+    })()
+  })
+
+  forceFollowToggle?.addEventListener('change', () => {
+    if (!boardId || !isHost || forceFollowBusy) {
+      if (forceFollowToggle) forceFollowToggle.checked = forceFollowOn
+      return
+    }
+    forceFollowBusy = true
+    setForceFollowHint(null)
+    const wantOn = forceFollowToggle.checked
+    void (async () => {
+      try {
+        const result = await setForceFollow(boardId, wantOn)
+        renderForceFollowUi(result.forceFollow)
+      } catch (err) {
+        renderForceFollowUi(forceFollowOn)
+        setForceFollowHint(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not update force follow.',
+        )
+      } finally {
+        forceFollowBusy = false
       }
     })()
   })

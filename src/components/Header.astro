@@ -110,6 +110,27 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
 
             <div class="whiteboard-menu-divider" role="separator"></div>
 
+            <div class="whiteboard-manage-block" data-wb-manage-force-follow hidden>
+              <div class="whiteboard-manage-share-head">
+                <p class="whiteboard-join-label">Everyone follows me</p>
+                <label class="whiteboard-switch">
+                  <span class="whiteboard-switch-label" data-wb-force-follow-state>Off</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Force everyone to follow your screen"
+                    data-wb-force-follow-toggle
+                  />
+                  <span class="whiteboard-switch-track" aria-hidden="true"></span>
+                </label>
+              </div>
+              <p class="whiteboard-join-hint">
+                When on, other people stay locked to your camera.
+              </p>
+              <p class="whiteboard-join-hint" data-wb-force-follow-hint hidden></p>
+            </div>
+
+            <div class="whiteboard-menu-divider" role="separator" data-wb-force-follow-divider hidden></div>
+
             <div class="whiteboard-manage-block" data-wb-manage-people>
               <p class="whiteboard-join-label">People</p>
               <div class="whiteboard-people-head" aria-hidden="true">
