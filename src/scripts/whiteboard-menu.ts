@@ -1,4 +1,4 @@
-import { isSignedIn } from '../lib/whiteboard-identity';
+import { isSignedIn, onAuthChange, whenAuthReady } from '../lib/whiteboard-identity';
 import {
   getEntryActive,
   readBoardIdFromPath,
@@ -24,12 +24,19 @@ function initWhiteboardMenu() {
 
   const syncTitleFromLibrary = () => {
     if (!boardId || !titleInput) return;
-    void getEntryActive(boardId).then((entry) => {
-      if (entry && titleInput) titleInput.value = entry.title;
+    // Wait for Clerk so signed-in users read cloud library, not localStorage.
+    void whenAuthReady().then(() => getEntryActive(boardId)).then((entry) => {
+      if (entry && titleInput) {
+        titleInput.value = entry.title;
+        document.title = `${entry.title} - St. Cecilia Technology`;
+      }
     });
   };
 
   syncTitleFromLibrary();
+  onAuthChange(() => {
+    syncTitleFromLibrary();
+  });
 
   const setHint = (message: string | null) => {
     if (!hint) return;
@@ -109,8 +116,11 @@ function initWhiteboardMenu() {
     }
 
     titleInput?.setCustomValidity('');
-    void setBoardTitleActive(boardId, nextTitle)
-      .then((next) => {
+    // Gate on auth-ready so a pre-AuthBridge Save does not write localStorage.
+    void (async () => {
+      try {
+        await whenAuthReady();
+        const next = await setBoardTitleActive(boardId, nextTitle);
         if (titleInput) titleInput.value = next.title;
         document.title = `${next.title} - St. Cecilia Technology`;
         setHint(
@@ -118,10 +128,10 @@ function initWhiteboardMenu() {
             ? 'Saved to your Google library.'
             : 'Saved on this device.',
         );
-      })
-      .catch(() => {
+      } catch {
         setHint('Could not save the name. Check your connection and try again.');
-      });
+      }
+    })();
   });
 
   close();

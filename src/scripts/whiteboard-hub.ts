@@ -5,7 +5,12 @@ import {
   setAssetTitleActive,
   type WhiteboardAssetEntry,
 } from '../lib/whiteboard-assets';
-import { isSignedIn, onAuthChange } from '../lib/whiteboard-identity';
+import {
+  isClerkConfigured,
+  isSignedIn,
+  onAuthChange,
+  whenAuthReady,
+} from '../lib/whiteboard-identity';
 import {
   createBoardActive,
   formatAccessedDate,
@@ -427,17 +432,17 @@ function bindCardMenus(root: Element) {
     }
     input?.setCustomValidity('');
 
-    if (kind === 'asset') {
-      void setAssetTitleActive(id, nextTitle).then(() => {
-        closeCardMenus();
-        void renderLibrary();
-      });
-    } else {
-      void setBoardTitleActive(id, nextTitle).then(() => {
-        closeCardMenus();
-        void renderLibrary();
-      });
-    }
+    // Gate on auth-ready so a pre-AuthBridge rename does not write localStorage.
+    void (async () => {
+      await whenAuthReady();
+      if (kind === 'asset') {
+        await setAssetTitleActive(id, nextTitle);
+      } else {
+        await setBoardTitleActive(id, nextTitle);
+      }
+      closeCardMenus();
+      void renderLibrary();
+    })();
   });
 }
 
@@ -471,10 +476,52 @@ function initWhiteboardHub() {
   const joinInput = root.querySelector<HTMLInputElement>('[data-wb-join-input]');
   const joinHint = root.querySelector<HTMLElement>('[data-wb-join-hint]');
 
+  const showActionHint = (message: string) => {
+    if (!joinHint) return;
+    joinHint.hidden = false;
+    joinHint.textContent = message;
+  };
+
+  const showAuthPendingUi = () => {
+    for (const sel of [
+      '[data-wb-recents-empty]',
+      '[data-wb-assets-empty]',
+      '[data-wb-library-empty]',
+    ] as const) {
+      const el = root.querySelector<HTMLElement>(sel);
+      if (!el) continue;
+      el.hidden = false;
+      el.textContent = 'Loading…';
+    }
+    for (const sel of [
+      '[data-wb-recents-grid]',
+      '[data-wb-assets-row]',
+      '[data-wb-library-grid]',
+    ] as const) {
+      const el = root.querySelector<HTMLElement>(sel);
+      if (!el) continue;
+      el.innerHTML = '';
+      el.hidden = true;
+    }
+  };
+
   createBtn?.addEventListener('click', () => {
-    void createBoardActive().then(({ id }) => {
-      window.location.href = `/board/${encodeURIComponent(id)}`;
-    });
+    if (createBtn.disabled) return;
+    createBtn.disabled = true;
+    void (async () => {
+      try {
+        await whenAuthReady();
+        const { id } = await createBoardActive();
+        window.location.href = `/board/${encodeURIComponent(id)}`;
+      } catch (err) {
+        createBtn.disabled = false;
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not create board. Check your connection and try again.';
+        showActionHint(message);
+      }
+    })();
   });
 
   joinForm?.addEventListener('submit', (event) => {
@@ -482,35 +529,49 @@ function initWhiteboardHub() {
     const parsed = parseJoinInput(joinInput?.value ?? '');
 
     if (!parsed) {
-      if (joinHint) {
-        joinHint.hidden = false;
-        joinHint.textContent =
-          'Paste a board link (/board/…) or UUID. Short join codes are coming soon.';
-      }
+      showActionHint(
+        'Paste a board link (/board/…) or UUID. Short join codes are coming soon.',
+      );
       joinInput?.focus();
       return;
     }
 
     if (parsed.kind === 'code') {
-      if (joinHint) {
-        joinHint.hidden = false;
-        joinHint.textContent =
-          'Short join codes are coming soon. Paste a /board/{uuid} link for now.';
-      }
+      showActionHint(
+        'Short join codes are coming soon. Paste a /board/{uuid} link for now.',
+      );
       joinInput?.focus();
       return;
     }
 
-    void touchBoardActive(parsed.id).finally(() => {
-      if (joinHint) {
-        joinHint.hidden = false;
-        joinHint.textContent = 'Opening board…';
+    void (async () => {
+      try {
+        await whenAuthReady();
+        try {
+          await touchBoardActive(parsed.id);
+        } catch {
+          // Cloud upsert can fail offline; still open the board.
+        }
+        showActionHint('Opening board…');
+        window.location.href = `/board/${encodeURIComponent(parsed.id)}`;
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not open board. Check your connection and try again.';
+        showActionHint(message);
       }
-      window.location.href = `/board/${encodeURIComponent(parsed.id)}`;
-    });
+    })();
   });
 
-  void renderLibrary();
+  // Wait for Clerk to settle so signed-in users don't briefly see local lists
+  // or create under local:{deviceInstallId}.
+  if (isClerkConfigured()) {
+    showAuthPendingUi();
+  }
+  void whenAuthReady().then(() => {
+    void renderLibrary();
+  });
   bindCardMenusOnce(root);
   onAuthChange(() => {
     void renderLibrary();

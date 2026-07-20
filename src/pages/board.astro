@@ -23,22 +23,30 @@ import '../styles/whiteboard.css';
   </div>
 
   <script>
+    import { whenAuthReady } from '../lib/whiteboard-identity';
     import {
       readBoardIdFromPath,
-      touchBoard,
+      touchBoardActive,
     } from '../scripts/whiteboard-library';
 
     const boardId = readBoardIdFromPath();
     if (!boardId) {
       window.location.replace('/whiteboard');
     } else {
-      // Updates lastAccessedAt; preserves existing title / creates library stub if new.
-      const entry = touchBoard(boardId);
-      const titleInput = document.querySelector<HTMLInputElement>('[data-wb-manage-title]');
-      if (titleInput) {
-        titleInput.value = entry.title;
-      }
-      document.title = `${entry.title} - St. Cecilia Technology`;
+      // Wait for Clerk to settle so signed-in users don't upsert into local first.
+      // TldrawBoard also calls touchBoardActive; duplicate is idempotent upsert.
+      void whenAuthReady()
+        .then(() => touchBoardActive(boardId))
+        .then((entry) => {
+          const titleInput = document.querySelector<HTMLInputElement>(
+            '[data-wb-manage-title]',
+          );
+          if (titleInput) titleInput.value = entry.title;
+          document.title = `${entry.title} - St. Cecilia Technology`;
+        })
+        .catch(() => {
+          // Cloud upsert can fail offline; island touch still runs when signed out.
+        });
     }
   </script>
 </BaseLayout>

@@ -6,6 +6,7 @@ import { r2AssetStore } from '../lib/whiteboard-assets'
 import {
   getActiveIdentity,
   onAuthChange,
+  whenAuthReady,
 } from '../lib/whiteboard-identity'
 import { getHostSecret, touchBoardActive } from '../scripts/whiteboard-library'
 
@@ -63,9 +64,18 @@ export default function TldrawBoard({ boardId: boardIdProp }: TldrawBoardProps) 
 
   useEffect(() => {
     if (!boardId) return
-    void touchBoardActive(boardId).catch(() => {
-      // Cloud upsert can fail offline; local create path still works when signed out
-    })
+    let cancelled = false
+    void whenAuthReady()
+      .then(() => {
+        if (cancelled) return
+        return touchBoardActive(boardId)
+      })
+      .catch(() => {
+        // Cloud upsert can fail offline; local create path still works when signed out
+      })
+    return () => {
+      cancelled = true
+    }
   }, [boardId])
 
   useEffect(() => {

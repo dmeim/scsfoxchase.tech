@@ -147,7 +147,9 @@ export async function requireClerkWhiteboardAuth(
 		// Fall back to Clerk user id if BAPI user fetch fails
 	}
 
-	if (email && !isEmailAllowed(email, env)) {
+	// Empty email must fail when an allowlist is configured (isEmailAllowed
+	// returns false for blank email once domains/emails are set).
+	if (!isEmailAllowed(email, env)) {
 		return {
 			ok: false,
 			response: jsonError(

@@ -14,7 +14,7 @@ import {
 	fetchCloudAssets,
 	upsertCloudAsset,
 } from './whiteboard-cloud'
-import { getAuthHeaders, isSignedIn } from './whiteboard-identity'
+import { getAuthHeaders, isClerkConfigured, isSignedIn, whenAuthReady } from './whiteboard-identity'
 import {
 	getDeviceInstallId,
 	getOwnerKey,
@@ -269,6 +269,11 @@ function assertUploadAllowed(file: File): void {
 export const r2AssetStore: TLAssetStore = {
 	async upload(_asset, file) {
 		assertUploadAllowed(file)
+
+		// Avoid writing under local:* while Clerk is still loading for a signed-in session.
+		if (isClerkConfigured()) {
+			await whenAuthReady()
+		}
 
 		const ownerKey = getOwnerKey()
 		// Ensure device id exists before signed-out upload

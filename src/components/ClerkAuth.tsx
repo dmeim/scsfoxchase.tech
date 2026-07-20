@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react'
 import {
 	identityFromClerkUser,
 	isEmailAllowed,
+	markAuthResolved,
 	setActiveIdentity,
 	setSessionTokenGetter,
 } from '../lib/whiteboard-identity'
@@ -54,6 +55,7 @@ function AuthBridge() {
 		if (!isSignedIn || !user) {
 			setActiveIdentity(null)
 			setBlockedMessage(null)
+			markAuthResolved()
 			return
 		}
 
@@ -63,12 +65,14 @@ function AuthBridge() {
 				'Use a school Google account (@stceciliafc.com) to sign in.',
 			)
 			setActiveIdentity(null)
+			markAuthResolved()
 			void clerk.signOut({ redirectUrl: window.location.href })
 			return
 		}
 
 		setBlockedMessage(null)
 		setActiveIdentity(identity)
+		markAuthResolved()
 	}, [isLoaded, userLoaded, isSignedIn, user, clerk])
 
 	if (!blockedMessage) return null
@@ -79,6 +83,14 @@ function AuthBridge() {
 	)
 }
 
+/** If Clerk never loads, still unlock hub create / library (treat as signed out). */
+function AuthReadyOnClerkFailed() {
+	useEffect(() => {
+		markAuthResolved()
+	}, [])
+	return null
+}
+
 function ClerkAuthInner() {
 	const { isLoaded, isSignedIn } = useAuth()
 	const showUserButton = isLoaded && isSignedIn
@@ -87,6 +99,7 @@ function ClerkAuthInner() {
 		<div className="header-auth">
 			<AuthBridge />
 			<ClerkFailed>
+				<AuthReadyOnClerkFailed />
 				<span className="header-auth-hint" role="alert">
 					Sign in unavailable. Refresh and try again.
 				</span>

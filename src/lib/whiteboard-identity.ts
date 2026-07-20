@@ -20,9 +20,17 @@ export type WhiteboardIdentity = {
 }
 
 const AUTH_EVENT = 'scsfoxchase:whiteboard-auth'
+const AUTH_READY_EVENT = 'scsfoxchase:whiteboard-auth-ready'
 
 let activeIdentity: WhiteboardIdentity | null = null
 let sessionTokenGetter: (() => Promise<string | null>) | null = null
+/** True after AuthBridge has applied the first known Clerk state (in or out). */
+let authResolved = false
+
+export function isClerkConfigured(): boolean {
+	const key = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY as string | undefined
+	return Boolean(key?.trim())
+}
 
 export function getActiveIdentity(): WhiteboardIdentity | null {
 	return activeIdentity
@@ -30,6 +38,47 @@ export function getActiveIdentity(): WhiteboardIdentity | null {
 
 export function isSignedIn(): boolean {
 	return activeIdentity !== null
+}
+
+/**
+ * Whether Clerk has settled enough to trust signed-in vs local mode.
+ * When Clerk is not configured, always true (local-only mode).
+ */
+export function isAuthResolved(): boolean {
+	if (!isClerkConfigured()) return true
+	return authResolved
+}
+
+/**
+ * Mark Clerk auth as settled (signed in or confirmed signed out).
+ * Idempotent — only the first call fires AUTH_READY listeners.
+ */
+export function markAuthResolved(): void {
+	if (authResolved) return
+	authResolved = true
+	if (typeof window !== 'undefined') {
+		window.dispatchEvent(new Event(AUTH_READY_EVENT))
+	}
+}
+
+/** Subscribe once Clerk has settled (or immediately if already resolved / no Clerk). */
+export function onAuthReady(listener: () => void): () => void {
+	if (typeof window === 'undefined') return () => {}
+	if (isAuthResolved()) {
+		queueMicrotask(listener)
+		return () => {}
+	}
+	const handler = () => listener()
+	window.addEventListener(AUTH_READY_EVENT, handler, { once: true })
+	return () => window.removeEventListener(AUTH_READY_EVENT, handler)
+}
+
+/** Resolves when auth is ready to drive dual-mode owner keys. */
+export function whenAuthReady(): Promise<void> {
+	if (isAuthResolved()) return Promise.resolve()
+	return new Promise((resolve) => {
+		onAuthReady(() => resolve())
+	})
 }
 
 export function setActiveIdentity(identity: WhiteboardIdentity | null): void {
