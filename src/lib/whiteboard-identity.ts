@@ -121,6 +121,7 @@ type ClerkLikeUser = {
 		provider: string
 		providerUserId?: string | null
 		externalId?: string | null
+		emailAddress?: string | null
 	}>
 }
 
@@ -135,9 +136,12 @@ export function identityFromClerkUser(user: ClerkLikeUser): WhiteboardIdentity {
 	const googleSub =
 		(google?.providerUserId || google?.externalId || '').trim() || null
 	const accountId = googleSub || user.id
+	// Clerk instance may disable the email_address attribute for password flows
+	// while still returning Google email on the external account.
 	const email =
 		user.primaryEmailAddress?.emailAddress ||
 		user.emailAddresses?.[0]?.emailAddress ||
+		google?.emailAddress ||
 		''
 	const displayName =
 		user.fullName?.trim() ||

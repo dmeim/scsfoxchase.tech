@@ -137,6 +137,12 @@ export async function requireClerkWhiteboardAuth(
 			''
 		).trim()
 		if (googleSub) accountId = googleSub
+		if (!email) {
+			const googleEmail = (
+				google as { emailAddress?: string | null } | undefined
+			)?.emailAddress
+			if (googleEmail) email = googleEmail
+		}
 	} catch {
 		// Fall back to Clerk user id if BAPI user fetch fails
 	}

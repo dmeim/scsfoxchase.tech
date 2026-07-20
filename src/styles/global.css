@@ -226,7 +226,14 @@ header h1 {
 
 .header-auth-btn:disabled {
     opacity: 0.7;
+}
+
+.header-auth-btn:disabled[aria-busy="true"] {
     cursor: wait;
+}
+
+.header-auth-btn:disabled:not([aria-busy="true"]) {
+    cursor: not-allowed;
 }
 
 [data-theme="dark"] .header-auth-btn {
@@ -243,7 +250,7 @@ header h1 {
 .header-auth-hint {
     font-size: 0.75rem;
     color: var(--text-muted, #666);
-    max-width: 160px;
+    max-width: 220px;
     line-height: 1.2;
 }
 
