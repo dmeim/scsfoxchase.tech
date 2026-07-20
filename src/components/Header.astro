@@ -43,113 +43,149 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
             aria-label="Manage whiteboard"
             aria-hidden="true"
           >
-            <form class="whiteboard-manage-name" data-wb-manage-name>
-              <label class="whiteboard-join-label" for="wb-manage-title">Name this whiteboard</label>
-              <div class="whiteboard-join-row">
-                <input
-                  id="wb-manage-title"
-                  class="whiteboard-join-input"
-                  type="text"
-                  name="title"
-                  data-wb-manage-title
-                  placeholder="Name this whiteboard"
-                  autocomplete="off"
-                  spellcheck="false"
-                  maxlength="80"
-                />
-                <button type="submit" class="whiteboard-join-btn" data-wb-manage-save>Save</button>
-              </div>
-              <p class="whiteboard-join-hint" data-wb-manage-hint hidden></p>
-            </form>
+            <div class="whiteboard-manage-layout" data-wb-manage-layout>
+              <div class="whiteboard-manage-col whiteboard-manage-col--left">
+                <form class="whiteboard-manage-name" data-wb-manage-name>
+                  <label class="whiteboard-join-label" for="wb-manage-title">Name this whiteboard</label>
+                  <div class="whiteboard-join-row">
+                    <input
+                      id="wb-manage-title"
+                      class="whiteboard-join-input"
+                      type="text"
+                      name="title"
+                      data-wb-manage-title
+                      placeholder="Name this whiteboard"
+                      autocomplete="off"
+                      spellcheck="false"
+                      maxlength="80"
+                    />
+                    <button type="submit" class="whiteboard-join-btn" data-wb-manage-save>Save</button>
+                  </div>
+                  <p class="whiteboard-join-hint" data-wb-manage-hint hidden></p>
+                </form>
 
-            <div class="whiteboard-menu-divider" role="separator"></div>
+                <div class="whiteboard-menu-divider" role="separator"></div>
 
-            <div class="whiteboard-manage-block" data-wb-manage-share>
-              <div class="whiteboard-manage-share-head">
-                <p class="whiteboard-join-label">Share code</p>
-                <label class="whiteboard-switch">
-                  <span class="whiteboard-switch-label" data-wb-share-state>Closed</span>
-                  <input
-                    type="checkbox"
-                    aria-label="Open or close share code"
-                    data-wb-share-toggle
-                  />
-                  <span class="whiteboard-switch-track" aria-hidden="true"></span>
-                </label>
+                <div class="whiteboard-manage-block" data-wb-manage-share>
+                  <div class="whiteboard-manage-share-head">
+                    <p class="whiteboard-join-label">Share</p>
+                    <label class="whiteboard-switch">
+                      <span class="whiteboard-switch-label" data-wb-share-state>Closed</span>
+                      <input
+                        type="checkbox"
+                        aria-label="Open or close sharing"
+                        data-wb-share-toggle
+                      />
+                      <span class="whiteboard-switch-track" aria-hidden="true"></span>
+                    </label>
+                  </div>
+                  <p class="whiteboard-join-hint" data-wb-share-hint hidden></p>
+                </div>
+
+                <div class="whiteboard-menu-divider" role="separator"></div>
+
+                <a href="/whiteboard" class="whiteboard-menu-action whiteboard-menu-action--secondary">
+                  ← Whiteboard Library
+                </a>
               </div>
-              <div class="whiteboard-join-row">
-                <input
-                  class="whiteboard-join-input whiteboard-join-input--code"
-                  type="text"
-                  value=""
-                  placeholder="Closed"
-                  readonly
-                  aria-readonly="true"
-                  data-wb-share-code
-                />
-                <button type="button" class="whiteboard-join-btn" data-wb-share-copy disabled>
-                  Copy
-                </button>
+
+              <div
+                class="whiteboard-manage-col whiteboard-manage-col--right"
+                data-wb-manage-right
+                hidden
+              >
+                <div class="whiteboard-manage-block" data-wb-manage-share-tools>
+                  <div class="whiteboard-share-toolbar-wrap">
+                    <div class="whiteboard-share-toolbar">
+                      <button
+                        type="button"
+                        class="whiteboard-join-btn whiteboard-join-btn--secondary"
+                        data-wb-share-new
+                      >
+                        New Code
+                      </button>
+                      <div class="whiteboard-share-code-wrap">
+                        <button
+                          type="button"
+                          class="whiteboard-join-input whiteboard-join-input--code whiteboard-share-code"
+                          aria-label="Share code — click to copy"
+                          title="Click to copy code"
+                          data-wb-share-code
+                          disabled
+                        >
+                          <span class="whiteboard-share-code-value" data-wb-share-code-value>Code</span>
+                          <svg
+                            class="whiteboard-share-code-icon"
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            width="1em"
+                            height="1em"
+                            aria-hidden="true"
+                          >
+                            <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                          </svg>
+                        </button>
+                        <p
+                          class="whiteboard-share-toast"
+                          data-wb-share-toast
+                          role="status"
+                          aria-live="polite"
+                          hidden
+                        ></p>
+                      </div>
+                      <button
+                        type="button"
+                        class="whiteboard-join-btn whiteboard-join-btn--secondary"
+                        data-wb-share-copy-link
+                      >
+                        Copy Link
+                      </button>
+                    </div>
+                  </div>
+                  <p class="whiteboard-join-hint whiteboard-share-expiry" data-wb-share-expiry hidden></p>
+                  <p class="whiteboard-join-hint">
+                    Bookmark the board page to come back later.
+                  </p>
+                </div>
+
+                <div class="whiteboard-menu-divider" role="separator"></div>
+
+                <div class="whiteboard-manage-block" data-wb-manage-people>
+                  <div class="whiteboard-people-heading">
+                    <p class="whiteboard-join-label">People</p>
+                    <div class="whiteboard-people-follow-me" data-wb-manage-force-follow hidden>
+                      <label class="whiteboard-switch">
+                        <span class="whiteboard-switch-label">Follow Me</span>
+                        <span class="whiteboard-switch-label" data-wb-force-follow-state>Off</span>
+                        <input
+                          type="checkbox"
+                          aria-label="Force everyone to follow your screen"
+                          data-wb-force-follow-toggle
+                        />
+                        <span class="whiteboard-switch-track" aria-hidden="true"></span>
+                      </label>
+                      <p class="whiteboard-join-hint" data-wb-force-follow-hint hidden></p>
+                    </div>
+                  </div>
+                  <div class="whiteboard-people-head" aria-hidden="true">
+                    <span>Name</span>
+                    <span>Follow</span>
+                    <span>Edit</span>
+                  </div>
+                  <ul class="whiteboard-people-list" data-wb-people-list hidden></ul>
+                  <p class="whiteboard-join-hint whiteboard-people-empty" data-wb-people-empty>
+                    People appear when sync is on.
+                  </p>
+                  <p class="whiteboard-join-hint" data-wb-people-hint hidden></p>
+                </div>
               </div>
-              <div class="whiteboard-share-actions">
-                <button
-                  type="button"
-                  class="whiteboard-share-new"
-                  data-wb-share-new
-                  hidden
-                >
-                  New code
-                </button>
-                <p class="whiteboard-join-hint whiteboard-share-expiry" data-wb-share-expiry hidden></p>
-              </div>
-              <p class="whiteboard-join-hint">
-                Codes expire after 12 hours. Bookmark the board page to come back later.
-              </p>
-              <p class="whiteboard-join-hint" data-wb-share-hint hidden></p>
             </div>
-
-            <div class="whiteboard-menu-divider" role="separator"></div>
-
-            <div class="whiteboard-manage-block" data-wb-manage-force-follow hidden>
-              <div class="whiteboard-manage-share-head">
-                <p class="whiteboard-join-label">Everyone follows me</p>
-                <label class="whiteboard-switch">
-                  <span class="whiteboard-switch-label" data-wb-force-follow-state>Off</span>
-                  <input
-                    type="checkbox"
-                    aria-label="Force everyone to follow your screen"
-                    data-wb-force-follow-toggle
-                  />
-                  <span class="whiteboard-switch-track" aria-hidden="true"></span>
-                </label>
-              </div>
-              <p class="whiteboard-join-hint">
-                When on, other people stay locked to your camera.
-              </p>
-              <p class="whiteboard-join-hint" data-wb-force-follow-hint hidden></p>
-            </div>
-
-            <div class="whiteboard-menu-divider" role="separator" data-wb-force-follow-divider hidden></div>
-
-            <div class="whiteboard-manage-block" data-wb-manage-people>
-              <p class="whiteboard-join-label">People</p>
-              <div class="whiteboard-people-head" aria-hidden="true">
-                <span>Name</span>
-                <span>Follow</span>
-                <span>Edit</span>
-              </div>
-              <ul class="whiteboard-people-list" data-wb-people-list hidden></ul>
-              <p class="whiteboard-join-hint whiteboard-people-empty" data-wb-people-empty>
-                People appear when sync is on.
-              </p>
-              <p class="whiteboard-join-hint" data-wb-people-hint hidden></p>
-            </div>
-
-            <div class="whiteboard-menu-divider" role="separator"></div>
-
-            <a href="/whiteboard" class="whiteboard-menu-action whiteboard-menu-action--secondary">
-              Whiteboard library
-            </a>
           </div>
         </>
       ) : (

@@ -1,0 +1,112 @@
+# Share codes
+
+Short join codes for classroom boards: Open / Closed, Copy, New, hub join, and KV + Durable Object expiry.
+
+## Overview
+
+A share code is a four-character token **`[A-Z][0-9][A-Z][0-9]`** (e.g. `A1B2`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the mapping. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
+
+## Format and TTL
+
+| Property | Value |
+|----------|--------|
+| Pattern | `A1B2` — letter, digit, letter, digit |
+| Normalization | Trim + uppercase |
+| TTL | **12 hours** (`SHARE_CODE_TTL_SECONDS` / `SHARE_CODE_TTL_MS` in `src/worker/shareCode.ts`) |
+| KV key | `code:{CODE}` |
+| KV value | JSON `{ boardId, exp }` with `expirationTtl` matching the TTL |
+
+Helpers: `normalizeShareCode`, `sampleShareCode`, `kvCodeKey` in `src/worker/shareCode.ts`.
+
+## Storage model
+
+Two layers stay in sync:
+
+1. **KV** (`WHITEBOARD_CODES`) — join lookup index.
+2. **Durable Object** (`WhiteboardBoard`) — `meta:activeCode`, `meta:codeExpiresAt`, DO **alarm** at expiry, mint rate log.
+
+On mint/rotate the DO writes KV and schedules an alarm. On revoke or alarm, it deletes the KV key and clears DO code meta. `GET` that finds an expired DO code revokes it and returns closed.
+
+## HTTP API
+
+Routed in `src/worker.ts` → `src/worker/codeRoutes.ts` (join) or forwarded to the board DO (code CRUD).
+
+### Join
+
+```
+GET /api/whiteboard/join/:code
+```
+
+**Response 200:** `{ "id": "<board-uuid>" }`  
+**404:** code missing, expired, malformed, or bad board id — message: *That code isn't available…*
+
+Used by the hub when the join field looks like a share code (`lookupShareCode` in `src/lib/whiteboard-codes.ts`).
+
+### Board code state
+
+```
+GET    /api/whiteboard/boards/:uuid/code
+POST   /api/whiteboard/boards/:uuid/code          # open / keep
+POST   /api/whiteboard/boards/:uuid/code?rotate=1 # mint new
+DELETE /api/whiteboard/boards/:uuid/code          # closed
+```
+
+**GET / POST success shape:**
+
+```json
+{ "code": "A1B2", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
+```
+
+**Closed / after DELETE:**
+
+```json
+{ "code": null, "expiresAt": null, "open": false }
+```
+
+| Action | Behavior |
+|--------|----------|
+| Open (`POST`, no rotate) | If a valid code exists, keep it; otherwise mint |
+| New code (`POST?rotate=1`) | Delete old KV entry, mint a new code, reset 12h TTL |
+| Closed (`DELETE`) | Revoke KV + DO meta + alarm |
+
+### Rate limit
+
+Mint/rotate is limited inside the DO: **12** attempts per board per **10-minute** rolling window (`meta:codeMintLog`). Exceeding returns **429**.
+
+Allocation retries random samples (up to 24) until a free KV key is found.
+
+## Manage panel UI
+
+On `/board/{uuid}`, header manage panel (`Header.astro` + `whiteboard-menu.ts`):
+
+- Left column **Share** switch (Open / Closed) — `openBoardShareCode` / `closeBoardShareCode`
+- When Open, right column shows:
+  - Share code **button** (not an input) with clipboard icon — click / Enter / Space to copy
+  - **New Code** — rotate (`?rotate=1`)
+  - **Copy Link** — permanent `{origin}/board/{uuid}` URL
+  - Expiry line updated about every 30s (`formatShareExpiry` → “Codes expire in 11h 42m. A new code is needed to share again.”)
+  - Static hint: bookmark the board page to return later
+
+Auth for these calls: none beyond knowing the board UUID.
+
+## Hub join flow
+
+1. User enters code (or link/UUID) on `/whiteboard`.
+2. `parseJoinInput` classifies as `code` or `board`.
+3. For codes: `GET /api/whiteboard/join/:code` → UUID.
+4. `touchBoardActive(boardId)` (best-effort).
+5. Navigate to `/board/{uuid}`.
+
+Joining does **not** make the user the host. Host privileges stay with the browser that holds the host secret. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
+
+## Key files
+
+| Path | Role |
+|------|------|
+| `src/worker/shareCode.ts` | Format, TTL, KV key helpers |
+| `src/worker/codeRoutes.ts` | Join + forward board code routes |
+| `src/worker/WhiteboardBoard.ts` | Mint / revoke / alarm / rate limit |
+| `src/lib/whiteboard-codes.ts` | Client fetch helpers + expiry label |
+| `src/scripts/whiteboard-menu.ts` | Manage panel share UI |
+| `src/scripts/whiteboard-hub.ts` | Hub join by code |
+| `wrangler.jsonc` | `WHITEBOARD_CODES` KV binding |

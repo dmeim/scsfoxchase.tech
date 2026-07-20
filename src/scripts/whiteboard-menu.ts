@@ -39,11 +39,14 @@ function initWhiteboardMenu() {
 
   const shareToggle = root.querySelector<HTMLInputElement>('[data-wb-share-toggle]')
   const shareState = root.querySelector<HTMLElement>('[data-wb-share-state]')
-  const shareCodeInput = root.querySelector<HTMLInputElement>('[data-wb-share-code]')
-  const shareCopy = root.querySelector<HTMLButtonElement>('[data-wb-share-copy]')
+  const shareCodeBtn = root.querySelector<HTMLButtonElement>('[data-wb-share-code]')
+  const shareCodeValue = root.querySelector<HTMLElement>('[data-wb-share-code-value]')
   const shareNew = root.querySelector<HTMLButtonElement>('[data-wb-share-new]')
+  const shareCopyLink = root.querySelector<HTMLButtonElement>('[data-wb-share-copy-link]')
   const shareExpiry = root.querySelector<HTMLElement>('[data-wb-share-expiry]')
   const shareHint = root.querySelector<HTMLElement>('[data-wb-share-hint]')
+  const shareToast = root.querySelector<HTMLElement>('[data-wb-share-toast]')
+  const shareRight = root.querySelector<HTMLElement>('[data-wb-manage-right]')
 
   const peopleList = root.querySelector<HTMLUListElement>('[data-wb-people-list]')
   const peopleEmpty = root.querySelector<HTMLElement>('[data-wb-people-empty]')
@@ -51,9 +54,6 @@ function initWhiteboardMenu() {
 
   const forceFollowBlock = root.querySelector<HTMLElement>(
     '[data-wb-manage-force-follow]',
-  )
-  const forceFollowDivider = root.querySelector<HTMLElement>(
-    '[data-wb-force-follow-divider]',
   )
   const forceFollowToggle = root.querySelector<HTMLInputElement>(
     '[data-wb-force-follow-toggle]',
@@ -70,6 +70,7 @@ function initWhiteboardMenu() {
   const boardId = readBoardIdFromPath()
   let shareBusy = false
   let expiryTimer: number | null = null
+  let shareToastTimer: number | null = null
   let currentShare: ShareCodeState = { code: null, expiresAt: null, open: false }
 
   let participants: ParticipantRow[] = []
@@ -81,7 +82,6 @@ function initWhiteboardMenu() {
   const isHost = Boolean(boardId && getHostSecret(boardId))
 
   if (forceFollowBlock) forceFollowBlock.hidden = !isHost
-  if (forceFollowDivider) forceFollowDivider.hidden = !isHost
 
   const syncTitleFromLibrary = () => {
     if (!boardId || !titleInput) return
@@ -123,6 +123,21 @@ function initWhiteboardMenu() {
     shareHint.textContent = message
   }
 
+  const showShareToast = (message: string) => {
+    if (!shareToast) return
+    if (shareToastTimer != null) {
+      window.clearTimeout(shareToastTimer)
+      shareToastTimer = null
+    }
+    shareToast.hidden = false
+    shareToast.textContent = message
+    shareToastTimer = window.setTimeout(() => {
+      shareToast.hidden = true
+      shareToast.textContent = ''
+      shareToastTimer = null
+    }, 1000)
+  }
+
   const setPeopleHint = (message: string | null) => {
     if (!peopleHint) return
     if (!message) {
@@ -158,33 +173,37 @@ function initWhiteboardMenu() {
     }
   }
 
+  const setSharingLayout = (open: boolean) => {
+    panel.classList.toggle('is-sharing', open)
+    if (shareRight) shareRight.hidden = !open
+  }
+
   const renderShareUi = (state: ShareCodeState) => {
     currentShare = state
     const open = Boolean(state.open && state.code)
 
     if (shareToggle) shareToggle.checked = open
     if (shareState) shareState.textContent = open ? 'Open' : 'Closed'
-    if (shareCodeInput) {
-      shareCodeInput.value = open && state.code ? state.code : ''
-      shareCodeInput.placeholder = open ? '' : 'Closed'
+    if (shareCodeBtn) shareCodeBtn.disabled = !open
+    if (shareCodeValue) {
+      shareCodeValue.textContent = open && state.code ? state.code : 'Code'
     }
-    if (shareCopy) shareCopy.disabled = !open
-    if (shareNew) shareNew.hidden = !open
+    setSharingLayout(open)
 
     stopExpiryTimer()
     if (shareExpiry) {
       if (open && state.expiresAt) {
         const tick = () => {
-          const label = formatShareExpiry(state.expiresAt!)
+          const time = formatShareExpiry(state.expiresAt!)
           if (!shareExpiry) return
-          if (label === 'Expired') {
+          if (time === 'Expired') {
             shareExpiry.hidden = true
             shareExpiry.textContent = ''
             void refreshShareState()
             return
           }
           shareExpiry.hidden = false
-          shareExpiry.textContent = label
+          shareExpiry.textContent = `Codes expire in ${time}. A new code is needed to share again.`
         }
         tick()
         expiryTimer = window.setInterval(tick, 30_000)
@@ -203,6 +222,21 @@ function initWhiteboardMenu() {
       setShareHint(null)
     } catch {
       setShareHint('Could not load share code status.')
+    }
+  }
+
+  const copyText = async (
+    text: string,
+    successMessage: string,
+    fallbackMessage?: string,
+  ) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      showShareToast(successMessage)
+    } catch {
+      showShareToast(
+        fallbackMessage ?? 'Copy failed — try again or copy manually.',
+      )
     }
   }
 
@@ -466,7 +500,7 @@ function initWhiteboardMenu() {
       try {
         const state = await openBoardShareCode(boardId, { rotate: true })
         renderShareUi(state)
-        setShareHint('New code ready — old code no longer works.')
+        showShareToast('New Code Generated\nOld Code Expired')
       } catch (err) {
         setShareHint(
           err instanceof Error && err.message
@@ -479,19 +513,25 @@ function initWhiteboardMenu() {
     })()
   })
 
-  shareCopy?.addEventListener('click', () => {
+  // Activating the share code control copies it (no separate Copy Code button).
+  shareCodeBtn?.addEventListener('click', () => {
     const code = currentShare.code
-    if (!code) return
-    void (async () => {
-      try {
-        await navigator.clipboard.writeText(code)
-        setShareHint('Code copied.')
-      } catch {
-        // Fallback: select the input so Chromebooks without clipboard grant still work.
-        shareCodeInput?.select()
-        setShareHint('Select the code and copy it (Ctrl+C / ⌘C).')
-      }
-    })()
+    if (!code || !currentShare.open) return
+    void copyText(
+      code,
+      'Code Copied',
+      'Copy failed — try again or copy manually.',
+    )
+  })
+
+  shareCopyLink?.addEventListener('click', () => {
+    if (!boardId) return
+    const url = `${window.location.origin}/board/${boardId}`
+    void copyText(
+      url,
+      'Link Copied',
+      'Copy failed — select and copy the address bar instead.',
+    )
   })
 
   forceFollowToggle?.addEventListener('change', () => {

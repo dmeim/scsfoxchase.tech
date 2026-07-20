@@ -84,7 +84,7 @@ export async function closeBoardShareCode(boardId: string): Promise<ShareCodeSta
   return { code: null, expiresAt: null, open: false }
 }
 
-/** Human countdown, e.g. "Expires in 11h 42m". */
+/** Human remaining duration, e.g. "11h 42m". */
 export function formatShareExpiry(expiresAt: string, now = Date.now()): string {
   const end = Date.parse(expiresAt)
   if (Number.isNaN(end)) return ''
@@ -93,7 +93,7 @@ export function formatShareExpiry(expiresAt: string, now = Date.now()): string {
   const totalMin = Math.floor(ms / 60000)
   const hours = Math.floor(totalMin / 60)
   const minutes = totalMin % 60
-  if (hours > 0) return `Expires in ${hours}h ${minutes}m`
-  if (minutes > 0) return `Expires in ${minutes}m`
-  return 'Expires in under a minute'
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m`
+  return 'under a minute'
 }

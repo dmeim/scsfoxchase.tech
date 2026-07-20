@@ -329,7 +329,54 @@ a.whiteboard-toggle:hover {
 }
 
 .whiteboard-menu--manage {
-    width: min(360px, calc(100vw - 24px));
+    width: min(320px, calc(100vw - 24px));
+    padding: 12px;
+}
+
+.whiteboard-menu--manage.is-sharing {
+    width: min(420px, calc(100vw - 24px));
+}
+
+@media (min-width: 900px) {
+    .whiteboard-menu--manage.is-sharing {
+        width: min(640px, calc(100vw - 32px));
+    }
+
+    .whiteboard-menu--manage.is-sharing .whiteboard-manage-layout {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.15fr);
+        gap: 0 14px;
+        align-items: start;
+    }
+
+    .whiteboard-menu--manage.is-sharing .whiteboard-manage-col--right:not([hidden]) {
+        margin-top: 0;
+        padding-left: 14px;
+        border-left: 1px solid rgba(18, 95, 49, 0.16);
+    }
+
+    [data-theme="dark"] .whiteboard-menu--manage.is-sharing .whiteboard-manage-col--right:not([hidden]) {
+        border-left-color: rgba(255, 255, 255, 0.12);
+    }
+}
+
+.whiteboard-manage-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+}
+
+.whiteboard-manage-col {
+    min-width: 0;
+}
+
+.whiteboard-manage-col--right[hidden] {
+    display: none !important;
+}
+
+.whiteboard-manage-col--right:not([hidden]) {
+    margin-top: 4px;
 }
 
 .whiteboard-manage-block {
@@ -347,6 +394,102 @@ a.whiteboard-toggle:hover {
 
 .whiteboard-manage-share-head .whiteboard-join-label {
     margin-bottom: 0;
+}
+
+.whiteboard-people-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.whiteboard-people-heading .whiteboard-join-label {
+    margin-bottom: 0;
+}
+
+.whiteboard-people-follow-me {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.whiteboard-share-toolbar-wrap {
+    position: relative;
+}
+
+.whiteboard-share-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.whiteboard-share-code-wrap {
+    position: relative;
+    flex: 1 1 88px;
+    min-width: 72px;
+    display: flex;
+    align-items: stretch;
+}
+
+.whiteboard-share-toast {
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 4px);
+    z-index: 2;
+    margin: 0;
+    padding: 4px 8px;
+    border-radius: 2px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    white-space: pre-line;
+    transform: translateX(-50%);
+    pointer-events: none;
+    background: var(--primary-color);
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] .whiteboard-share-toast {
+    background: rgba(26, 26, 26, 0.96);
+    color: var(--secondary-color);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.whiteboard-share-code {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 700;
+    text-align: center;
+}
+
+.whiteboard-share-code:disabled {
+    cursor: not-allowed;
+}
+
+.whiteboard-share-code-value {
+    min-width: 0;
+}
+
+.whiteboard-share-code-icon {
+    flex-shrink: 0;
+    width: 0.85em;
+    height: 0.85em;
+    opacity: 0.72;
+}
+
+.whiteboard-share-toolbar .whiteboard-join-btn {
+    flex: 0 0 auto;
 }
 
 .whiteboard-switch {
@@ -420,40 +563,8 @@ a.whiteboard-toggle:hover {
     border-color: var(--primary-color);
 }
 
-.whiteboard-share-actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-height: 1.2em;
-}
-
-.whiteboard-share-new {
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: var(--primary-color);
-    font: inherit;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0;
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.whiteboard-share-new:hover {
-    color: #0d4524;
-}
-
-[data-theme="dark"] .whiteboard-share-new {
-    color: var(--secondary-color);
-}
-
 .whiteboard-share-expiry {
     margin: 0;
-    flex: 1;
-    text-align: right;
 }
 
 .whiteboard-join-input--code {
@@ -696,6 +807,27 @@ a.whiteboard-toggle:hover {
 
 .whiteboard-join-btn:hover {
     filter: brightness(0.97);
+}
+
+.whiteboard-join-btn--secondary {
+    background: transparent;
+    color: var(--primary-color);
+    border-color: rgba(18, 95, 49, 0.35);
+}
+
+.whiteboard-join-btn--secondary:hover {
+    background: rgba(18, 95, 49, 0.08);
+    filter: none;
+}
+
+[data-theme="dark"] .whiteboard-join-btn--secondary {
+    color: var(--light-text);
+    border-color: rgba(255, 255, 255, 0.22);
+}
+
+[data-theme="dark"] .whiteboard-join-btn--secondary:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--secondary-color);
 }
 
 .whiteboard-join-hint {
@@ -1572,6 +1704,14 @@ footer {
 
     .whiteboard-menu {
         width: min(240px, calc(100vw - 24px));
+    }
+
+    .whiteboard-menu--manage {
+        width: min(320px, calc(100vw - 24px));
+    }
+
+    .whiteboard-menu--manage.is-sharing {
+        width: min(420px, calc(100vw - 24px));
     }
 
     .header-right {
