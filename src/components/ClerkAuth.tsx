@@ -108,11 +108,8 @@ function ClerkAuthInner() {
 				<UserButton
 					appearance={{
 						elements: {
-							avatarBox: {
-								width: '28px',
-								height: '28px',
-								borderRadius: '2px',
-							},
+							avatarBox: 'header-auth-avatar',
+							userButtonTrigger: 'header-auth-user-btn',
 						},
 					}}
 				/>

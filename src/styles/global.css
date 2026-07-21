@@ -197,6 +197,21 @@ header h1 {
     min-height: 36px;
 }
 
+/* Match signed-in UserButton to nav chip height (36px desktop / 28px narrow) */
+.header-auth-user-btn {
+    height: 36px;
+    width: 36px;
+    padding: 0;
+    border-radius: 2px;
+    box-sizing: border-box;
+}
+
+.header-auth-avatar {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 2px !important;
+}
+
 .header-auth-btn {
     color: var(--primary-color);
     font-weight: 600;
@@ -1726,6 +1741,16 @@ footer {
         height: 28px;
         font-size: 0.75rem;
         padding: 0 8px;
+    }
+
+    .header-auth-user-btn {
+        height: 28px;
+        width: 28px;
+    }
+
+    .header-auth-avatar {
+        width: 28px !important;
+        height: 28px !important;
     }
 
     .header-auth-hint {
