@@ -3,18 +3,15 @@
   "name": "AutoDraw",
   "url": "https://www.autodraw.com/",
   "image": "/images/autodraw.png",
-  "description": "Doodle freely and pick polished icon suggestions that match your sketch.",
-  "minGrade": 0,
-  "maxGrade": 5,
+  "description": "Sketch roughly and AutoDraw suggests polished icons that match your doodle. Useful for quick classroom art, labels, and simple digital drawings without needing advanced drawing skill.",
+  "minGrade": 1,
+  "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Art & Creativity",
-    "Kids",
-    "Casual",
-    "Early Learning"
+    "Educational"
   ]
 }

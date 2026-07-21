@@ -3,20 +3,16 @@
   "name": "Minecraft (Eaglercraft)",
   "url": "https://eaglercraft.com/",
   "image": "/images/minecraft.jpg",
-  "description": "Browser-based sandbox building and survival game.",
+  "description": "Browser Minecraft-style sandbox for building, exploring, and surviving with friends.",
   "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Co-op",
-    "Free to Play"
+    "Co-op"
   ],
   "secondaryCategories": [
-    "Minecraft-Style",
-    "Open World",
-    "Survival",
-    "Building"
+    "Sandbox",
+    "Survival"
   ]
 }

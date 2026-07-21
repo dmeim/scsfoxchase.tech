@@ -3,19 +3,17 @@
   "name": "Nerdle",
   "url": "https://nerdlegame.com/",
   "image": "/images/nerdle.png",
-  "description": "Guess the hidden math equation in six tries \u2014 Wordle but with numbers and operators.",
-  "minGrade": 4,
+  "description": "Guess the hidden math equation in six tries — Wordle but with numbers and operators.",
+  "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Math",
     "Daily Challenge",
     "Puzzle",
-    "Number Puzzles",
     "Educational"
   ]
 }

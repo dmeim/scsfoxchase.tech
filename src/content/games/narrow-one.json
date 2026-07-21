@@ -9,13 +9,10 @@
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
-    "FPS / Shooter",
-    "Competitive",
-    "Action"
+    "Action",
+    "Competitive"
   ]
 }

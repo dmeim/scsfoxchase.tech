@@ -3,15 +3,13 @@
   "name": "Arcademics",
   "url": "https://www.arcademics.com",
   "image": "/images/arcademics.png",
-  "description": "Multiplayer educational games covering math, language, and more.",
+  "description": "Race classmates in fast multiplayer drills that practice math facts, fractions, and language skills. Great for warm-ups or review when you want competition with a learning focus.",
   "minGrade": 1,
   "maxGrade": 6,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",

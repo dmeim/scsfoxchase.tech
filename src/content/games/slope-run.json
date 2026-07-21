@@ -9,13 +9,10 @@
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
-    "Endless Runner",
     "Action",
-    "Reaction Speed",
-    "Casual"
+    "Arcade"
   ]
 }

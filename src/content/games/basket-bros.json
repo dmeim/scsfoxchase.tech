@@ -3,15 +3,13 @@
   "name": "Basket Bros",
   "url": "https://basketbros.io/",
   "image": "/images/basketballbros.jpg",
-  "description": "Fast and fun 1v1 basketball action game.",
+  "description": "Jump into fast 1v1 basketball matches online—dunk, block, and outscore your opponent. Easy to learn and lively enough for a short break or friendly rivalry.",
   "minGrade": 3,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
     "Sports",

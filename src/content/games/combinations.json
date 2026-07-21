@@ -3,18 +3,15 @@
   "name": "Combinations",
   "url": "https://combinations.org",
   "image": "/images/combinations2.png",
-  "description": "Find creative word combinations to solve each puzzle.",
+  "description": "Combine shorter words into longer ones to fill each puzzle grid. Rewards vocabulary and creative word-building as the challenges get harder.",
   "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Offline",
-    "Free to Play"
+    "Offline"
   ],
   "secondaryCategories": [
     "Word Games",
-    "Logic",
-    "Puzzle",
-    "Brain Teaser"
+    "Puzzle"
   ]
 }

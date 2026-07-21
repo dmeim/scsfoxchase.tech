@@ -3,13 +3,12 @@
   "name": "Flagle",
   "url": "https://flagle.gg",
   "image": "/images/flagle.png",
-  "description": "Guess the country by its flag revealed piece by piece.",
-  "minGrade": 3,
+  "description": "Guess the country from its flag, revealed piece by piece each day.",
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Geography",

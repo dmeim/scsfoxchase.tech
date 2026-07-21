@@ -3,19 +3,17 @@
   "name": "Bloxd.io",
   "url": "https://bloxd.io/",
   "image": "/images/bloxdio.png",
-  "description": "Multiplayer voxel game with various game modes.",
+  "description": "Build, explore, and compete in a multiplayer voxel world with several game modes. Similar in feel to Minecraft-style sandbox play, with online lobbies and creative tools.",
   "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
-    "Minecraft-Style",
-    "Open World",
-    "Building"
+    "Sandbox",
+    "Action",
+    "Competitive"
   ]
 }

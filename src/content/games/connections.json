@@ -3,18 +3,16 @@
   "name": "Connections",
   "url": "https://www.nytimes.com/games/connections",
   "image": "/images/connections-new.png",
-  "description": "Group 16 words into four categories in this NYT puzzle.",
+  "description": "Sort 16 words into four hidden categories in the New York Times daily puzzle. Wrong guesses are limited, so look for subtle themes and avoid the red herrings.",
   "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Word Games",
     "Puzzle",
-    "Daily Challenge",
-    "Brain Teaser"
+    "Daily Challenge"
   ]
 }

@@ -3,15 +3,13 @@
   "name": "Gimkit",
   "url": "https://www.gimkit.com",
   "image": "/images/gimkit.jpg",
-  "description": "Live learning games and interactive classroom activities.",
+  "description": "Answer quiz questions in live classroom games and earn kit rewards.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
     "Educational",

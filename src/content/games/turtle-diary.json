@@ -3,18 +3,17 @@
   "name": "Turtle Diary",
   "url": "https://www.turtlediary.com",
   "image": "/images/turtlediary.jpg",
-  "description": "Educational games and activities for elementary students.",
-  "minGrade": 0,
+  "description": "A hub of games and activities covering math, reading, and other school subjects.",
+  "minGrade": 1,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",
-    "Kids",
     "Math",
-    "Spelling"
+    "Word Games"
   ]
 }

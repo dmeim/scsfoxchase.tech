@@ -3,18 +3,16 @@
   "name": "Santa Tracker",
   "url": "https://santatracker.google.com",
   "image": "/images/google-santa-tracker.png",
-  "description": "Google's holiday hub with games and educational activities.",
-  "minGrade": 0,
+  "description": "Google's holiday hub with games, activities, and a live Santa map.",
+  "minGrade": 1,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
-    "Holiday",
-    "Kids",
     "Educational",
-    "Exploration"
+    "Geography"
   ]
 }

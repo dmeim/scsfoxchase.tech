@@ -39,4 +39,10 @@ export default defineConfig({
   },
 
   integrations: [react()],
+
+  vite: {
+    resolve: {
+      dedupe: ['react', 'react-dom'],
+    },
+  },
 });

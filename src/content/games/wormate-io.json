@@ -4,14 +4,12 @@
   "url": "https://wormate.io/",
   "image": "/images/wormate-io.png",
   "description": "Grow a candy-eating worm and outmaneuver other players.",
-  "minGrade": 3,
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "PvP"
   ],
   "secondaryCategories": [
     "IO Games",

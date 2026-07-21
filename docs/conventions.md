@@ -92,7 +92,7 @@ Games are an Astro content collection.
   "description": "Play chess online against friends or the computer.",
   "minGrade": 3,
   "maxGrade": 8,
-  "primaryCategories": ["Single Player", "Multiplayer", "Online", "Turn-Based", "Free to Play"],
+  "primaryCategories": ["Single Player", "Multiplayer", "Online"],
   "secondaryCategories": ["Board Games", "Classics", "Strategy", "Competitive"]
 }
 ```
@@ -106,8 +106,8 @@ Games are an Astro content collection.
 | `description` | string | Yes | Card/blurb text |
 | `minGrade` | number | Yes | Lowest grade (1–8) |
 | `maxGrade` | number | Yes | Highest grade (1–8) |
-| `primaryCategories` | string[] | Yes | Play-style tags |
-| `secondaryCategories` | string[] | Yes | Genre tags |
+| `primaryCategories` | string[] | Yes | Play-style tags (Type; ≤3) |
+| `secondaryCategories` | string[] | Yes | Genre tags (≤5) |
 
 Image load failures fall back via `src/scripts/placeholder-images.ts`.
 

@@ -3,19 +3,17 @@
   "name": "LOL Beans",
   "url": "https://lolbeans.io",
   "image": "/images/lol-beans.png",
-  "description": "Race against other players in this fun obstacle course game.",
+  "description": "Race against other players through chaotic obstacle courses.",
   "minGrade": 3,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "PvP"
   ],
   "secondaryCategories": [
-    "Obstacle Course",
     "Party",
-    "Action"
+    "Action",
+    "Competitive"
   ]
 }

@@ -3,18 +3,17 @@
   "name": "ABCya",
   "url": "https://www.abcya.com",
   "image": "/images/abcya.png",
-  "description": "Hundreds of educational games for Pre-K through 6th grade.",
-  "minGrade": 0,
+  "description": "Browse a large library of classroom-friendly games covering math, literacy, typing practice, and more. Teachers can pick activities by subject for independent practice or centers.",
+  "minGrade": 1,
   "maxGrade": 6,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",
-    "Kids",
     "Math",
-    "Spelling"
+    "Word Games"
   ]
 }

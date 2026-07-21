@@ -3,18 +3,15 @@
   "name": "Google Snake",
   "url": "https://www.google.com/fbx?fbx=snake_arcade",
   "image": "/images/google-snake.png",
-  "description": "Play the classic snake game on Google Maps.",
+  "description": "Grow longer as you eat and avoid hitting walls in Google's classic snake arcade.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Offline",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Arcade",
-    "Classics",
-    "Casual",
-    "Retro"
+    "Classics"
   ]
 }

@@ -4,17 +4,14 @@
   "url": "https://neal.fun",
   "image": "/images/neal-fun.jpg",
   "description": "A collection of unique interactive web experiences.",
-  "minGrade": 4,
+  "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
-    "Casual",
-    "Exploration",
-    "Trivia",
-    "Sandbox"
+    "Sandbox",
+    "Trivia"
   ]
 }

@@ -3,15 +3,13 @@
   "name": "Blooket",
   "url": "https://dashboard.blooket.com/",
   "image": "/images/blooket.png",
-  "description": "Join game-based quizzes and review activities in class.",
+  "description": "Host or join quiz-style games that wrap review questions in mini-game modes. Teachers can run live class sets; students use a join code to compete and practice content.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",

@@ -3,15 +3,13 @@
   "name": "Checkers",
   "url": "https://www.247checkers.com",
   "image": "/images/checkers.png",
-  "description": "Play the classic board game of checkers online.",
+  "description": "Play classic checkers against the computer or another person online. Jump pieces, force kings, and plan a few moves ahead in a familiar turn-based board game.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
-    "Single Player",
     "Multiplayer",
     "Online",
-    "Turn-Based",
-    "Free to Play"
+    "Turn-Based"
   ],
   "secondaryCategories": [
     "Board Games",

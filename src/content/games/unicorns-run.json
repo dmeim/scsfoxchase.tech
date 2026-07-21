@@ -3,18 +3,15 @@
   "name": "Unicorns Run",
   "url": "https://www.unicornsrun.com/",
   "image": "/images/unicornsrun.png",
-  "description": "Explore themed lands in a kid-friendly pixel platform adventure.",
+  "description": "Explore themed lands in a pixel platform adventure.",
   "minGrade": 1,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Action",
-    "Platformer",
-    "Adventure",
-    "Casual"
+    "Arcade"
   ]
 }

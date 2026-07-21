@@ -3,15 +3,13 @@
   "name": "Football Bros",
   "url": "https://footballbros.io/",
   "image": "/images/footballbros.jpg",
-  "description": "Tackle and score in this multiplayer football game.",
-  "minGrade": 3,
+  "description": "Arcade football—tackle opponents and score in fast multiplayer matches.",
+  "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "PvP"
   ],
   "secondaryCategories": [
     "Sports",

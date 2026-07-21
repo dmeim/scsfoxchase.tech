@@ -3,18 +3,16 @@
   "name": "Angry Birds Friends",
   "url": "https://redsclub.com/ab-friends/play/",
   "image": "/images/angrybirdsfriends.jpg",
-  "description": "Launch birds at pig fortresses in this classic physics puzzle game.",
+  "description": "Slingshot birds into pig fortresses and use each bird’s special ability to clear the level. Physics-based aiming rewards careful angles and a bit of trial and error.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
-    "Physics",
     "Puzzle",
     "Arcade",
-    "Casual"
+    "Action"
   ]
 }

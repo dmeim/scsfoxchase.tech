@@ -3,16 +3,14 @@
   "name": "Cookie Clicker",
   "url": "https://orteil.dashnet.org/cookieclicker/",
   "image": "/images/cookie-clicker.png",
-  "description": "Click cookies, buy upgrades, and build a cookie empire in the original idle clicker game.",
+  "description": "Click cookies, buy upgrades, and automate a growing cookie empire in the original idle clicker. Long-term planning and big numbers make it a classic time-sink for strategy fans.",
   "minGrade": 3,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
-    "Casual",
     "Classics",
     "Strategy"
   ]

@@ -3,20 +3,17 @@
   "name": "Connect Four",
   "url": "https://connect4game.com/",
   "image": "/images/connect4.jpg",
-  "description": "Classic drop-disc board game—get four in a row against the CPU, pass-and-play, or a share link.",
-  "minGrade": 0,
+  "description": "Drop discs into a grid and try to get four in a row before your opponent. Play against the computer, pass-and-play, or share a link for a remote match.",
+  "minGrade": 1,
   "maxGrade": 8,
   "primaryCategories": [
-    "Single Player",
     "Multiplayer",
     "Online",
-    "Turn-Based",
-    "Free to Play"
+    "Turn-Based"
   ],
   "secondaryCategories": [
     "Board Games",
     "Classics",
-    "Strategy",
-    "Kids"
+    "Strategy"
   ]
 }

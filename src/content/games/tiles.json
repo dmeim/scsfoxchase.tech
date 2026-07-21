@@ -8,13 +8,10 @@
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
-    "Tile Matching",
     "Puzzle",
-    "Casual",
-    "Brain Teaser"
+    "Daily Challenge"
   ]
 }

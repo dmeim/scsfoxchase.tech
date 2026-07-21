@@ -1,6 +1,6 @@
 import { Carousel, type Game } from './carousel';
 import { initPlaceholderImages } from './placeholder-images';
-import { iconExclamationCircle, iconExclamationTriangle } from './icons';
+import { iconExclamationCircle, iconExclamationTriangle, iconTimes } from './icons';
 
 export type { Game };
 
@@ -9,67 +9,47 @@ const PRIMARY_CATEGORY_COLORS: Record<string, { bg: string; textColor: string }>
   Multiplayer: { bg: '#1E88E5', textColor: '#fff' },
   Online: { bg: '#26A69A', textColor: '#fff' },
   Offline: { bg: '#8D6E63', textColor: '#fff' },
-  'Co-op': { bg: '#66BB6A', textColor: '#fff' },
-  PvP: { bg: '#EF5350', textColor: '#fff' },
   'Turn-Based': { bg: '#AB47BC', textColor: '#fff' },
+  'Educational Hub': { bg: '#4CAF50', textColor: '#fff' },
   'Real-Time': { bg: '#FFA726', textColor: '#222' },
-  'Free to Play': { bg: '#4CAF50', textColor: '#fff' },
+  PvP: { bg: '#EF5350', textColor: '#fff' },
+  'Co-op': { bg: '#66BB6A', textColor: '#fff' },
 };
 
 const SECONDARY_CATEGORY_COLORS: Record<string, { bg: string; textColor: string }> = {
   Action: { bg: '#EF5350', textColor: '#fff' },
-  Adventure: { bg: '#AB47BC', textColor: '#fff' },
   Arcade: { bg: '#FF7043', textColor: '#fff' },
   'Art & Creativity': { bg: '#EC407A', textColor: '#fff' },
+  'Battle Royale': { bg: '#E53935', textColor: '#fff' },
   'Board Games': { bg: '#8D6E63', textColor: '#fff' },
-  'Brain Teaser': { bg: '#5C6BC0', textColor: '#fff' },
-  Building: { bg: '#78909C', textColor: '#fff' },
-  'Card Games': { bg: '#7E57C2', textColor: '#fff' },
-  Casual: { bg: '#26C6DA', textColor: '#222' },
   Classics: { bg: '#9575CD', textColor: '#fff' },
   Competitive: { bg: '#F44336', textColor: '#fff' },
-  Cooking: { bg: '#FF8A65', textColor: '#222' },
-  Crossword: { bg: '#4DB6AC', textColor: '#fff' },
   'Daily Challenge': { bg: '#FFA726', textColor: '#222' },
-  'Driving & Racing': { bg: '#42A5F5', textColor: '#fff' },
   Educational: { bg: '#26A69A', textColor: '#fff' },
-  'Endless Runner': { bg: '#FFCA28', textColor: '#222' },
-  Exploration: { bg: '#66BB6A', textColor: '#fff' },
-  'FPS / Shooter': { bg: '#E53935', textColor: '#fff' },
   Geography: { bg: '#29B6F6', textColor: '#fff' },
-  Holiday: { bg: '#D32F2F', textColor: '#fff' },
   'IO Games': { bg: '#00ACC1', textColor: '#fff' },
-  Kids: { bg: '#FFB74D', textColor: '#222' },
-  Logic: { bg: '#7986CB', textColor: '#fff' },
   Math: { bg: '#4FC3F7', textColor: '#222' },
-  Memory: { bg: '#CE93D8', textColor: '#222' },
-  'Minecraft-Style': { bg: '#4CAF50', textColor: '#fff' },
-  'Mouse Skill': { bg: '#B0BEC5', textColor: '#222' },
+  Movement: { bg: '#7CB342', textColor: '#fff' },
   Music: { bg: '#F06292', textColor: '#fff' },
-  'Number Puzzles': { bg: '#FFD54F', textColor: '#222' },
-  'Obstacle Course': { bg: '#FF5722', textColor: '#fff' },
-  'Open World': { bg: '#43A047', textColor: '#fff' },
   Party: { bg: '#BA68C8', textColor: '#fff' },
-  Physics: { bg: '#90A4AE', textColor: '#222' },
-  Platformer: { bg: '#FF9800', textColor: '#222' },
   Puzzle: { bg: '#5E35B1', textColor: '#fff' },
-  'Reaction Speed': { bg: '#FFEE58', textColor: '#222' },
-  Retro: { bg: '#A1887F', textColor: '#fff' },
+  Racing: { bg: '#42A5F5', textColor: '#fff' },
   Sandbox: { bg: '#81C784', textColor: '#222' },
   Science: { bg: '#009688', textColor: '#fff' },
-  Spelling: { bg: '#AED581', textColor: '#222' },
   Sports: { bg: '#2196F3', textColor: '#fff' },
   Strategy: { bg: '#3F51B5', textColor: '#fff' },
   Survival: { bg: '#6D4C41', textColor: '#fff' },
-  'Tile Matching': { bg: '#4DD0E1', textColor: '#222' },
   Trivia: { bg: '#FFC107', textColor: '#222' },
-  Typing: { bg: '#A5D6A7', textColor: '#222' },
   'Word Games': { bg: '#66BB6A', textColor: '#fff' },
 };
 
 function getCategoryChipColor(category: string, isPrimary: boolean) {
   const map = isPrimary ? PRIMARY_CATEGORY_COLORS : SECONDARY_CATEGORY_COLORS;
   return map[category] || { bg: '#9E9E9E', textColor: '#fff' };
+}
+
+function openGameUrl(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 class GamesManager {
@@ -86,6 +66,10 @@ class GamesManager {
   selectedSecondaryCategories = new Set<string>();
   searchQuery = '';
   carousel: Carousel | null = null;
+  detailModal: HTMLElement | null = null;
+  detailOpener: HTMLElement | null = null;
+  detailEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
+  previousBodyOverflow = '';
 
   constructor(games: Game[], trendingIds: string[]) {
     this.gamesGrid = document.getElementById('games-grid');
@@ -321,21 +305,187 @@ class GamesManager {
   createMaxMediaCard(game: Game): HTMLElement {
     const card = document.createElement('div');
     card.classList.add('game-card', 'game-card--max');
-    card.addEventListener('click', () => {
-      window.open(game.url, '_blank');
-    });
 
     const cardImage = document.createElement('div');
     cardImage.classList.add('game-card-image');
     cardImage.style.backgroundImage = `url(${game.image})`;
+    cardImage.setAttribute('role', 'link');
+    cardImage.tabIndex = 0;
+    cardImage.setAttribute('aria-label', `Play ${game.name}`);
+    cardImage.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openGameUrl(game.url);
+    });
+    cardImage.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openGameUrl(game.url);
+      }
+    });
 
     const title = document.createElement('h4');
+    title.classList.add('game-card-title');
     title.textContent = game.name;
+    title.setAttribute('role', 'button');
+    title.tabIndex = 0;
+    title.setAttribute('aria-label', `Details for ${game.name}`);
+    title.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.openGameDetail(game, title);
+    });
+    title.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        this.openGameDetail(game, title);
+      }
+    });
 
     card.appendChild(cardImage);
     card.appendChild(title);
 
     return card;
+  }
+
+  ensureDetailModal(): HTMLElement {
+    if (this.detailModal) return this.detailModal;
+
+    const modal = document.createElement('div');
+    modal.id = 'game-detail-modal';
+    modal.className = 'game-detail-modal';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="game-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="game-detail-title">
+        <button type="button" class="game-detail-close" aria-label="Close">${iconTimes}</button>
+        <div class="game-detail-body">
+          <button type="button" class="game-detail-image-btn" aria-label="Play game">
+            <img class="game-detail-image" alt="" />
+          </button>
+          <h2 id="game-detail-title" class="game-detail-title"></h2>
+          <div class="game-detail-chips">
+            <div class="game-detail-chip-column" data-chip-column="grade">
+              <div class="game-card-badge-label">Grade</div>
+              <div class="chip-row chip-row-grades"></div>
+            </div>
+            <div class="game-detail-chip-column" data-chip-column="type">
+              <div class="game-card-badge-label">Type</div>
+              <div class="chip-row chip-row-primary"></div>
+            </div>
+            <div class="game-detail-chip-column" data-chip-column="genre">
+              <div class="game-card-badge-label">Genre</div>
+              <div class="chip-row chip-row-secondary"></div>
+            </div>
+          </div>
+          <div class="game-detail-description">
+            <p></p>
+          </div>
+          <button type="button" class="game-detail-play">Play</button>
+        </div>
+      </div>
+    `;
+
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) this.closeGameDetail();
+    });
+
+    const closeBtn = modal.querySelector<HTMLButtonElement>('.game-detail-close');
+    closeBtn?.addEventListener('click', () => this.closeGameDetail());
+
+    document.body.appendChild(modal);
+    this.detailModal = modal;
+    return modal;
+  }
+
+  fillDetailModal(game: Game) {
+    const modal = this.ensureDetailModal();
+    const titleEl = modal.querySelector<HTMLElement>('#game-detail-title');
+    const imageBtn = modal.querySelector<HTMLButtonElement>('.game-detail-image-btn');
+    const imageEl = modal.querySelector<HTMLImageElement>('.game-detail-image');
+    const descEl = modal.querySelector<HTMLParagraphElement>('.game-detail-description p');
+    const playBtn = modal.querySelector<HTMLButtonElement>('.game-detail-play');
+    const gradeRow = modal.querySelector<HTMLElement>('[data-chip-column="grade"] .chip-row');
+    const typeRow = modal.querySelector<HTMLElement>('[data-chip-column="type"] .chip-row');
+    const genreRow = modal.querySelector<HTMLElement>('[data-chip-column="genre"] .chip-row');
+
+    if (titleEl) titleEl.textContent = game.name;
+
+    if (imageEl) {
+      imageEl.src = game.image;
+      imageEl.alt = '';
+    }
+    if (imageBtn) {
+      imageBtn.setAttribute('aria-label', `Play ${game.name}`);
+      imageBtn.onclick = () => openGameUrl(game.url);
+    }
+
+    if (descEl) descEl.textContent = game.description || '';
+
+    if (playBtn) {
+      playBtn.setAttribute('aria-label', `Play ${game.name}`);
+      playBtn.onclick = () => openGameUrl(game.url);
+    }
+
+    if (gradeRow) {
+      gradeRow.innerHTML = '';
+      for (let grade = game.minGrade; grade <= game.maxGrade; grade++) {
+        const chip = document.createElement('span');
+        chip.classList.add('chip', 'chip-grade');
+        chip.textContent = String(grade);
+        gradeRow.appendChild(chip);
+      }
+    }
+
+    const fillCategoryRow = (row: HTMLElement | null, categories: string[], isPrimary: boolean) => {
+      if (!row) return;
+      row.innerHTML = '';
+      categories.forEach((cat) => {
+        const chip = document.createElement('span');
+        chip.classList.add('chip', isPrimary ? 'chip-primary' : 'chip-secondary');
+        chip.textContent = cat;
+        const colors = getCategoryChipColor(cat, isPrimary);
+        chip.style.backgroundColor = colors.bg;
+        chip.style.color = colors.textColor;
+        row.appendChild(chip);
+      });
+    };
+
+    fillCategoryRow(typeRow, game.primaryCategories || [], true);
+    fillCategoryRow(genreRow, game.secondaryCategories || game.categories || [], false);
+  }
+
+  openGameDetail(game: Game, opener: HTMLElement) {
+    const modal = this.ensureDetailModal();
+    this.fillDetailModal(game);
+    this.detailOpener = opener;
+
+    this.previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    modal.hidden = false;
+
+    if (!this.detailEscapeHandler) {
+      this.detailEscapeHandler = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') this.closeGameDetail();
+      };
+      document.addEventListener('keydown', this.detailEscapeHandler);
+    }
+
+    const closeBtn = modal.querySelector<HTMLButtonElement>('.game-detail-close');
+    queueMicrotask(() => closeBtn?.focus());
+  }
+
+  closeGameDetail() {
+    if (!this.detailModal || this.detailModal.hidden) return;
+
+    this.detailModal.hidden = true;
+    document.body.style.overflow = this.previousBodyOverflow;
+
+    if (this.detailEscapeHandler) {
+      document.removeEventListener('keydown', this.detailEscapeHandler);
+      this.detailEscapeHandler = null;
+    }
+
+    const opener = this.detailOpener;
+    this.detailOpener = null;
+    queueMicrotask(() => opener?.focus());
   }
 
   renderNoGamesMessage() {

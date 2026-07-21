@@ -3,18 +3,17 @@
   "name": "Globle",
   "url": "https://globle.org",
   "image": "/images/globle-new.png",
-  "description": "Guess the mystery country using a color-coded globe.",
+  "description": "Guess the mystery country using a color-coded globe that warms up as you get closer.",
   "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Geography",
     "Daily Challenge",
-    "Trivia",
-    "Puzzle"
+    "Puzzle",
+    "Trivia"
   ]
 }

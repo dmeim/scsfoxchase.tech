@@ -3,18 +3,16 @@
   "name": "Crosswordle",
   "url": "https://crosswordle.org",
   "image": "/images/crosswordle.png",
-  "description": "Reverse-engineer a crossword-style Wordle grid.",
+  "description": "Figure out a crossword-style Wordle grid by reverse-engineering the clues and letter patterns. Combines spelling logic with crossword structure for a tough daily-style challenge.",
   "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Word Games",
-    "Crossword",
-    "Daily Challenge",
-    "Puzzle"
+    "Puzzle",
+    "Daily Challenge"
   ]
 }

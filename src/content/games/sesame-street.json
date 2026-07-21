@@ -4,16 +4,14 @@
   "url": "https://www.sesamestreet.org/games",
   "image": "/images/sesame-street.png",
   "description": "Fun learning games with Elmo, Cookie Monster, and friends.",
-  "minGrade": 0,
+  "minGrade": 1,
   "maxGrade": 2,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
-    "Educational",
-    "Kids",
-    "Casual"
+    "Educational"
   ]
 }

@@ -3,22 +3,19 @@
   "name": "Build Royale",
   "url": "https://buildroyale.io/",
   "image": "/images/buildroyale.png",
-  "description": "Build cover and compete to be the last player standing in a Fortnite-style royale.",
+  "description": "Gather materials, build cover, and fight to be the last player standing in a Fortnite-style battle royale. Fast building and combat in browser-friendly multiplayer matches.",
   "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
     "Battle Royale",
-    "IO Games",
-    "Building",
     "Action",
+    "Survival",
     "Competitive",
-    "Survival"
+    "Sandbox"
   ]
 }

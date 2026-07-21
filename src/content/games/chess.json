@@ -3,15 +3,13 @@
   "name": "Chess",
   "url": "https://www.chess.com/play",
   "image": "/images/chess-com.png",
-  "description": "Play chess online against friends or the computer.",
+  "description": "Play chess online against friends, random opponents, or computer bots. Practice openings and endgames with clocks, ratings, and a full suite of learning tools on Chess.com.",
   "minGrade": 3,
   "maxGrade": 8,
   "primaryCategories": [
-    "Single Player",
     "Multiplayer",
     "Online",
-    "Turn-Based",
-    "Free to Play"
+    "Turn-Based"
   ],
   "secondaryCategories": [
     "Board Games",

@@ -3,20 +3,17 @@
   "name": "Tic Tac Toe",
   "url": "https://playtictactoe.org",
   "image": "/images/tictactoe.png",
-  "description": "The classic X and O strategy game.",
-  "minGrade": 0,
+  "description": "Place X or O marks and get three in a row before your opponent.",
+  "minGrade": 1,
   "maxGrade": 4,
   "primaryCategories": [
-    "Single Player",
     "Multiplayer",
     "Offline",
-    "Turn-Based",
-    "Free to Play"
+    "Turn-Based"
   ],
   "secondaryCategories": [
     "Board Games",
     "Classics",
-    "Strategy",
-    "Kids"
+    "Strategy"
   ]
 }

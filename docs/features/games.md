@@ -38,7 +38,12 @@ Current trending IDs (order matters):
 
 ### Grid
 
-`#games-grid` uses `data-card-style="max"`: image + one-line title; click opens `game.url` in a new tab. Failed images use `src/scripts/placeholder-images.ts`. Empty filter result shows “No Games Found”.
+`#games-grid` uses `data-card-style="max"`: image + one-line title.
+
+- **Image click** — opens `game.url` in a new tab (`noopener,noreferrer`).
+- **Title click** (or Enter/Space) — opens a detail modal with art, grade/type/genre chips, description, and Play.
+- Modal: single shared `#game-detail-modal` node; close via X, backdrop, or Escape; body scroll locked while open.
+- Failed images use `src/scripts/placeholder-images.ts`. Empty filter result shows “No Games Found”.
 
 Catalog payload is embedded as JSON in `#games-catalog-data` (`{ games, trendingIds }`); hero slides in `#ng-hero-data`.
 
@@ -57,8 +62,8 @@ Defined in `src/content.config.ts` (`games` collection). Loader: glob `**/*.json
 | `description` | string | Short blurb |
 | `minGrade` | number | Inclusive lower grade |
 | `maxGrade` | number | Inclusive upper grade |
-| `primaryCategories` | string[] | “Type” filters / badges |
-| `secondaryCategories` | string[] | “Genre” filters / badges |
+| `primaryCategories` | string[] | “Type” filters / badges (≤3) |
+| `secondaryCategories` | string[] | “Genre” filters / badges (≤5) |
 
 Example (`src/content/games/bloxd.json`):
 
@@ -71,8 +76,8 @@ Example (`src/content/games/bloxd.json`):
   "description": "Multiplayer voxel game with various game modes.",
   "minGrade": 4,
   "maxGrade": 8,
-  "primaryCategories": ["Multiplayer", "Online", "PvP", "Real-Time", "Free to Play"],
-  "secondaryCategories": ["Minecraft-Style", "Open World", "Building"]
+  "primaryCategories": ["Multiplayer", "Online", "PvP"],
+  "secondaryCategories": ["Sandbox", "Battle Royale", "Action"]
 }
 ```
 

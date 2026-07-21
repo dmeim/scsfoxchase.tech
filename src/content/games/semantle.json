@@ -8,13 +8,11 @@
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Word Games",
     "Daily Challenge",
-    "Vocabulary",
-    "Brain Teaser"
+    "Puzzle"
   ]
 }

@@ -9,14 +9,12 @@
   "primaryCategories": [
     "Single Player",
     "Multiplayer",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Geography",
     "Trivia",
     "Educational",
-    "Exploration",
     "Daily Challenge"
   ]
 }

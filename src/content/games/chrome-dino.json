@@ -3,18 +3,16 @@
   "name": "Chrome Dino",
   "url": "https://chromedino.com",
   "image": "/images/chrome-dino-run.jpeg",
-  "description": "Jump over obstacles as the Chrome dinosaur in this endless runner.",
+  "description": "Jump and duck as the Chrome dinosaur runs through an endless desert of cacti and pterodactyls. Simple one-button timing that gets harder the longer you survive.",
   "minGrade": 1,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Offline",
-    "Free to Play"
+    "Offline"
   ],
   "secondaryCategories": [
-    "Endless Runner",
-    "Retro",
-    "Casual",
-    "Reaction Speed"
+    "Action",
+    "Arcade",
+    "Classics"
   ]
 }

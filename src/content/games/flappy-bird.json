@@ -3,18 +3,15 @@
   "name": "Flappy Bird",
   "url": "https://freeflappybird.org",
   "image": "/images/flappybird.png",
-  "description": "Tap to fly through pipes without crashing in this addictive game.",
+  "description": "Tap to guide the bird through gaps between pipes without crashing.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Offline",
-    "Free to Play"
+    "Offline"
   ],
   "secondaryCategories": [
-    "Endless Runner",
-    "Casual",
     "Arcade",
-    "Reaction Speed"
+    "Action"
   ]
 }

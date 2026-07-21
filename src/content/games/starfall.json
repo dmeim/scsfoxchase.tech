@@ -3,18 +3,17 @@
   "name": "Starfall",
   "url": "https://www.starfall.com/h/",
   "image": "/images/starfall.jpg",
-  "description": "Interactive reading, math, and music activities for early learners.",
-  "minGrade": 0,
+  "description": "Interactive reading, math, and music activities across a large learning library.",
+  "minGrade": 1,
   "maxGrade": 3,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",
-    "Reading",
-    "Math",
-    "Early Learning"
+    "Word Games",
+    "Math"
   ]
 }

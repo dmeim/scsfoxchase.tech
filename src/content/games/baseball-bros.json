@@ -3,15 +3,13 @@
   "name": "Baseball Bros",
   "url": "https://baseballbros.io/",
   "image": "/images/baseballbros.jpg",
-  "description": "Play fast-paced baseball against friends online.",
+  "description": "Play quick online baseball matches with simple controls for pitching, hitting, and fielding. Challenge friends or other players in short, competitive games.",
   "minGrade": 3,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
     "Sports",

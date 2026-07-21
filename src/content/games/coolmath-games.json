@@ -3,18 +3,17 @@
   "name": "CoolMath Games",
   "url": "https://www.coolmathgames.com",
   "image": "/images/coolmathgames.jpg",
-  "description": "A huge collection of logic, thinking, and math games.",
+  "description": "A large catalog of browser games with a focus on logic, strategy, and math-friendly titles. Useful as a hub for independent practice or quiet indoor recess choices.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",
     "Math",
-    "Puzzle",
-    "Casual"
+    "Puzzle"
   ]
 }

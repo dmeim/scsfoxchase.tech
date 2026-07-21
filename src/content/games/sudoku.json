@@ -8,12 +8,10 @@
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Offline",
-    "Free to Play"
+    "Offline"
   ],
   "secondaryCategories": [
-    "Number Puzzles",
-    "Logic",
-    "Puzzle"
+    "Puzzle",
+    "Classics"
   ]
 }

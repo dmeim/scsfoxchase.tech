@@ -8,7 +8,7 @@ Whiteboards work **signed out** (device-local indexes + `local:*` R2 assets) and
 
 ## Clerk on the client
 
-**Island:** `src/components/ClerkAuth.tsx` in the site header (`Header.astro`).
+**Island:** `src/components/ClerkAuth.tsx` in the site header (`Header.astro`) with `client:only="react"` (same rationale as the board canvas — skip Vite SSR for `@clerk/react` hooks).
 
 - Uses `@clerk/react` (`ClerkProvider`, `SignInButton`, `UserButton`) — Astro 7 is outside `@clerk/astro`’s peer range.
 - Publishable key: `PUBLIC_CLERK_PUBLISHABLE_KEY` (inlined at build).

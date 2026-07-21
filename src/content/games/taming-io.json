@@ -9,14 +9,12 @@
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "PvP"
   ],
   "secondaryCategories": [
     "IO Games",
     "Survival",
-    "Crafting",
-    "Adventure"
+    "Sandbox",
+    "Action"
   ]
 }

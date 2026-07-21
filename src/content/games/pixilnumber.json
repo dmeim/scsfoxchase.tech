@@ -8,13 +8,10 @@
   "maxGrade": 6,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Art & Creativity",
-    "Puzzle",
-    "Casual",
-    "Kids"
+    "Puzzle"
   ]
 }

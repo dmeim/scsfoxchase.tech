@@ -4,18 +4,14 @@
   "url": "https://jspaint.app/",
   "image": "/images/ms-js-paint.png",
   "description": "Use a classic MS Paint-style drawing app right in your browser.",
-  "minGrade": 0,
+  "minGrade": 1,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Art & Creativity",
-    "Sandbox",
-    "Casual",
-    "Kids",
-    "Retro"
+    "Classics"
   ]
 }

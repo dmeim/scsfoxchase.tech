@@ -3,17 +3,16 @@
   "name": "Contexto",
   "url": "https://contexto.me",
   "image": "/images/contexto.png",
-  "description": "Guess the secret word using contextual clues and ranking.",
+  "description": "Guess the secret word; each try is ranked by how close it is in meaning. Use the ranking feedback to zero in on the target—great vocabulary and analogy practice.",
   "minGrade": 5,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Online",
-    "Free to Play"
+    "Online"
   ],
   "secondaryCategories": [
     "Word Games",
-    "Daily Challenge",
-    "Brain Teaser"
+    "Puzzle",
+    "Daily Challenge"
   ]
 }

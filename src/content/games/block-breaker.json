@@ -3,18 +3,16 @@
   "name": "Block Breaker",
   "url": "https://blockbreaker.gg/",
   "image": "/images/blockbreaker-new.jpg",
-  "description": "Break all the blocks by bouncing a ball off your paddle.",
+  "description": "Bounce a ball off your paddle to smash every brick on the board. Timing and angle matter as the ball speeds up—classic brick-breaker arcade play.",
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Offline",
-    "Free to Play"
+    "Offline"
   ],
   "secondaryCategories": [
     "Arcade",
     "Classics",
-    "Casual",
-    "Reaction Speed"
+    "Action"
   ]
 }

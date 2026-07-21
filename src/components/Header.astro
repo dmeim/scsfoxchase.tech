@@ -207,7 +207,9 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
           <li><a href="/forms" class:list={[{ active: formsActive }]}>Forms</a></li>
         </ul>
       </nav>
-      <ClerkAuth client:load />
+      <ClerkAuth client:only="react">
+        <div class="header-auth" slot="fallback" aria-hidden="true"></div>
+      </ClerkAuth>
     </div>
   </div>
 </header>

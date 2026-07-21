@@ -3,18 +3,17 @@
   "name": "Agar.io",
   "url": "https://agar.io/",
   "image": "/images/agario.jpg",
-  "description": "Grow your cell by eating smaller players and avoid being eaten in this multiplayer arena.",
+  "description": "Control a cell in a live online arena, grow by absorbing pellets and smaller players, and dodge larger opponents. Simple controls make it easy to jump in; strategy and map awareness matter as you get bigger.",
   "minGrade": 4,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
     "IO Games",
     "Arcade",
-    "Casual",
     "Competitive"
   ]
 }

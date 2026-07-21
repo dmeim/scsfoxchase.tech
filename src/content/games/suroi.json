@@ -9,16 +9,13 @@
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "PvP"
   ],
   "secondaryCategories": [
     "Battle Royale",
     "IO Games",
     "Action",
     "Competitive",
-    "Survival",
-    "FPS / Shooter"
+    "Survival"
   ]
 }

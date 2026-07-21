@@ -3,17 +3,16 @@
   "name": "Digipuzzle",
   "url": "https://www.digipuzzle.net",
   "image": "/images/digipuzzle.jpg",
-  "description": "Educational puzzles and games for reading, math, and more.",
-  "minGrade": 0,
+  "description": "A collection of reading, math, and logic puzzles for classroom practice.",
+  "minGrade": 1,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",
-    "Kids",
     "Math",
     "Puzzle"
   ]

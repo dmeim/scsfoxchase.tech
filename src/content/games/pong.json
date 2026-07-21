@@ -9,13 +9,11 @@
   "primaryCategories": [
     "Single Player",
     "Multiplayer",
-    "Offline",
-    "Real-Time",
-    "Free to Play"
+    "Offline"
   ],
   "secondaryCategories": [
     "Arcade",
-    "Retro",
-    "Classics"
+    "Classics",
+    "Sports"
   ]
 }

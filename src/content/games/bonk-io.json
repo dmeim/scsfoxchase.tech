@@ -3,20 +3,17 @@
   "name": "Bonk.io",
   "url": "https://bonk.io/",
   "image": "/images/bonk-io.jpg",
-  "description": "Bump rivals off the stage in a physics arena—last one standing wins.",
+  "description": "Bump rivals off the stage in a physics arena—last one standing wins. Customize your character and jump into quick multiplayer rounds with friends or public lobbies.",
   "minGrade": 3,
   "maxGrade": 8,
   "primaryCategories": [
     "Multiplayer",
     "Online",
-    "PvP",
-    "Real-Time",
-    "Free to Play"
+    "Real-Time"
   ],
   "secondaryCategories": [
     "IO Games",
     "Action",
-    "Competitive",
-    "Casual"
+    "Competitive"
   ]
 }

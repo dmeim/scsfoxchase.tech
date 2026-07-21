@@ -3,18 +3,17 @@
   "name": "FunBrain",
   "url": "https://www.funbrain.com",
   "image": "/images/funbrain.jpeg",
-  "description": "Games, books, and videos that develop skills in math and reading.",
+  "description": "Games, books, and videos for math and reading practice.",
   "minGrade": 1,
   "maxGrade": 6,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",
-    "Kids",
     "Math",
-    "Spelling"
+    "Word Games"
   ]
 }

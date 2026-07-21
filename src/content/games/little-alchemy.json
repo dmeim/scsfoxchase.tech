@@ -8,13 +8,11 @@
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
-    "Offline",
-    "Free to Play"
+    "Offline"
   ],
   "secondaryCategories": [
     "Science",
     "Puzzle",
-    "Sandbox",
-    "Exploration"
+    "Sandbox"
   ]
 }

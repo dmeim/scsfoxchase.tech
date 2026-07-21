@@ -3,18 +3,18 @@
   "name": "Chrome Music Lab",
   "url": "https://musiclab.chromeexperiments.com/",
   "image": "/images/chrome-music-lab.jpg",
-  "description": "Explore music through fun, hands-on experiments from Google \u2014 make songs, rhythms, and melodies.",
-  "minGrade": 0,
+  "description": "Explore sound through hands-on experiments from Google—draw melodies, build rhythms, and visualize pitch and patterns. A collection of short tools for music and science of sound, not a single game.",
+  "minGrade": 1,
   "maxGrade": 8,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Music",
     "Art & Creativity",
     "Educational",
-    "Sandbox"
+    "Science"
   ]
 }

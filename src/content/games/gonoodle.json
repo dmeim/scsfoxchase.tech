@@ -3,18 +3,16 @@
   "name": "GoNoodle",
   "url": "https://www.gonoodle.com/",
   "image": "/images/gonoodle.jpg",
-  "description": "Movement and mindfulness videos and games to get kids active and focused.",
-  "minGrade": 0,
+  "description": "Movement and mindfulness videos to get students active and focused.",
+  "minGrade": 1,
   "maxGrade": 5,
   "primaryCategories": [
     "Single Player",
     "Online",
-    "Free to Play"
+    "Educational Hub"
   ],
   "secondaryCategories": [
     "Educational",
-    "Movement",
-    "Mindfulness",
-    "Active"
+    "Movement"
   ]
 }

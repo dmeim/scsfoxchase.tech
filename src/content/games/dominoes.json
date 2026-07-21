@@ -7,16 +7,13 @@
   "minGrade": 2,
   "maxGrade": 8,
   "primaryCategories": [
-    "Single Player",
     "Multiplayer",
     "Online",
-    "Turn-Based",
-    "Free to Play"
+    "Turn-Based"
   ],
   "secondaryCategories": [
     "Board Games",
     "Classics",
-    "Strategy",
-    "Number Puzzles"
+    "Strategy"
   ]
 }

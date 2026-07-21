@@ -296,6 +296,7 @@
     border: none;
     gap: 8px;
     overflow: visible;
+    cursor: default;
 }
 
 .newgames-main .game-card--max:hover {
@@ -310,13 +311,20 @@
     outline: 1px solid var(--border-color);
     outline-offset: -1px;
     transition: outline-color 0.2s ease;
+    cursor: pointer;
 }
 
 .newgames-main .game-card--max:hover .game-card-image {
     outline-color: var(--primary-color);
 }
 
-.newgames-main .game-card--max h4 {
+.newgames-main .game-card--max .game-card-image:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.newgames-main .game-card--max h4,
+.newgames-main .game-card--max .game-card-title {
     margin: 0;
     padding: 0 2px;
     font-size: 1.1rem;
@@ -327,10 +335,262 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-family: inherit;
+    width: 100%;
 }
 
-.newgames-main .game-card--max:hover h4 {
+.newgames-main .game-card--max:hover h4,
+.newgames-main .game-card--max:hover .game-card-title,
+.newgames-main .game-card--max .game-card-title:hover,
+.newgames-main .game-card--max .game-card-title:focus-visible {
     color: var(--primary-color);
+}
+
+.newgames-main .game-card--max .game-card-title:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* Game detail modal — stacked: photo → title → chips → description → Play */
+.game-detail-modal[hidden] {
+    display: none;
+}
+
+.game-detail-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.game-detail-dialog {
+    position: relative;
+    /* ~same image width as prior left column (~1.5× first modal) */
+    width: min(780px, 100%);
+    max-height: 88vh;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    padding: clamp(14px, 2.5vw, 22px);
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    background: var(--light-bg);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .game-detail-dialog {
+    background: var(--dark-bg);
+}
+
+.game-detail-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--text-color);
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+[data-theme="dark"] .game-detail-close {
+    background: rgba(20, 20, 20, 0.85);
+}
+
+.game-detail-close:hover,
+.game-detail-close:focus-visible {
+    color: var(--primary-color);
+    border-color: var(--border-color);
+    outline: none;
+}
+
+.game-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.game-detail-image-btn {
+    position: relative;
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    background: #eee;
+    cursor: pointer;
+    overflow: hidden;
+    flex-shrink: 0;
+    /* Same 16:9 crop frame as .game-card--max .game-card-image */
+    aspect-ratio: 16 / 9;
+}
+
+.game-detail-image-btn:hover,
+.game-detail-image-btn:focus-visible {
+    border-color: var(--primary-color);
+    outline: none;
+}
+
+.game-detail-image {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+[data-theme="dark"] .game-detail-image-btn {
+    background: #111;
+}
+
+.game-detail-title {
+    margin: 0;
+    padding: 0 2px;
+    font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .game-detail-title {
+    color: var(--light-text, #e0e0e0);
+}
+
+.game-detail-chips {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    flex-shrink: 0;
+    align-items: start;
+    padding-block: 12px;
+    border-block: 1px solid var(--border-color);
+}
+
+.game-detail-chip-column {
+    min-width: 0;
+    padding-inline: 10px;
+}
+
+.game-detail-chip-column + .game-detail-chip-column {
+    border-left: 1px solid var(--border-color);
+}
+
+.game-detail-chip-column .game-card-badge-label {
+    margin-bottom: 6px;
+}
+
+.game-detail-chip-column .chip-row {
+    justify-content: center;
+    gap: 5px;
+}
+
+.game-detail-chip-column .chip {
+    font-size: 0.65rem;
+}
+
+.game-detail-chips .chip-grade {
+    border: 1.5px solid var(--border-color);
+    background-color: var(--light-bg);
+    color: var(--text-color);
+    cursor: default;
+}
+
+[data-theme="dark"] .game-detail-chips .chip-grade {
+    background-color: var(--dark-bg);
+}
+
+.game-detail-description {
+    min-height: 0;
+}
+
+.game-detail-description p {
+    margin: 0;
+    color: var(--text-color);
+    font-size: 0.95rem;
+    line-height: 1.45;
+    text-align: center;
+}
+
+.game-detail-play {
+    flex-shrink: 0;
+    align-self: stretch;
+    padding: 12px 18px;
+    border: none;
+    border-radius: 2px;
+    background: var(--primary-color);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.game-detail-play:hover,
+.game-detail-play:focus-visible {
+    background: #0e4a26;
+    outline: none;
+}
+
+[data-theme="dark"] .game-detail-play:hover,
+[data-theme="dark"] .game-detail-play:focus-visible {
+    background: #1a7a42;
+}
+
+@media (max-width: 768px) {
+    .game-detail-modal {
+        padding: 12px;
+    }
+
+    .game-detail-dialog {
+        padding: 12px;
+    }
+
+    .game-detail-body {
+        gap: 10px;
+    }
+
+    .game-detail-chips {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        padding-block: 10px;
+    }
+
+    .game-detail-chip-column {
+        padding-inline: 8px;
+    }
+}
+
+@media (max-width: 480px) {
+    .game-detail-modal {
+        padding: 10px;
+    }
+
+    .game-detail-dialog {
+        padding: 10px;
+    }
 }
 
 /* iPad / narrower desktop */
