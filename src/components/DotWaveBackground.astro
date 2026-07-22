@@ -1,0 +1,15 @@
+---
+/**
+ * Animated dotted-wave page background.
+ * Import into a layout/page to add the layer — does not self-activate globally.
+ */
+---
+<div class="dot-wave-layer" aria-hidden="true">
+  <canvas class="dot-wave-canvas"></canvas>
+</div>
+
+<script>
+  import { initDotWaves } from '../scripts/dot-waves';
+
+  initDotWaves();
+</script>

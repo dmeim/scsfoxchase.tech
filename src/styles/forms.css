@@ -1,26 +1,9 @@
 /* Forms pages — self-contained (do not rely on home-page cascade).
-   cache-bust 2026-07-16: ship as BaseLayout bundle so prod CSS order matches inventory. */
+   cache-bust 2026-07-16: ship as BaseLayout bundle so prod CSS order matches inventory.
+   Page background: dotted wave via BaseLayout (global default). */
 
-/* Same blurred background treatment as home/inventory, without home dashboard rules. */
 body.forms-page {
-  position: relative;
-  isolation: isolate;
   min-height: 100dvh;
-  overflow-x: hidden;
-}
-
-body.forms-page::before {
-  content: "";
-  position: fixed;
-  inset: -28px;
-  z-index: -1;
-  pointer-events: none;
-  background-image: url('/images/background.png');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  filter: blur(4px);
-  transform: scale(1.04);
 }
 
 /* Match inventory `.container.asset-shell` (1120px).

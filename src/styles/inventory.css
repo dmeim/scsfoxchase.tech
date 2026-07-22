@@ -1,28 +1,6 @@
-/* Asset lookup page */
+/* Asset lookup page — background: dotted wave via BaseLayout (global default). */
 body.asset-lookup-page {
-    position: relative;
-    isolation: isolate;
-    overflow-x: hidden;
-    background-color: #eef4ef;
-}
-
-/* Soft blur on the page background image. */
-body.asset-lookup-page::before {
-    content: "";
-    position: fixed;
-    inset: -28px;
-    z-index: -1;
-    pointer-events: none;
-    background-image: url('/images/background.png');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    filter: blur(4px);
-    transform: scale(1.04);
-}
-
-[data-theme="dark"] body.asset-lookup-page {
-    background-color: #101510;
+    min-height: 100dvh;
 }
 
 .asset-main {
@@ -792,6 +770,7 @@ body.asset-scanner-open {
     }
 
     body.asset-lookup-page::before,
+    body.asset-lookup-page > .dot-wave-layer,
     body.asset-lookup-page > header,
     body.asset-lookup-page > footer,
     .asset-lookup-panel,

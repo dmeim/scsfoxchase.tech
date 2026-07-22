@@ -1,6 +1,7 @@
 ---
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import DotWaveBackground from '../components/DotWaveBackground.astro';
 import '../styles/global.css';
 import '../styles/forms.css';
 
@@ -9,9 +10,21 @@ interface Props {
   bodyClass?: string;
   hideFooter?: boolean;
   boardChrome?: boolean;
+  /** Animated dotted-wave layer. Default: on for all pages except home + live board. */
+  dotWave?: boolean;
 }
 
-const { title, bodyClass = '', hideFooter = false, boardChrome = false } = Astro.props;
+const {
+  title,
+  bodyClass = '',
+  hideFooter = false,
+  boardChrome = false,
+  dotWave,
+} = Astro.props;
+
+const showDotWave =
+  dotWave ??
+  !(bodyClass.includes('home-page') || bodyClass.includes('board-page'));
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -37,7 +50,8 @@ const { title, bodyClass = '', hideFooter = false, boardChrome = false } = Astro
     </script>
     <slot name="head" />
   </head>
-  <body class:list={[bodyClass || false]}>
+  <body class:list={[bodyClass || false, showDotWave && 'has-dot-wave']}>
+    {showDotWave && <DotWaveBackground />}
     <Header boardChrome={boardChrome} />
     <main>
       <slot />

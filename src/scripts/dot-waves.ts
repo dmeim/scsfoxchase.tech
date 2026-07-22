@@ -1,4 +1,4 @@
-// Animated dotted wave background for the games page
+// Animated dotted wave background layer (mounted by DotWaveBackground.astro)
 
 type Dot = {
   x: number;
@@ -11,15 +11,12 @@ type Dot = {
 };
 
 export function initDotWaves(): void {
-  if (!document.body.classList.contains('games-page')) return;
-  if (document.querySelector('.dot-wave-canvas')) return;
+  const canvas = document.querySelector<HTMLCanvasElement>('.dot-wave-canvas');
+  if (!canvas || canvas.dataset.dotWavesInit === '1') return;
+  canvas.dataset.dotWavesInit = '1';
 
   const reduceMotion =
     window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const canvas = document.createElement('canvas');
-  canvas.className = 'dot-wave-canvas';
-  canvas.setAttribute('aria-hidden', 'true');
-  document.body.prepend(canvas);
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
