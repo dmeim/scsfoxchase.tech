@@ -47,6 +47,7 @@ export default defineConfig({
         'react',
         'react-dom',
         'tldraw',
+        '@tldraw/driver',
         '@tldraw/editor',
         '@tldraw/state',
         '@tldraw/state-react',
@@ -59,11 +60,15 @@ export default defineConfig({
       ],
     },
     optimizeDeps: {
-      // Prebundle on cold start so Vite does not rediscover these mid-session,
-      // reload the page, and re-register tldraw versions on a live globalThis
-      // (which surfaces as the false "multiple instances" warning).
+      // Hold the first dep graph until the crawl finishes so Vite does not
+      // rediscover deps mid-session, full-reload, and re-register tldraw on a
+      // sticky globalThis (false "multiple instances" warning).
+      holdUntilCrawlEnd: true,
+      // Prebundle on cold start — include the Cloudflare passthrough image
+      // service that was still being discovered after first paint.
       include: [
         'tldraw',
+        '@tldraw/driver',
         '@tldraw/sync',
         '@tldraw/sync-core',
         '@tldraw/editor',
@@ -74,7 +79,26 @@ export default defineConfig({
         '@tldraw/utils',
         '@tldraw/validate',
         'lucide',
+        'astro/assets/services/noop',
       ],
+    },
+    ssr: {
+      optimizeDeps: {
+        include: [
+          'tldraw',
+          '@tldraw/driver',
+          '@tldraw/sync',
+          '@tldraw/sync-core',
+          '@tldraw/editor',
+          '@tldraw/state',
+          '@tldraw/state-react',
+          '@tldraw/store',
+          '@tldraw/tlschema',
+          '@tldraw/utils',
+          '@tldraw/validate',
+          'astro/assets/services/noop',
+        ],
+      },
     },
   },
 });

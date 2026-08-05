@@ -1,0 +1,314 @@
+{
+  "tldrawFileFormatVersion": 1,
+  "schema": {
+    "schemaVersion": 2,
+    "sequences": {
+      "com.tldraw.store": 5,
+      "com.tldraw.asset": 1,
+      "com.tldraw.camera": 1,
+      "com.tldraw.document": 2,
+      "com.tldraw.instance": 26,
+      "com.tldraw.instance_page_state": 5,
+      "com.tldraw.page": 1,
+      "com.tldraw.instance_presence": 6,
+      "com.tldraw.pointer": 1,
+      "com.tldraw.shape": 4,
+      "com.tldraw.user": 1,
+      "com.tldraw.asset.image": 6,
+      "com.tldraw.asset.video": 5,
+      "com.tldraw.asset.bookmark": 2,
+      "com.tldraw.shape.group": 0,
+      "com.tldraw.shape.text": 4,
+      "com.tldraw.shape.bookmark": 2,
+      "com.tldraw.shape.draw": 5,
+      "com.tldraw.shape.geo": 12,
+      "com.tldraw.shape.note": 13,
+      "com.tldraw.shape.line": 5,
+      "com.tldraw.shape.frame": 1,
+      "com.tldraw.shape.arrow": 8,
+      "com.tldraw.shape.highlight": 4,
+      "com.tldraw.shape.embed": 4,
+      "com.tldraw.shape.image": 5,
+      "com.tldraw.shape.video": 4,
+      "com.tldraw.binding.arrow": 1
+    }
+  },
+  "records": [
+    {
+      "id": "shape:note",
+      "typeName": "shape",
+      "type": "text",
+      "x": 80,
+      "y": 450,
+      "rotation": 0,
+      "index": "a7",
+      "parentId": "page:page",
+      "isLocked": false,
+      "opacity": 1,
+      "props": {
+        "color": "grey",
+        "size": "s",
+        "w": 8,
+        "font": "sans",
+        "textAlign": "start",
+        "autoSize": true,
+        "scale": 1,
+        "richText": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Pan and zoom here, or open fullscreen for more room"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "meta": {}
+    },
+    {
+      "id": "shape:guides",
+      "typeName": "shape",
+      "type": "geo",
+      "x": 340,
+      "y": 320,
+      "rotation": 0,
+      "index": "a5",
+      "parentId": "page:page",
+      "isLocked": false,
+      "opacity": 1,
+      "props": {
+        "w": 200,
+        "h": 90,
+        "geo": "rectangle",
+        "dash": "draw",
+        "growY": 0,
+        "url": "",
+        "scale": 1,
+        "flipX": false,
+        "flipY": false,
+        "color": "green",
+        "labelColor": "black",
+        "fill": "semi",
+        "size": "m",
+        "font": "sans",
+        "align": "middle",
+        "verticalAlign": "middle",
+        "richText": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Guides"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "meta": {}
+    },
+    {
+      "id": "shape:subtitle",
+      "typeName": "shape",
+      "type": "text",
+      "x": 40,
+      "y": 110,
+      "rotation": 0,
+      "index": "a3",
+      "parentId": "shape:hero",
+      "isLocked": false,
+      "opacity": 1,
+      "props": {
+        "color": "black",
+        "size": "m",
+        "w": 640,
+        "font": "sans",
+        "textAlign": "middle",
+        "autoSize": false,
+        "scale": 1,
+        "richText": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reference guide for Forms, Guides, and how we cite external sources"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "meta": {}
+    },
+    {
+      "id": "shape:hero",
+      "typeName": "shape",
+      "type": "frame",
+      "x": 80,
+      "y": 60,
+      "rotation": 0,
+      "index": "a1",
+      "parentId": "page:page",
+      "isLocked": false,
+      "opacity": 1,
+      "props": {
+        "w": 720,
+        "h": 200,
+        "name": "hero",
+        "color": "black"
+      },
+      "meta": {}
+    },
+    {
+      "id": "shape:forms",
+      "typeName": "shape",
+      "type": "geo",
+      "x": 80,
+      "y": 320,
+      "rotation": 0,
+      "index": "a4",
+      "parentId": "page:page",
+      "isLocked": false,
+      "opacity": 1,
+      "props": {
+        "w": 200,
+        "h": 90,
+        "geo": "rectangle",
+        "dash": "draw",
+        "growY": 0,
+        "url": "",
+        "scale": 1,
+        "flipX": false,
+        "flipY": false,
+        "color": "green",
+        "labelColor": "black",
+        "fill": "semi",
+        "size": "m",
+        "font": "sans",
+        "align": "middle",
+        "verticalAlign": "middle",
+        "richText": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Forms"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "meta": {}
+    },
+    {
+      "meta": {},
+      "id": "page:page",
+      "name": "Page 1",
+      "index": "a1",
+      "typeName": "page"
+    },
+    {
+      "gridSize": 10,
+      "name": "",
+      "meta": {},
+      "id": "document:document",
+      "typeName": "document"
+    },
+    {
+      "id": "shape:sources",
+      "typeName": "shape",
+      "type": "geo",
+      "x": 600,
+      "y": 320,
+      "rotation": 0,
+      "index": "a6",
+      "parentId": "page:page",
+      "isLocked": false,
+      "opacity": 1,
+      "props": {
+        "w": 180,
+        "h": 90,
+        "geo": "ellipse",
+        "dash": "draw",
+        "growY": 0,
+        "url": "",
+        "scale": 1,
+        "flipX": false,
+        "flipY": false,
+        "color": "yellow",
+        "labelColor": "black",
+        "fill": "semi",
+        "size": "m",
+        "font": "sans",
+        "align": "middle",
+        "verticalAlign": "middle",
+        "richText": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Sources"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "meta": {}
+    },
+    {
+      "id": "shape:title",
+      "typeName": "shape",
+      "type": "text",
+      "x": 40,
+      "y": 36,
+      "rotation": 0,
+      "index": "a2",
+      "parentId": "shape:hero",
+      "isLocked": false,
+      "opacity": 1,
+      "props": {
+        "color": "green",
+        "size": "xl",
+        "w": 640,
+        "font": "sans",
+        "textAlign": "middle",
+        "autoSize": false,
+        "scale": 1,
+        "richText": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "How to use this Help site"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "meta": {}
+    }
+  ]
+}

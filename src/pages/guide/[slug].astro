@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import GuideDiagram from '../../components/GuideDiagram';
 import { getCollection, render } from 'astro:content';
 import type { GetStaticPaths } from 'astro';
 
@@ -31,10 +32,10 @@ function sourceFavicon(url?: string): string | null {
 
   <article class="guide-page" aria-labelledby="guide-title">
     <div class="container form-shell guide-layout">
-      <header class="form-panel guide-title-card">
-        <p class="guide-kicker">Guide</p>
-        <h2 id="guide-title">{title}</h2>
-        <p class="guide-description">{description}</p>
+      <header class="form-panel guide-title-card guide-title-card--diagram">
+        <h2 id="guide-title" class="guide-visually-hidden">{title}</h2>
+        <p class="guide-visually-hidden">{description}</p>
+        <GuideDiagram client:only="react" />
       </header>
 
       <div class="form-panel guide-body-card">

@@ -36,7 +36,7 @@ export const forms: FormEntry[] = [
     label: 'Google/Account Help',
     description: 'Get help with Google or school account access',
     icon: 'iconKeyRound',
-    featured: false,
+    featured: true,
     status: 'stub',
   },
 ];
