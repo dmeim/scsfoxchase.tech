@@ -42,7 +42,39 @@ export default defineConfig({
 
   vite: {
     resolve: {
-      dedupe: ['react', 'react-dom'],
+      // tldraw + @tldraw/sync share singletons; keep one copy of each package.
+      dedupe: [
+        'react',
+        'react-dom',
+        'tldraw',
+        '@tldraw/editor',
+        '@tldraw/state',
+        '@tldraw/state-react',
+        '@tldraw/store',
+        '@tldraw/sync',
+        '@tldraw/sync-core',
+        '@tldraw/tlschema',
+        '@tldraw/utils',
+        '@tldraw/validate',
+      ],
+    },
+    optimizeDeps: {
+      // Prebundle on cold start so Vite does not rediscover these mid-session,
+      // reload the page, and re-register tldraw versions on a live globalThis
+      // (which surfaces as the false "multiple instances" warning).
+      include: [
+        'tldraw',
+        '@tldraw/sync',
+        '@tldraw/sync-core',
+        '@tldraw/editor',
+        '@tldraw/state',
+        '@tldraw/state-react',
+        '@tldraw/store',
+        '@tldraw/tlschema',
+        '@tldraw/utils',
+        '@tldraw/validate',
+        'lucide',
+      ],
     },
   },
 });
