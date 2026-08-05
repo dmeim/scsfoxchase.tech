@@ -37,7 +37,7 @@ Registration runs only when `'serviceWorker' in navigator`. `updateViaCache: 'no
 
 ## Caching strategy (`public/sw.js`)
 
-Cache name: `st-cecilia-tech-astro-v4`.
+Cache name: `st-cecilia-tech-astro-v17`.
 
 ### Install / activate
 
@@ -77,14 +77,14 @@ Applies to **GET** requests on the **same origin** only. Other methods and cross
 
 Route: **`/offline`** (`src/pages/offline.astro`, `prerender = true`).
 
-- Title: “Offline - St. Cecilia Technology”.
-- Copy explains the connection is down and that some features may be limited.
+- Title: “You're Offline” with an inline Lucide `wifi-off` icon (`iconWifiOff` in `src/scripts/icons.ts`).
+- Copy explains the connection is down and that most features may be limited or turned off.
+- A self-contained canvas runner (Chrome-dino style) sits under the message; script/styles are `is:inline` so they ship inside the precached HTML.
 - **Try Again** reloads the page; an `online` listener also reloads when connectivity returns.
-- **Available Offline** lists links to `/` (Home) and `/games` (Games Catalog).
 
-Because navigations use network-first and fall back only to `/offline`, following those links while still offline results in the same offline document again. Cached static assets from earlier visits can still satisfy non-navigation requests if the browser loads a page that references them; HTML routes themselves are not served from a page cache.
+Cached static assets from earlier visits can still satisfy non-navigation requests if the browser loads a page that references them; HTML routes themselves are not served from a page cache.
 
-Styling uses brand tokens (`--primary-color`, `--text-color`, `--light-bg` / `--dark-bg`) and `border-radius: 2px` on the cached-content panel — see [UI and design](ui-and-design.md).
+Styling uses brand tokens (`--primary-color`, `--text-color`, `--light-bg` / `--dark-bg`, `--border-color`) and `border-radius: 2px` on the runner canvas — see [UI and design](ui-and-design.md).
 
 ## Offline and the whiteboard
 

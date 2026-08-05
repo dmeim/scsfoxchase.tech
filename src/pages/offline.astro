@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { iconWifiOff, iconSpace, iconArrowBigUp } from '../scripts/icons';
 ---
 <BaseLayout title="Offline - St. Cecilia Technology">
   <meta
@@ -10,66 +11,162 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   />
 
   <section class="offline-container">
-    <div class="offline-icon">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
-    </div>
-    <h2 class="offline-title">You're Offline</h2>
+    <h2 class="offline-title">
+      <span class="offline-title-icon" set:html={iconWifiOff} />
+      You're Offline
+    </h2>
     <p class="offline-message">
-      It looks like you don't have an internet connection right now. Some features may be
-      limited until you're back online.
+      It seems like you don't have an internet connection right now.<br />
+      Most features may be limited or turned off until you're back online.
     </p>
+
+    <div class="offline-dino" aria-label="Offline runner game">
+      <canvas id="offline-dino-canvas" width="800" height="300"></canvas>
+      <ul class="offline-dino-controls" aria-label="Game controls">
+        <li class="offline-chip">
+          <span class="offline-chip-title">
+            <span class="offline-chip-icon" set:html={iconSpace}></span>
+            <span class="offline-chip-key">Space</span>
+          </span>
+          <span class="offline-chip-desc">Jump · quick short · hold tall</span>
+        </li>
+        <li class="offline-chip">
+          <span class="offline-chip-title">
+            <span class="offline-chip-icon" set:html={iconArrowBigUp}></span>
+            <span class="offline-chip-key">Shift</span>
+          </span>
+          <span class="offline-chip-desc">Slam down</span>
+        </li>
+      </ul>
+    </div>
+
     <div class="offline-actions">
       <button class="btn" id="refresh-btn" type="button">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.36"/><polyline points="21 3 21 9 15 9"/></svg> Try Again
       </button>
     </div>
-
-    <div class="cached-content">
-      <h3>Available Offline</h3>
-      <p>You can still access these pages:</p>
-      <div class="cached-links">
-        <a href="/">Home Page</a>
-        <a href="/games">Games Catalog</a>
-      </div>
-    </div>
   </section>
 </BaseLayout>
 
-<style>
+<style is:inline>
   .offline-container {
     text-align: center;
     padding: 60px 20px;
-    max-width: 600px;
+    max-width: 840px;
     margin: 0 auto;
   }
 
-  .offline-icon {
-    font-size: 80px;
+  .offline-title {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45em;
+    font-size: 2.5rem;
+    margin: 0 0 20px;
     color: var(--primary-color);
-    margin-bottom: 20px;
   }
 
-  .offline-icon svg {
-    width: 1em;
-    height: 1em;
+  .offline-title-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 0.9em;
+    height: 0.9em;
+    color: var(--primary-color);
   }
 
-  .offline-actions .btn {
+  .offline-title-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .offline-message {
+    font-size: 1.2rem;
+    margin: 0 0 28px;
+    color: var(--text-color);
+    line-height: 1.5;
+  }
+
+  .offline-dino {
+    margin: 0 auto 28px;
+    max-width: 800px;
+  }
+
+  #offline-dino-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 800px;
+    margin: 0 auto;
+    background: var(--light-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    image-rendering: pixelated;
+    touch-action: manipulation;
+  }
+
+  [data-theme='dark'] #offline-dino-canvas,
+  [data-theme='system'] #offline-dino-canvas {
+    background: var(--dark-bg);
+  }
+
+  .offline-dino-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+  }
+
+  .offline-chip {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25em;
+    padding: 0.45em 0.75em;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    background: var(--light-bg);
+    color: var(--text-color);
+    text-align: left;
+  }
+
+  [data-theme='dark'] .offline-chip,
+  [data-theme='system'] .offline-chip {
+    background: var(--dark-bg);
+  }
+
+  .offline-chip-title {
     display: inline-flex;
     align-items: center;
     gap: 0.4em;
   }
 
-  .offline-title {
-    font-size: 2.5rem;
-    margin-bottom: 20px;
+  .offline-chip-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 1.15em;
+    height: 1.15em;
     color: var(--primary-color);
   }
 
-  .offline-message {
-    font-size: 1.2rem;
-    margin-bottom: 30px;
-    color: var(--text-color);
+  .offline-chip-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .offline-chip-key {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    line-height: 1.2;
+  }
+
+  .offline-chip-desc {
+    font-size: 0.8rem;
+    opacity: 0.8;
+    line-height: 1.2;
   }
 
   .offline-actions {
@@ -77,32 +174,12 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     justify-content: center;
     gap: 20px;
     flex-wrap: wrap;
-    margin-bottom: 40px;
   }
 
-  .cached-content {
-    background-color: var(--light-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 2px;
-    padding: 20px;
-    margin-top: 40px;
-  }
-
-  :global([data-theme='dark']) .cached-content,
-  :global([data-theme='system']) .cached-content {
-    background-color: var(--dark-bg);
-  }
-
-  .cached-content h3 {
-    margin-bottom: 15px;
-    color: var(--primary-color);
-  }
-
-  .cached-links {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  .offline-actions .btn {
+    display: inline-flex;
     align-items: center;
+    gap: 0.4em;
   }
 
   @media (max-width: 480px) {
@@ -114,15 +191,432 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       font-size: 1rem;
     }
   }
+
+  @media (max-height: 800px) {
+    .offline-container {
+      padding: 36px 16px;
+    }
+
+    .offline-title {
+      font-size: 2rem;
+      margin-bottom: 12px;
+    }
+
+    .offline-message {
+      margin-bottom: 16px;
+    }
+
+    .offline-dino {
+      margin-bottom: 16px;
+    }
+  }
 </style>
 
-<script>
-  const refreshBtn = document.getElementById('refresh-btn');
-  refreshBtn?.addEventListener('click', () => {
-    window.location.reload();
-  });
+<script is:inline>
+  (function () {
+    const refreshBtn = document.getElementById('refresh-btn');
+    refreshBtn?.addEventListener('click', () => {
+      window.location.reload();
+    });
 
-  window.addEventListener('online', () => {
-    window.location.reload();
-  });
+    window.addEventListener('online', () => {
+      window.location.reload();
+    });
+
+    const canvas = document.getElementById('offline-dino-canvas');
+    if (!(canvas instanceof HTMLCanvasElement)) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const GROUND_Y = H - 24;
+    const GRAVITY_UP = 0.6;
+    const GRAVITY_FALL = 0.9;
+    /**
+     * Fixed jump heights (Mario-style cut):
+     * Space starts tall immediately; early release clamps to short.
+     * short ≈ 92px apex, tall ≈ 200px apex (v² / 2g with GRAVITY_UP).
+     */
+    const JUMP_SHORT_V = -10.5;
+    const JUMP_TALL_V = -15.5;
+    const SLAM_V = 24;
+    const DINO_X = 48;
+    const DINO_W = 44;
+    const DINO_H = 48;
+    const MAX_HEARTS = 3;
+    /** Invuln duration in fixed sim frames (~0.55s at 60 Hz). */
+    const INVULN_FRAMES = 33;
+    /**
+     * Game logic locked at 60 Hz; RAF only redraws (smoother on 120/144 Hz).
+     * Common display buckets (30/60/120/144) don't change sim speed.
+     */
+    const SIM_HZ = 60;
+    const STEP_MS = 1000 / SIM_HZ;
+    const MAX_STEPS_PER_FRAME = 5;
+    /** Obstacle bands matched to jump clearances (short clears ~90; tall ~200). */
+    const OBS_SHORT_MIN = 33;
+    const OBS_SHORT_MAX = 50;
+    const OBS_TALL_MIN = 99;
+    const OBS_TALL_MAX = 132;
+
+    // Lucide heart / heart-off paths (24×24 viewBox)
+    const HEART_PATH = new Path2D(
+      'M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5'
+    );
+    const HEART_OFF_PATHS = [
+      new Path2D(
+        'M10.5 4.893a5.5 5.5 0 0 1 1.091.931.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 1.872-1.002 3.356-2.187 4.655'
+      ),
+      new Path2D(
+        'm16.967 16.967-3.459 3.346a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5a5.5 5.5 0 0 1 2.747-4.761'
+      ),
+      new Path2D('m2 2 20 20'),
+    ];
+
+    /** @type {'ready' | 'running' | 'gameover'} */
+    let state = 'ready';
+    let score = 0;
+    let best = 0;
+    try {
+      best = Number(localStorage.getItem('offline-dino-best') || 0) || 0;
+    } catch {
+      best = 0;
+    }
+    let speed = 6;
+    let frame = 0;
+    let dinoY = GROUND_Y - DINO_H;
+    let dinoVy = 0;
+    let onGround = true;
+    /** True while Space is held during an airborne ascent (tall jump). */
+    let jumpHeld = false;
+    let spaceDown = false;
+    let shiftDown = false;
+    let hearts = MAX_HEARTS;
+    let invuln = 0;
+    /** @type {{ x: number, w: number, h: number, tall: boolean }[]} */
+    let obstacles = [];
+    let spawnIn = 90;
+    let raf = 0;
+    let lastTime = 0;
+    let acc = 0;
+
+    function cssVar(name, fallback) {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return v || fallback;
+    }
+
+    function colors() {
+      return {
+        ink: cssVar('--text-color', '#1a1a1a'),
+        primary: cssVar('--primary-color', '#125F31'),
+        muted: cssVar('--border-color', '#c5c5c5'),
+      };
+    }
+
+    function resetRun() {
+      state = 'running';
+      score = 0;
+      speed = 6;
+      frame = 0;
+      dinoY = GROUND_Y - DINO_H;
+      dinoVy = 0;
+      onGround = true;
+      jumpHeld = false;
+      hearts = MAX_HEARTS;
+      invuln = 0;
+      obstacles = [];
+      spawnIn = 80;
+    }
+
+    /** Take off immediately at tall height; early Space release cuts to short. */
+    function jumpStart() {
+      if (state === 'ready' || state === 'gameover') {
+        resetRun();
+      }
+      if (!onGround) return;
+      dinoVy = JUMP_TALL_V;
+      onGround = false;
+      jumpHeld = true;
+    }
+
+    function jumpRelease() {
+      if (!jumpHeld) return;
+      jumpHeld = false;
+      // Early release while rising → fixed short hop
+      if (!onGround && dinoVy < JUMP_SHORT_V) {
+        dinoVy = JUMP_SHORT_V;
+      }
+    }
+
+    function slam() {
+      if (state !== 'running' || onGround) return;
+      jumpHeld = false;
+      if (dinoVy < SLAM_V) dinoVy = SLAM_V;
+    }
+
+    function takeHit() {
+      if (invuln > 0) return;
+      hearts -= 1;
+      jumpHeld = false;
+      if (hearts <= 0) {
+        state = 'gameover';
+        invuln = 0; // stay visible + solid red until next round
+        const finalScore = Math.floor(score);
+        if (finalScore > best) {
+          best = finalScore;
+          try {
+            localStorage.setItem('offline-dino-best', String(best));
+          } catch {
+            /* ignore */
+          }
+        }
+        return;
+      }
+      invuln = INVULN_FRAMES;
+    }
+
+    function spawnObstacle() {
+      const tall = Math.random() >= 0.45;
+      const h = tall
+        ? OBS_TALL_MIN + Math.floor(Math.random() * (OBS_TALL_MAX - OBS_TALL_MIN + 1))
+        : OBS_SHORT_MIN + Math.floor(Math.random() * (OBS_SHORT_MAX - OBS_SHORT_MIN + 1));
+      const w = tall
+        ? 16 + Math.floor(Math.random() * 10)
+        : 22 + Math.floor(Math.random() * 14);
+      obstacles.push({ x: W + 10, w, h, tall });
+    }
+
+    function hitTest(o) {
+      const dx = DINO_X + 8;
+      const dy = dinoY + 6;
+      const dw = DINO_W - 14;
+      const dh = DINO_H - 10;
+      const ox = o.x + 2;
+      const oy = GROUND_Y - o.h;
+      return dx < ox + o.w - 4 && dx + dw > ox && dy < oy + o.h && dy + dh > oy;
+    }
+
+    function drawDino(c, leg) {
+      // Blink only while invulnerable mid-run; stay solid on game over
+      if (state !== 'gameover' && invuln > 0 && Math.floor(invuln / 4) % 2 === 0) return;
+      const x = DINO_X;
+      const y = dinoY;
+      ctx.fillStyle = state === 'gameover' || invuln > 0 ? '#c62828' : c.ink;
+      ctx.fillRect(x + 8, y + 14, 28, 22);
+      ctx.fillRect(x + 26, y + 2, 18, 16);
+      ctx.fillRect(x + 40, y + 8, 4, 6);
+      ctx.clearRect(x + 36, y + 6, 3, 3);
+      ctx.fillRect(x + 18, y + 22, 8, 3);
+      if (state === 'running' && onGround) {
+        if (leg) {
+          ctx.fillRect(x + 12, y + 36, 6, 12);
+          ctx.fillRect(x + 26, y + 36, 6, 8);
+        } else {
+          ctx.fillRect(x + 12, y + 36, 6, 8);
+          ctx.fillRect(x + 26, y + 36, 6, 12);
+        }
+      } else {
+        ctx.fillRect(x + 12, y + 36, 6, 12);
+        ctx.fillRect(x + 26, y + 36, 6, 12);
+      }
+      ctx.fillRect(x, y + 20, 10, 4);
+    }
+
+    function drawCactus(o, c) {
+      const x = o.x;
+      const y = GROUND_Y - o.h;
+      ctx.fillStyle = c.primary;
+      ctx.fillRect(x + o.w * 0.35, y, o.w * 0.3, o.h);
+      if (o.tall) {
+        ctx.fillRect(x, y + o.h * 0.35, o.w * 0.4, o.w * 0.28);
+        ctx.fillRect(x, y + o.h * 0.35, o.w * 0.22, o.h * 0.28);
+        ctx.fillRect(x + o.w * 0.55, y + o.h * 0.22, o.w * 0.45, o.w * 0.28);
+        ctx.fillRect(x + o.w * 0.75, y + o.h * 0.22, o.w * 0.22, o.h * 0.32);
+      }
+    }
+
+    function drawHeartIcon(x, y, size, filled, color) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(size / 24, size / 24);
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (filled) {
+        ctx.fill(HEART_PATH);
+        ctx.stroke(HEART_PATH);
+      } else {
+        for (const p of HEART_OFF_PATHS) ctx.stroke(p);
+      }
+      ctx.restore();
+    }
+
+    function drawHearts(c) {
+      const size = 22;
+      const gap = 6;
+      const totalW = MAX_HEARTS * size + (MAX_HEARTS - 1) * gap;
+      let x = W - 12 - totalW;
+      const y = 10;
+      // Lose left → right; last remaining heart is the rightmost
+      for (let i = 0; i < MAX_HEARTS; i++) {
+        drawHeartIcon(x, y, size, i >= MAX_HEARTS - hearts, c.primary);
+        x += size + gap;
+      }
+    }
+
+    function draw() {
+      const c = colors();
+      ctx.clearRect(0, 0, W, H);
+
+      ctx.strokeStyle = c.muted;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y + 0.5);
+      ctx.lineTo(W, GROUND_Y + 0.5);
+      ctx.stroke();
+
+      const tickOffset = state === 'running' ? (frame * speed) % 24 : 0;
+      ctx.fillStyle = c.muted;
+      for (let x = -tickOffset; x < W; x += 24) {
+        ctx.fillRect(x, GROUND_Y + 4, 10, 2);
+      }
+
+      for (const o of obstacles) drawCactus(o, c);
+      drawDino(c, Math.floor(frame / 6) % 2 === 0);
+
+      drawHearts(c);
+
+      ctx.fillStyle = c.ink;
+      ctx.font = '16px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(String(Math.floor(score)).padStart(5, '0'), W - 12, 52);
+      if (best > 0) {
+        ctx.globalAlpha = 0.65;
+        ctx.fillText('HI ' + String(Math.floor(best)).padStart(5, '0'), W - 12, 72);
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.textAlign = 'center';
+      if (state === 'ready') {
+        ctx.fillStyle = c.primary;
+        ctx.font = 'bold 18px system-ui, sans-serif';
+        ctx.fillText('Press Space to start', W / 2, H / 2 - 8);
+      } else if (state === 'gameover') {
+        ctx.fillStyle = c.primary;
+        ctx.font = 'bold 20px system-ui, sans-serif';
+        ctx.fillText('Game Over', W / 2, H / 2 - 12);
+        ctx.fillStyle = c.ink;
+        ctx.font = '14px system-ui, sans-serif';
+        ctx.fillText('Press Space to retry', W / 2, H / 2 + 12);
+      }
+    }
+
+    function stepGame() {
+      if (state !== 'running') return;
+
+      frame += 1;
+      score += 0.15 * (speed / 6);
+      speed = Math.min(13, 6 + score / 120);
+      if (invuln > 0) invuln -= 1;
+
+      const gravity = dinoVy < 0 ? GRAVITY_UP : GRAVITY_FALL;
+      dinoVy += gravity;
+      dinoY += dinoVy;
+      if (dinoY >= GROUND_Y - DINO_H) {
+        dinoY = GROUND_Y - DINO_H;
+        dinoVy = 0;
+        onGround = true;
+        jumpHeld = false;
+      }
+
+      spawnIn -= 1;
+      if (spawnIn <= 0) {
+        spawnObstacle();
+        spawnIn = 55 + Math.floor(Math.random() * 70) - Math.min(25, score / 8);
+      }
+
+      for (const o of obstacles) o.x -= speed;
+      obstacles = obstacles.filter((o) => o.x + o.w > -10);
+
+      if (invuln <= 0) {
+        for (const o of obstacles) {
+          if (hitTest(o)) {
+            takeHit();
+            break;
+          }
+        }
+      }
+    }
+
+    function loop(now) {
+      if (!lastTime) lastTime = now;
+      let dt = now - lastTime;
+      lastTime = now;
+      // Tab resume / hitch: don't dump a huge backlog into physics
+      if (dt > 250) dt = STEP_MS;
+      acc += dt;
+
+      let steps = 0;
+      while (acc >= STEP_MS && steps < MAX_STEPS_PER_FRAME) {
+        stepGame();
+        acc -= STEP_MS;
+        steps += 1;
+      }
+      if (steps === MAX_STEPS_PER_FRAME) acc = 0;
+
+      draw();
+      raf = requestAnimationFrame(loop);
+    }
+
+    function isSpaceEvent(e) {
+      return e.code === 'Space' || e.key === ' ';
+    }
+
+    function isShiftEvent(e) {
+      return e.code === 'ShiftLeft' || e.code === 'ShiftRight';
+    }
+
+    function onKeyDown(e) {
+      if (isShiftEvent(e)) {
+        e.preventDefault();
+        if (e.repeat || shiftDown) return;
+        shiftDown = true;
+        slam();
+        return;
+      }
+      if (!isSpaceEvent(e)) return;
+      e.preventDefault();
+      if (e.repeat || spaceDown) return;
+      spaceDown = true;
+      jumpStart();
+    }
+
+    function onKeyUp(e) {
+      if (isShiftEvent(e)) {
+        shiftDown = false;
+        return;
+      }
+      if (!isSpaceEvent(e)) return;
+      e.preventDefault();
+      spaceDown = false;
+      jumpRelease();
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    draw();
+    raf = requestAnimationFrame(loop);
+
+    window.addEventListener(
+      'pagehide',
+      () => {
+        cancelAnimationFrame(raf);
+      },
+      { once: true }
+    );
+  })();
 </script>

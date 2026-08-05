@@ -99,7 +99,7 @@ Everything else falls through to the Astro asset handler.
 
 ## PWA service worker boundary
 
-`public/sw.js` (cache name `st-cecilia-tech-astro-v4`):
+`public/sw.js` (cache name `st-cecilia-tech-astro-v17`):
 
 | Request | Strategy |
 |---------|----------|
