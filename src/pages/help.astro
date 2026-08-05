@@ -1,0 +1,64 @@
+---
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+import HelpSection from '../components/HelpSection.astro';
+import { featuredForms, formHref } from '../data/forms';
+import {
+  iconGamepad2,
+  iconWrench,
+  iconKeyRound,
+  iconBookOpen,
+} from '../scripts/icons';
+import { getCollection } from 'astro:content';
+
+const formIcons = {
+  iconGamepad2,
+  iconWrench,
+  iconKeyRound,
+} as const;
+
+const formTiles = featuredForms().map((form) => ({
+  href: formHref(form.slug),
+  label: form.label,
+  description: form.description,
+  iconHtml: formIcons[form.icon],
+}));
+
+const featuredGuides = (await getCollection('guides'))
+  .filter((g) => g.data.featured)
+  .sort((a, b) => a.data.title.localeCompare(b.data.title));
+
+const guideTiles = featuredGuides.map((g) => ({
+  href: `/guide/${g.id}`,
+  label: g.data.title,
+  description: g.data.description,
+  iconHtml: iconBookOpen,
+}));
+---
+<BaseLayout title="Help - St. Cecilia Technology" bodyClass="help-page">
+  <meta
+    slot="head"
+    name="description"
+    content="Forms and guides for technology help at St. Cecilia School"
+  />
+
+  <div class="help-hub">
+    <div class="container form-shell">
+      <HelpSection
+        title="Forms"
+        viewAllHref="/forms"
+        tiles={formTiles}
+        emptyMessage="No featured forms yet."
+        ariaLabel="Featured forms"
+      />
+
+      <HelpSection
+        title="Guides"
+        viewAllHref="/guides"
+        tiles={guideTiles}
+        emptyMessage="No featured guides yet."
+        ariaLabel="Featured guides"
+      />
+    </div>
+  </div>
+</BaseLayout>

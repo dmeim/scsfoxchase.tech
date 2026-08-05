@@ -100,4 +100,4 @@ Icons live under `public/images/` (paths referenced in the component).
 | `src/styles/global.css` | Shared layout / theme |
 | `src/scripts/theme-toggle.ts` | Theme toggle (header host) |
 
-Header nav (Home / Games / Forms) is in `src/components/Header.astro`; home is active when the path is `/`.
+Header nav (Home / Games / Help) is in `src/components/Header.astro`; home is active when the path is `/`.

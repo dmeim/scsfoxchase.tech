@@ -1,43 +1,59 @@
-# Forms
+# Help
 
-Student/staff help-request forms on scsfoxchase.tech. Hub launches individual form pages; submissions will eventually POST to n8n webhooks.
+Student/staff technology help on scsfoxchase.tech: a Help hub, Forms and Guides catalogs, individual forms (n8n later), and Markdown guides with footnote sources.
 
 ## Routes
 
-| Route | Label | Lucide icon | Status |
-|-------|-------|-------------|--------|
-| `/forms` | Forms hub | — | Live (launcher only) |
-| `/forms/game-request` | Request A Game | `Gamepad2` | UI form (no webhook yet) |
-| `/forms/help-tech` | General Technology Help | `Wrench` | Stub |
-| `/forms/help-account` | Google/Account Help | `KeyRound` | Stub |
+| Route | Label | Status |
+|-------|-------|--------|
+| `/help` | Help hub — featured Forms + Guides | Live |
+| `/forms` | Forms catalog (all forms) | Live |
+| `/guides` | Guides catalog (all guides) | Live |
+| `/form/game-request` | Request A Game | UI form (no webhook yet) |
+| `/form/help-tech` | General Technology Help | Stub |
+| `/form/help-account` | Google/Account Help | Stub |
+| `/guide/how-to-use-help` | How to use this Help site | Sample / authoring reference |
+
+Nav label is **Help** → `/help`. Active for `/help`, `/forms`, `/guides`, `/form/*`, and `/guide/*`.
 
 ## Key files
 
 | File | Role |
 |------|------|
-| `src/pages/forms.astro` | Hub page |
-| `src/pages/forms/*.astro` | Individual form pages / stubs |
-| `src/components/FormsLauncher.astro` | Hub tile links + icons |
-| `src/components/Header.astro` | Nav link (Home → Games → Forms) |
-| `src/styles/forms.css` | Hub grid + shared form field/panel styles |
-| `src/styles/home.css` | Shared `.mockup-link` frosted tile styles |
-| `src/scripts/icons.ts` | `iconGamepad2`, `iconWrench`, `iconKeyRound` |
+| `src/pages/help.astro` | Help hub (featured sections + View All) |
+| `src/pages/forms.astro` | Forms catalog |
+| `src/pages/guides.astro` | Guides catalog |
+| `src/pages/form/*.astro` | Individual form pages / stubs |
+| `src/pages/guide/[slug].astro` | Guide article from content collection |
+| `src/data/forms.ts` | Forms catalog metadata (`featured`, icons, slugs) |
+| `src/content/guides/*.md` | Guide articles (frontmatter + body) |
+| `src/content.config.ts` | `guides` collection schema |
+| `src/components/HelpSection.astro` | Section header + View All + tile grid |
+| `src/components/FormsLauncher.astro` | Forms tile grid from `forms.ts` |
+| `src/components/Header.astro` | Nav link (Home → Games → Help) |
+| `src/styles/forms.css` | Help hub, catalogs, form fields, guide article styles |
 
 ## UI notes
 
-- Hub tiles match homepage frosted `mockup-link` treatment (styles live in `forms.css` as `.forms-tile`).
-- Forms pages use `bodyClass="forms-page"` (not `home-page`) so home dashboard container rules cannot override layout.
-- **Page width:** all forms pages use `.container.form-shell` at **1120px** — same as inventory’s `.container.asset-shell`.
-- `forms.css` is imported from `BaseLayout.astro` so it ships in the shared layout CSS bundle (avoids small-CSS inline-before-global prod/dev drift).
+- Hub/catalog tiles reuse frosted `.forms-tile` treatment.
+- Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Both share `.container.form-shell` at **1120px**.
+- Featured tiles on `/help` come from `featured: true` in `src/data/forms.ts` and guide frontmatter.
 
-## Adding a form later
+## Adding a form
 
-1. Add a stub page under `src/pages/forms/<slug>.astro`.
-2. Add an entry to the `forms` array in `FormsLauncher.astro` (href, label, icon).
+1. Add `src/pages/form/<slug>.astro`.
+2. Add an entry to `forms` in `src/data/forms.ts` (`slug`, `label`, `description`, `icon`, `featured`, `status`).
 3. If needed, add a Lucide SVG string to `src/scripts/icons.ts`.
 4. Update this table and `AGENTS.md` Key Pages.
 
-## Form: Request A Game (`/forms/game-request`)
+## Adding a guide
+
+1. Create `src/content/guides/<slug>.md` using `how-to-use-help.md` as the template.
+2. Set frontmatter: `title`, `description`, `featured`, and optional `sources`.
+3. For external/scraped claims, insert `<sup class="guide-fn"><a href="#source-N">N</a></sup>` and a matching `sources` entry with `id: "N"`.
+4. The Sources footer renders as favicon chips (title label); do not duplicate it in the Markdown body.
+
+## Form: Request A Game (`/form/game-request`)
 
 Fields:
 
@@ -50,8 +66,6 @@ Fields:
 Submit currently only runs browser validation and `preventDefault` (no network call). Wire to n8n later via a Worker/API proxy.
 
 Form intro (under title) covers: school-appropriate requirement, no multi-game hosts (Poki/CrazyGames), and that requests are for review only.
-
-Shared form chrome styles live in `src/styles/forms.css` (`.form-panel`, `.tech-form`, `.form-field`, `.form-intro`).
 
 ## Future: n8n webhooks
 

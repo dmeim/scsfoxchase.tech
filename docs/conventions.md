@@ -111,11 +111,11 @@ Games are an Astro content collection.
 
 Image load failures fall back via `src/scripts/placeholder-images.ts`.
 
-## Forms content pattern
+## Forms / Help content pattern
 
-Forms hub and pages live under `src/pages/forms/` and `src/components/FormsLauncher.astro`. Styles: `forms.css`. Icons: Lucide SVG strings in `src/scripts/icons.ts`. See [features/forms.md](./features/forms.md) and root `FORMS.md` for routes and fields.
+Help hub, form catalogs, and guide articles: see [features/forms.md](./features/forms.md) and root `FORMS.md`. Forms metadata: `src/data/forms.ts`. Guides: `src/content/guides/*.md`. Styles: `forms.css`. Icons: Lucide SVG strings in `src/scripts/icons.ts`.
 
-Forms pages use `bodyClass="forms-page"` (not `home-page`) so home dashboard container rules do not override layout. Shell width matches inventory: `.container.form-shell` at **1120px**.
+Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Shell width matches inventory: `.container.form-shell` at **1120px**.
 
 ## Code and stack conventions
 

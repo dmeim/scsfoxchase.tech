@@ -38,7 +38,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 |----------|----------|
 | [features/home.md](./features/home.md) | Homepage — search + app launcher |
 | [features/games.md](./features/games.md) | Games catalog and trending |
-| [features/forms.md](./features/forms.md) | Forms hub and individual forms |
+| [features/forms.md](./features/forms.md) | Help hub, Forms/Guides catalogs, forms + guides |
 | [features/inventory.md](./features/inventory.md) | Staff device inventory + QR |
 
 ### Whiteboard
@@ -82,8 +82,11 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 |-------|---------|
 | `/` | Homepage — search bars + app launcher |
 | `/games` | Game catalog |
-| `/forms` | Forms hub |
-| `/forms/*` | Individual forms |
+| `/help` | Help hub (featured Forms + Guides) |
+| `/forms` | Forms catalog |
+| `/guides` | Guides catalog |
+| `/form/*` | Individual forms |
+| `/guide/{slug}` | Guide articles |
 | `/inventory` | Staff device inventory lookup + QR |
 | `/whiteboard` | Whiteboard hub (create, join, Recents, Assets, Library) |
 | `/board/{uuid}` | Live multiplayer board (tldraw sync) |
@@ -119,5 +122,5 @@ npm run deploy    # build + wrangler deploy
 |------|------|
 | [`AGENTS.md`](../AGENTS.md) | Short agent briefing (stack, routes, devices) |
 | [`DEPLOYMENT.md`](../DEPLOYMENT.md) | Workers Builds and deploy checklist |
-| [`FORMS.md`](../FORMS.md) | Forms routes and field notes |
+| [`FORMS.md`](../FORMS.md) | Help / Forms / Guides routes and field notes |
 | [`README.md`](../README.md) | Project README / getting started |

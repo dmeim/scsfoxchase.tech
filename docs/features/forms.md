@@ -1,62 +1,67 @@
-# Forms (`/forms`)
+# Help (`/help`)
 
-Hub of technology help/request form pages. Prerendered Astro; shared styles in `src/styles/forms.css` (loaded from `BaseLayout`). Operational detail also lives in root `FORMS.md` — keep that file and this page aligned when routes change.
+Help hub plus Forms and Guides catalogs. Prerendered Astro; shared styles in `src/styles/forms.css` (loaded from `BaseLayout`). Operational detail also lives in root `FORMS.md` — keep that file and this page aligned when routes change.
 
 ## Routes
 
-| Route | Label | Page | Lucide icon (via `src/scripts/icons.ts`) |
-|-------|-------|------|------------------------------------------|
-| `/forms` | Forms hub | `src/pages/forms.astro` | — |
-| `/forms/game-request` | Request A Game | `src/pages/forms/game-request.astro` | `Gamepad2` (`iconGamepad2`) |
-| `/forms/help-tech` | General Technology Help | `src/pages/forms/help-tech.astro` | `Wrench` (`iconWrench`) |
-| `/forms/help-account` | Google/Account Help | `src/pages/forms/help-account.astro` | `KeyRound` (`iconKeyRound`) |
+| Route | Label | Source | Notes |
+|-------|-------|--------|-------|
+| `/help` | Help hub | `src/pages/help.astro` | Featured Forms + Guides; View All → catalogs |
+| `/forms` | Forms catalog | `src/pages/forms.astro` | All forms from `src/data/forms.ts` |
+| `/guides` | Guides catalog | `src/pages/guides.astro` | All guides from `src/content/guides/` |
+| `/form/game-request` | Request A Game | `src/pages/form/game-request.astro` | `Gamepad2` |
+| `/form/help-tech` | General Technology Help | `src/pages/form/help-tech.astro` | Stub |
+| `/form/help-account` | Google/Account Help | `src/pages/form/help-account.astro` | Stub |
+| `/guide/how-to-use-help` | How to use this Help site | content collection | Authoring reference + footnotes demo |
 
-All forms pages use `bodyClass="forms-page"` and `.container.form-shell` (1120px width, same shell width pattern as inventory’s `.asset-shell`). Header nav marks Forms active for `/forms` and `/forms/*` (`src/components/Header.astro`).
+Header nav marks **Help** active for `/help`, `/forms`, `/guides`, `/form/*`, and `/guide/*`.
 
-## Hub (`/forms`)
+Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Shell width: `.container.form-shell` (**1120px**).
 
-`src/components/FormsLauncher.astro` renders a grid of `.forms-tile` links (frosted tile treatment in `forms.css`). Tile list is the `forms` array in that component (`href`, `label`, `icon`).
+## Help hub (`/help`)
 
-## Request A Game (`/forms/game-request`)
+Two sections via `HelpSection.astro`: **Forms** and **Guides**, each with a top-right **View All** link. Featured items come from `featured: true` on form entries and guide frontmatter.
 
-Full UI form with fields and client-side validation. Intro copy requires school-appropriate games, disallows multi-game host sites (e.g. Poki, CrazyGames), and states that a request is for review only — approval is required before a game is added.
+## Forms catalog (`/forms`)
 
-| Field | `name` | Type | Required |
-|-------|--------|------|----------|
-| Game Name | `gameName` | text | yes |
-| URL | `gameUrl` | url | yes (placeholder `https://`) |
-| Game Description | `gameDescription` | textarea | yes |
+`FormsLauncher.astro` renders all entries from `src/data/forms.ts` as `.forms-tile` links to `/form/{slug}`.
 
-Submit runs browser `required` / `type` validation, then a page script calls `preventDefault` — **no network request**. There is a “Back to Forms” link to `/forms`.
+## Guides
 
-`FORMS.md` specifies that submissions should go through a Worker/API (or Astro action) proxy to an n8n webhook so the webhook URL/secret stays off the client, and that production webhook URLs must not ship in client code or git. No `N8N_WEBHOOK_*` names appear in `.env.example`.
+Markdown under `src/content/guides/` with schema in `src/content.config.ts` (`title`, `description`, `featured`, `sources[]`). Rendered by `src/pages/guide/[slug].astro`. External citations use `<sup class="guide-fn"><a href="#source-N">N</a></sup>`; the Sources footer is a row of favicon chips (article title + site favicon via Google s2) built from frontmatter.
 
-## Help pages
+Use `how-to-use-help.md` as the template for new articles.
 
-### `/forms/help-tech`
+## Request A Game (`/form/game-request`)
 
-Placeholder page (`forms-stub` section): heading “General Technology Help”, a short placeholder paragraph, and a “Back to Forms” link to `/forms`. No form fields or submit handlers.
+| Field | `name` | Required |
+|-------|--------|----------|
+| Game Name | `gameName` | yes |
+| URL | `gameUrl` | yes (`type="url"`) |
+| Game Description | `gameDescription` | yes |
 
-### `/forms/help-account`
+Submit runs browser validation then `preventDefault` — **no network request**. “Back to Forms” links to `/forms`.
 
-Same placeholder layout with heading “Google/Account Help”. No form fields or submit handlers.
+## Stubs
 
-## Adding a form
+`/form/help-tech` and `/form/help-account` are placeholders with a “Back to Forms” link.
 
-Documented in `FORMS.md`:
+## Adding content
 
-1. Add `src/pages/forms/<slug>.astro`.
-2. Add an entry to the `forms` array in `FormsLauncher.astro`.
-3. Add a Lucide SVG string to `src/scripts/icons.ts` if needed.
-4. Update `FORMS.md` and `AGENTS.md` Key Pages.
+**Form:** add `src/pages/form/<slug>.astro`, then an entry in `src/data/forms.ts` (and an icon in `icons.ts` if needed).
+
+**Guide:** add `src/content/guides/<slug>.md` from the sample template; set `featured` and `sources` as needed.
 
 ## Key files
 
 | File | Role |
 |------|------|
-| `src/pages/forms.astro` | Hub |
-| `src/pages/forms/*.astro` | Individual pages |
-| `src/components/FormsLauncher.astro` | Hub tiles |
-| `src/styles/forms.css` | Hub + form field/panel styles |
-| `src/scripts/icons.ts` | Tile icons |
-| `FORMS.md` | Canonical route/icon/field notes |
+| `src/pages/help.astro` | Hub |
+| `src/pages/forms.astro` / `guides.astro` | Catalogs |
+| `src/pages/form/*.astro` | Form pages |
+| `src/pages/guide/[slug].astro` | Guide pages |
+| `src/data/forms.ts` | Forms metadata |
+| `src/content/guides/*.md` | Guide articles |
+| `src/components/HelpSection.astro` | Section + View All |
+| `src/components/FormsLauncher.astro` | Forms tiles |
+| `src/styles/forms.css` | Shared Help/Forms/Guides styles |

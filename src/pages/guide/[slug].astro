@@ -1,0 +1,99 @@
+---
+export const prerender = true;
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection, render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+export const getStaticPaths = (async () => {
+  const guides = await getCollection('guides');
+  return guides.map((guide) => ({
+    params: { slug: guide.id },
+    props: { guide },
+  }));
+}) satisfies GetStaticPaths;
+
+const { guide } = Astro.props;
+const { Content } = await render(guide);
+const { title, description, sources } = guide.data;
+
+function sourceFavicon(url?: string): string | null {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname;
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+  } catch {
+    return null;
+  }
+}
+---
+<BaseLayout title={`${title} - St. Cecilia Technology`} bodyClass="help-page">
+  <meta slot="head" name="description" content={description} />
+
+  <article class="guide-page" aria-labelledby="guide-title">
+    <div class="container form-shell guide-layout">
+      <header class="form-panel guide-title-card">
+        <p class="guide-kicker">Guide</p>
+        <h2 id="guide-title">{title}</h2>
+        <p class="guide-description">{description}</p>
+      </header>
+
+      <div class="form-panel guide-body-card">
+        <div class="guide-body">
+          <Content />
+        </div>
+
+        {
+          sources.length > 0 && (
+            <footer class="guide-sources" aria-labelledby="guide-sources-title">
+              <h3 id="guide-sources-title">Sources</h3>
+              <ul class="guide-source-chips">
+                {sources.map((source) => {
+                  const favicon = sourceFavicon(source.url);
+                  const tip = source.note || source.title;
+                  return (
+                    <li id={`source-${source.id}`}>
+                      {source.url ? (
+                        <a
+                          href={source.url}
+                          class="guide-source-chip"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={tip}
+                        >
+                          {favicon ? (
+                            <img
+                              class="guide-source-favicon"
+                              src={favicon}
+                              alt=""
+                              width="16"
+                              height="16"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          ) : (
+                            <span class="guide-source-favicon guide-source-favicon--fallback" aria-hidden="true" />
+                          )}
+                          <span class="guide-source-chip-label">{source.title}</span>
+                        </a>
+                      ) : (
+                        <span class="guide-source-chip" title={tip}>
+                          <span class="guide-source-favicon guide-source-favicon--fallback" aria-hidden="true" />
+                          <span class="guide-source-chip-label">{source.title}</span>
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </footer>
+          )
+        }
+
+        <div class="guide-actions">
+          <a href="/guides" class="form-back-link">Back to Guides</a>
+          <a href="/help" class="form-back-link">Help hub</a>
+        </div>
+      </div>
+    </div>
+  </article>
+</BaseLayout>

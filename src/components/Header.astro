@@ -1,5 +1,11 @@
 ---
 import ClerkAuth from './ClerkAuth';
+import {
+  iconHouse,
+  iconGamepad2,
+  iconMessageCircleQuestion,
+  iconLayoutFreeform,
+} from '../scripts/icons';
 
 interface Props {
   boardChrome?: boolean;
@@ -9,7 +15,14 @@ const { boardChrome = false } = Astro.props;
 const pathname = Astro.url.pathname;
 const homeActive = pathname === '/' || pathname === '';
 const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
-const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
+const helpActive =
+  pathname === '/help' ||
+  pathname === '/forms' ||
+  pathname.startsWith('/forms/') ||
+  pathname === '/guides' ||
+  pathname.startsWith('/guides/') ||
+  pathname.startsWith('/form/') ||
+  pathname.startsWith('/guide/');
 ---
 <header>
   <div class="container">
@@ -33,6 +46,7 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
             aria-controls="whiteboard-menu-panel"
             id="whiteboard-menu-toggle"
           >
+            <span class="header-chip-icon" set:html={iconLayoutFreeform} />
             Whiteboard
           </button>
           <div
@@ -194,6 +208,7 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
           class="whiteboard-toggle"
           data-whiteboard-hub-link
         >
+          <span class="header-chip-icon" set:html={iconLayoutFreeform} />
           Whiteboard
         </a>
       )}
@@ -202,9 +217,24 @@ const formsActive = pathname === '/forms' || pathname.startsWith('/forms/');
     <div class="header-right">
       <nav>
         <ul>
-          <li><a href="/" class:list={[{ active: homeActive }]}>Home</a></li>
-          <li><a href="/games" class:list={[{ active: gamesActive }]}>Games</a></li>
-          <li><a href="/forms" class:list={[{ active: formsActive }]}>Forms</a></li>
+          <li>
+            <a href="/" class:list={[{ active: homeActive }]}>
+              <span class="header-chip-icon" set:html={iconHouse} />
+              Home
+            </a>
+          </li>
+          <li>
+            <a href="/games" class:list={[{ active: gamesActive }]}>
+              <span class="header-chip-icon" set:html={iconGamepad2} />
+              Games
+            </a>
+          </li>
+          <li>
+            <a href="/help" class:list={[{ active: helpActive }]}>
+              <span class="header-chip-icon" set:html={iconMessageCircleQuestion} />
+              Help
+            </a>
+          </li>
         </ul>
       </nav>
       <ClerkAuth client:only="react">

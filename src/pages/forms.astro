@@ -3,11 +3,26 @@ export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
 import FormsLauncher from '../components/FormsLauncher.astro';
 ---
-<BaseLayout title="Forms - St. Cecilia Technology" bodyClass="forms-page">
+<BaseLayout title="Forms - St. Cecilia Technology" bodyClass="help-page">
   <meta
     slot="head"
     name="description"
-    content="Request help and submit technology forms for St. Cecilia School"
+    content="All technology help and request forms for St. Cecilia School"
   />
-  <FormsLauncher />
+
+  <div class="help-hub help-catalog">
+    <div class="container form-shell">
+      <header class="help-hub-intro help-catalog-header">
+        <div class="help-catalog-heading">
+          <h2 class="help-hub-title">Forms</h2>
+          <p class="help-hub-lede">
+            Every technology form we support. Pick one to get started.
+          </p>
+        </div>
+        <a href="/help" class="page-nav-btn">Back to Help</a>
+      </header>
+
+      <FormsLauncher ariaLabel="All technology forms" />
+    </div>
+  </div>
 </BaseLayout>

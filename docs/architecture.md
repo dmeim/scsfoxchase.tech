@@ -129,8 +129,11 @@ src/
 ├── pages/                 # File-based routes (all prerendered)
 │   ├── index.astro        # /
 │   ├── games.astro        # /games
-│   ├── forms.astro        # /forms
-│   ├── forms/             # /forms/*
+│   ├── help.astro         # /help
+│   ├── forms.astro        # /forms (catalog)
+│   ├── guides.astro       # /guides (catalog)
+│   ├── form/              # /form/*
+│   ├── guide/             # /guide/{slug}
 │   ├── inventory.astro    # /inventory
 │   ├── whiteboard.astro   # /whiteboard hub
 │   ├── board.astro        # /board shell (+ rewrite for /board/{uuid})

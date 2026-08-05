@@ -19,7 +19,7 @@ import {
 	useClerk,
 	useUser,
 } from '@clerk/react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
 	identityFromClerkUser,
 	isEmailAllowed,
@@ -27,16 +27,30 @@ import {
 	setActiveIdentity,
 	setSessionTokenGetter,
 } from '../lib/whiteboard-identity'
+import { iconLogIn } from '../scripts/icons'
 
 const publishableKey = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY as
 	| string
 	| undefined
 
+function SignInLabel() {
+	return (
+		<>
+			<span
+				className="header-chip-icon"
+				aria-hidden="true"
+				dangerouslySetInnerHTML={{ __html: iconLogIn }}
+			/>
+			Sign in
+		</>
+	)
+}
+
+/** Syncs Clerk session → whiteboard identity. No header UI (hints clutter the nav). */
 function AuthBridge() {
 	const { isLoaded, isSignedIn, getToken } = useAuth()
 	const { user, isLoaded: userLoaded } = useUser()
 	const clerk = useClerk()
-	const [blockedMessage, setBlockedMessage] = useState<string | null>(null)
 
 	useEffect(() => {
 		setSessionTokenGetter(async () => {
@@ -54,57 +68,57 @@ function AuthBridge() {
 
 		if (!isSignedIn || !user) {
 			setActiveIdentity(null)
-			setBlockedMessage(null)
 			markAuthResolved()
 			return
 		}
 
 		const identity = identityFromClerkUser(user)
 		if (!isEmailAllowed(identity.email)) {
-			setBlockedMessage(
-				'Use a school Google account (@stceciliafc.com) to sign in.',
-			)
 			setActiveIdentity(null)
 			markAuthResolved()
 			void clerk.signOut({ redirectUrl: window.location.href })
 			return
 		}
 
-		setBlockedMessage(null)
 		setActiveIdentity(identity)
 		markAuthResolved()
 	}, [isLoaded, userLoaded, isSignedIn, user, clerk])
 
-	if (!blockedMessage) return null
-	return (
-		<span className="header-auth-hint" role="status">
-			{blockedMessage}
-		</span>
-	)
+	return null
 }
 
 /** If Clerk never loads, still unlock hub create / library (treat as signed out). */
-function AuthReadyOnClerkFailed() {
+function AuthReadyOnClerkFailed({ onFailed }: { onFailed: () => void }) {
 	useEffect(() => {
 		markAuthResolved()
-	}, [])
+		onFailed()
+	}, [onFailed])
 	return null
 }
 
 function ClerkAuthInner() {
 	const { isLoaded, isSignedIn } = useAuth()
-	const showUserButton = isLoaded && isSignedIn
+	const [signInUnavailable, setSignInUnavailable] = useState(false)
+	const markUnavailable = useCallback(() => setSignInUnavailable(true), [])
+	const showUserButton = !signInUnavailable && isLoaded && isSignedIn
 
 	return (
 		<div className="header-auth">
 			<AuthBridge />
 			<ClerkFailed>
-				<AuthReadyOnClerkFailed />
-				<span className="header-auth-hint" role="alert">
-					Sign in unavailable. Refresh and try again.
-				</span>
+				<AuthReadyOnClerkFailed onFailed={markUnavailable} />
 			</ClerkFailed>
-			{showUserButton ? (
+			{signInUnavailable ? (
+				<button
+					type="button"
+					className="header-auth-btn"
+					disabled
+					title="Sign in unavailable"
+					aria-label="Sign in unavailable"
+				>
+					<SignInLabel />
+				</button>
+			) : showUserButton ? (
 				<UserButton
 					appearance={{
 						elements: {
@@ -115,8 +129,14 @@ function ClerkAuthInner() {
 				/>
 			) : (
 				<SignInButton mode="modal">
-					<button type="button" className="header-auth-btn">
-						Sign in
+					<button
+						type="button"
+						className="header-auth-btn"
+						disabled={!isLoaded}
+						aria-busy={!isLoaded || undefined}
+						aria-label={isLoaded ? 'Sign in' : 'Sign in loading'}
+					>
+						<SignInLabel />
 					</button>
 				</SignInButton>
 			)}

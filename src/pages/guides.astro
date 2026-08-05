@@ -1,0 +1,47 @@
+---
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+import HelpSection from '../components/HelpSection.astro';
+import { iconBookOpen } from '../scripts/icons';
+import { getCollection } from 'astro:content';
+
+const guides = (await getCollection('guides')).sort((a, b) =>
+  a.data.title.localeCompare(b.data.title)
+);
+
+const tiles = guides.map((g) => ({
+  href: `/guide/${g.id}`,
+  label: g.data.title,
+  description: g.data.description,
+  iconHtml: iconBookOpen,
+}));
+---
+<BaseLayout title="Guides - St. Cecilia Technology" bodyClass="help-page">
+  <meta
+    slot="head"
+    name="description"
+    content="Technology how-to guides for St. Cecilia School"
+  />
+
+  <div class="help-hub help-catalog">
+    <div class="container form-shell">
+      <header class="help-hub-intro help-catalog-header">
+        <div class="help-catalog-heading">
+          <h2 class="help-hub-title">Guides</h2>
+          <p class="help-hub-lede">
+            Articles and how-tos. External citations appear as footnotes with sources.
+          </p>
+        </div>
+        <a href="/help" class="page-nav-btn">Back to Help</a>
+      </header>
+
+      <HelpSection
+        title="Guides"
+        showTitle={false}
+        tiles={tiles}
+        emptyMessage="No guides yet. Check back soon."
+        ariaLabel="All guides"
+      />
+    </div>
+  </div>
+</BaseLayout>

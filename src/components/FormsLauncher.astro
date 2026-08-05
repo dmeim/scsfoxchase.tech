@@ -1,35 +1,33 @@
 ---
-import { iconGamepad2, iconWrench, iconKeyRound } from '../scripts/icons';
+import {
+  iconGamepad2,
+  iconWrench,
+  iconKeyRound,
+} from '../scripts/icons';
+import { forms, formHref, type FormEntry } from '../data/forms';
 
-const forms = [
-  {
-    href: '/forms/game-request',
-    label: 'Request A Game',
-    icon: iconGamepad2,
-  },
-  {
-    href: '/forms/help-tech',
-    label: 'General Technology Help',
-    icon: iconWrench,
-  },
-  {
-    href: '/forms/help-account',
-    label: 'Google/Account Help',
-    icon: iconKeyRound,
-  },
-] as const;
+interface Props {
+  entries?: FormEntry[];
+  ariaLabel?: string;
+}
+
+const { entries = forms, ariaLabel = 'Technology forms' } = Astro.props;
+
+const icons = {
+  iconGamepad2,
+  iconWrench,
+  iconKeyRound,
+} as const;
 ---
-<section class="forms-hub" aria-label="Technology forms">
-  <div class="container form-shell">
-    <div class="forms-grid">
-      {
-        forms.map((form) => (
-          <a href={form.href} class="forms-tile">
-            <span class="forms-tile-icon" set:html={form.icon} />
-            <span class="forms-tile-label">{form.label}</span>
-          </a>
-        ))
-      }
-    </div>
+<section class="forms-hub" aria-label={ariaLabel}>
+  <div class="forms-grid">
+    {
+      entries.map((form) => (
+        <a href={formHref(form.slug)} class="forms-tile">
+          <span class="forms-tile-icon" set:html={icons[form.icon]} />
+          <span class="forms-tile-label">{form.label}</span>
+        </a>
+      ))
+    }
   </div>
 </section>

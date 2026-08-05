@@ -16,4 +16,23 @@ const games = defineCollection({
   }),
 });
 
-export const collections = { games };
+const guideSource = z.object({
+  id: z.string(),
+  title: z.string(),
+  url: z.string().url().optional(),
+  note: z.string().optional(),
+});
+
+const guides = defineCollection({
+  loader: glob({ pattern: '**/*.md', base: './src/content/guides' }),
+  schema: z.object({
+    title: z.string(),
+    description: z.string(),
+    /** Show on /help Guides section */
+    featured: z.boolean().default(false),
+    /** External/scraped citations — rendered as Sources footnotes */
+    sources: z.array(guideSource).default([]),
+  }),
+});
+
+export const collections = { games, guides };

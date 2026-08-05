@@ -1,15 +1,17 @@
-/* Forms pages — self-contained (do not rely on home-page cascade).
+/* Forms + Help pages — self-contained (do not rely on home-page cascade).
    cache-bust 2026-07-16: ship as BaseLayout bundle so prod CSS order matches inventory.
    Page background: dotted wave via BaseLayout (global default). */
 
-body.forms-page {
+body.forms-page,
+body.help-page {
   min-height: 100dvh;
 }
 
 /* Match inventory `.container.asset-shell` (1120px).
    Kept highly specific so BaseLayout/global order cannot widen/narrow the shell. */
 .container.form-shell,
-body.forms-page main .container.form-shell {
+body.forms-page main .container.form-shell,
+body.help-page main .container.form-shell {
   max-width: 1120px;
   width: 100%;
 }
@@ -19,6 +21,87 @@ body.forms-page main .container.form-shell {
   flex: 1;
   align-items: center;
   padding: clamp(12px, 2vw, 28px) 0;
+}
+
+.help-hub {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: clamp(12px, 2vw, 28px) 0 clamp(24px, 3vw, 40px);
+}
+
+.help-hub-intro {
+  margin-bottom: clamp(18px, 2.4vw, 28px);
+}
+
+.help-hub-title {
+  color: var(--primary-color);
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  line-height: 1.15;
+  margin: 0 0 6px;
+}
+
+.help-hub-lede {
+  margin: 0;
+  opacity: 0.78;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  max-width: 42em;
+}
+
+.help-catalog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.help-catalog-heading {
+  flex: 1 1 16rem;
+}
+
+.help-section {
+  margin-bottom: clamp(22px, 3vw, 36px);
+}
+
+.help-section:last-child {
+  margin-bottom: 0;
+}
+
+.help-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: clamp(10px, 1.4vw, 16px);
+}
+
+.help-section-title {
+  margin: 0;
+  color: var(--primary-color);
+  font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+  line-height: 1.2;
+}
+
+.help-view-all {
+  flex-shrink: 0;
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.help-view-all:hover {
+  color: var(--secondary-color);
+}
+
+.help-empty {
+  margin: 0;
+  opacity: 0.7;
+  font-size: 0.95rem;
 }
 
 .forms-grid {
@@ -96,11 +179,18 @@ body.forms-page main .container.form-shell {
   margin-bottom: 20px;
 }
 
-.form-page {
+.form-page,
+.guide-page {
   display: flex;
   flex: 1;
   align-items: flex-start;
   padding: clamp(12px, 2.5vw, 36px) 0;
+}
+
+.guide-layout {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.8vw, 18px);
 }
 
 .form-panel {
@@ -117,6 +207,34 @@ body.forms-page main .container.form-shell {
   background: rgba(45, 45, 45, 0.72);
 }
 
+/* Sticky title card — opaque so body text cannot read through while stuck. */
+.guide-title-card {
+  position: sticky;
+  /* Sit just under the sticky frosted header bar (~chips + bar padding). */
+  top: 4rem;
+  z-index: 40;
+  margin-bottom: 0;
+  background: var(--light-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 8px 16px -12px color-mix(in srgb, var(--text-color) 35%, transparent);
+}
+
+[data-theme="dark"] .guide-title-card {
+  background: var(--light-bg);
+}
+
+.guide-title-card h2 {
+  color: var(--primary-color);
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  line-height: 1.15;
+  margin: 0;
+}
+
+.guide-body-card {
+  margin-top: 0;
+}
+
 .form-panel-header {
   margin-bottom: clamp(10px, 1.4vw, 14px);
 }
@@ -125,6 +243,157 @@ body.forms-page main .container.form-shell {
   color: var(--primary-color);
   font-size: clamp(1.35rem, 2.2vw, 1.85rem);
   line-height: 1.15;
+}
+
+.guide-kicker {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.guide-description {
+  margin: 8px 0 0;
+  opacity: 0.78;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.guide-body {
+  color: var(--text-color);
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.guide-body h2 {
+  color: var(--primary-color);
+  font-size: clamp(1.1rem, 1.6vw, 1.3rem);
+  margin: 1.35em 0 0.45em;
+  line-height: 1.25;
+}
+
+.guide-body h2:first-child {
+  margin-top: 0;
+}
+
+.guide-body p,
+.guide-body ul,
+.guide-body ol {
+  margin: 0 0 0.85em;
+}
+
+.guide-body ul,
+.guide-body ol {
+  padding-left: 1.25rem;
+}
+
+.guide-body li {
+  margin-bottom: 0.3em;
+}
+
+.guide-body a {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.guide-body a:hover {
+  color: var(--secondary-color);
+}
+
+.guide-body strong {
+  font-weight: 700;
+}
+
+.guide-body sup.guide-fn,
+.guide-body sup {
+  font-size: 0.7em;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.guide-body sup a {
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.guide-sources {
+  margin-top: clamp(18px, 2.5vw, 28px);
+  padding-top: clamp(12px, 1.8vw, 18px);
+  border-top: 2px solid var(--border-color);
+}
+
+.guide-sources h3 {
+  margin: 0 0 12px;
+  color: var(--primary-color);
+  font-size: 1.05rem;
+}
+
+.guide-source-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-source-chips > li {
+  margin: 0;
+  scroll-margin-top: 1rem;
+}
+
+.guide-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(100%, 22rem);
+  padding: 5px 12px 5px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--text-color) 12%, transparent);
+  background: color-mix(in srgb, var(--text-color) 7%, transparent);
+  color: var(--text-color);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+a.guide-source-chip:hover {
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary-color) 28%, transparent);
+  color: var(--primary-color);
+}
+
+.guide-source-favicon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--text-color) 10%, transparent);
+}
+
+.guide-source-favicon--fallback {
+  display: inline-block;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 38%, color-mix(in srgb, var(--text-color) 35%, transparent) 40% 52%, transparent 54%),
+    color-mix(in srgb, var(--text-color) 12%, transparent);
+}
+
+.guide-source-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: clamp(16px, 2vw, 24px);
 }
 
 .form-intro {
@@ -243,7 +512,8 @@ body.forms-page main .container.form-shell {
 }
 
 @media (max-height: 800px) and (min-width: 901px) {
-  .form-page {
+  .form-page,
+  .guide-page {
     padding: 8px 0;
   }
 
@@ -263,7 +533,8 @@ body.forms-page main .container.form-shell {
     min-height: 72px;
   }
 
-  .forms-hub {
+  .forms-hub,
+  .help-hub {
     padding: 8px 0;
   }
 

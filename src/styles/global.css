@@ -126,7 +126,7 @@ img {
     color: var(--text-color);
 }
 
-/* Header Styles — no bar fill; page background shows straight through */
+/* Header — sticky frosted bar behind brand → nav → auth chips */
 header {
     background: transparent;
     color: var(--primary-color);
@@ -141,6 +141,20 @@ header .container {
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: 10px;
+    /* Softer / more open than header chips so buttons still read as a second frost layer */
+    padding: 6px 8px;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.32);
+    background: rgba(249, 249, 249, 0.42);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+}
+
+[data-theme="dark"] header .container {
+    background: rgba(20, 20, 20, 0.48);
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
 .header-left {
@@ -223,6 +237,7 @@ header h1 {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     border-radius: 2px;
     box-sizing: border-box;
     cursor: pointer;
@@ -241,15 +256,16 @@ header h1 {
 }
 
 .header-auth-btn:disabled {
-    opacity: 0.7;
+    opacity: 0.45;
+    color: color-mix(in srgb, var(--text-color) 55%, transparent);
+    cursor: not-allowed;
+    pointer-events: none;
 }
 
 .header-auth-btn:disabled[aria-busy="true"] {
+    opacity: 0.65;
     cursor: wait;
-}
-
-.header-auth-btn:disabled:not([aria-busy="true"]) {
-    cursor: not-allowed;
+    pointer-events: none;
 }
 
 [data-theme="dark"] .header-auth-btn {
@@ -263,11 +279,8 @@ header h1 {
     color: var(--primary-color);
 }
 
-.header-auth-hint {
-    font-size: 0.75rem;
-    color: var(--text-muted, #666);
-    max-width: 220px;
-    line-height: 1.2;
+[data-theme="dark"] .header-auth-btn:disabled {
+    color: color-mix(in srgb, var(--light-text) 45%, transparent);
 }
 
 /* Whiteboard navbar pop-out */
@@ -281,6 +294,7 @@ header h1 {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     border-radius: 2px;
     box-sizing: border-box;
     cursor: pointer;
@@ -883,8 +897,22 @@ nav ul li a {
     line-height: 1;
     display: inline-flex;
     align-items: center;
+    gap: 6px;
     border-radius: 2px;
     box-sizing: border-box;
+}
+
+.header-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    line-height: 0;
+}
+
+.header-chip-icon svg {
+    width: 1em;
+    height: 1em;
 }
 
 /* Frosted chips: brand (logo+title), nav links, and theme toggle share the same glass */
@@ -1752,11 +1780,6 @@ footer {
     .header-auth-avatar {
         width: 28px !important;
         height: 28px !important;
-    }
-
-    .header-auth-hint {
-        max-width: 120px;
-        font-size: 0.7rem;
     }
 
     nav,

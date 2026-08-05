@@ -1,0 +1,57 @@
+---
+interface Props {
+  title: string;
+  viewAllHref?: string;
+  viewAllLabel?: string;
+  tiles: {
+    href: string;
+    label: string;
+    iconHtml: string;
+  }[];
+  emptyMessage?: string;
+  ariaLabel?: string;
+  /** When false, omit the section title (catalog pages already have a page heading). */
+  showTitle?: boolean;
+}
+
+const {
+  title,
+  viewAllHref,
+  viewAllLabel = 'View All',
+  tiles,
+  emptyMessage = 'Nothing here yet.',
+  ariaLabel = title,
+  showTitle = true,
+} = Astro.props;
+---
+<section class="help-section" aria-label={ariaLabel}>
+  {
+    (showTitle || viewAllHref) && (
+      <div class="help-section-header">
+        {showTitle ? <h2 class="help-section-title">{title}</h2> : <span />}
+        {
+          viewAllHref && (
+            <a href={viewAllHref} class="help-view-all">
+              {viewAllLabel}
+            </a>
+          )
+        }
+      </div>
+    )
+  }
+
+  {
+    tiles.length === 0 ? (
+      <p class="help-empty">{emptyMessage}</p>
+    ) : (
+      <div class="forms-grid">
+        {tiles.map((tile) => (
+          <a href={tile.href} class="forms-tile">
+            <span class="forms-tile-icon" set:html={tile.iconHtml} />
+            <span class="forms-tile-label">{tile.label}</span>
+          </a>
+        ))}
+      </div>
+    )
+  }
+</section>

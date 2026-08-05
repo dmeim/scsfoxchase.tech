@@ -35,8 +35,11 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 |-------|--------|---------|
 | `/` | `src/pages/index.astro` | Homepage — search bars + app launcher grid |
 | `/games` | `src/pages/games.astro` | Game catalog (current layout) |
-| `/forms` | `src/pages/forms.astro` | Forms hub — launch help/request forms |
-| `/forms/*` | `src/pages/forms/*.astro` | Individual form stubs (n8n later) |
+| `/help` | `src/pages/help.astro` | Help hub — featured Forms + Guides |
+| `/forms` | `src/pages/forms.astro` | Forms catalog (all forms) |
+| `/guides` | `src/pages/guides.astro` | Guides catalog (all guides) |
+| `/form/*` | `src/pages/form/*.astro` | Individual form pages / stubs (n8n later) |
+| `/guide/{slug}` | `src/pages/guide/[slug].astro` | Guide articles (Markdown + footnote sources) |
 | `/oldgames` | `src/pages/oldgames.astro` | Legacy game catalog (kept until removed) |
 | `/offline` | `src/pages/offline.astro` | Offline fallback |
 | `/inventory` | `src/pages/inventory.astro` | Staff device inventory lookup + QR |
