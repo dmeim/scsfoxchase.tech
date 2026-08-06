@@ -1,0 +1,22 @@
+{
+  "guide": "fix-google-drive-problems",
+  "source_answers": [
+    "2456903",
+    "4431192",
+    "13305033",
+    "16482799",
+    "7505592"
+  ],
+  "media": [
+    {
+      "file": "desktop-584fb04d.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/tLGDXMFV3ZXj7XQ8QcrB9BVeg68lFwLQhe5d",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 1336,
+      "public_path": "/guides/fix-google-drive-problems/desktop-584fb04d.svg",
+      "answer": "13305033"
+    }
+  ]
+}

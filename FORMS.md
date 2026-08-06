@@ -21,6 +21,10 @@ Student/staff technology help on scsfoxchase.tech: a Help hub, Forms and Guides 
 | `/guide/upload-download-open-google-drive` | Upload, download, and open files in Google Drive | Live |
 | `/guide/pdfs-video-and-web-in-google-drive` | PDFs, video, and web content in Google Drive | Live |
 | `/guide/organize-files-google-drive` | Organize files in Google Drive | Live |
+| `/guide/share-files-google-drive` | Share files and folders in Google Drive | Live |
+| `/guide/shared-drives-and-access-google-drive` | Shared drives and access limits in Google Drive | Live |
+| `/guide/use-google-drive-for-desktop` | Use Google Drive for desktop | Live |
+| `/guide/fix-google-drive-problems` | Fix common Google Drive problems | Live |
 
 Nav label is **Help** → `/help`. Active for `/help`, `/forms`, `/guides`, `/form/*`, and `/guide/*`.
 

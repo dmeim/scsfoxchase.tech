@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="18px" height="18px" viewBox="0 0 18 18" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" jetway-hooks="{}">
+    <title>groups-exclamation-hex</title>
+    <g jetway-hook-id="6C51A4B2-28AE-4083-8C9C-1AD4A60264B8" id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g jetway-hook-id="179BE34D-8C3B-4A0B-BF25-F0232FDCDCB5" id="groups-exclamation-hex">
+            <polygon jetway-hook-id="D0EA5D81-42E8-4EBB-9586-E2342495CAE3" id="Path" points="0 0 18 0 18 18 0 18"></polygon>
+            <path d="M11.7975,2.25 L6.2025,2.25 L2.25,6.2025 L2.25,11.7975 L6.2025,15.75 L11.7975,15.75 L15.75,11.7975 L15.75,6.2025 L11.7975,2.25 Z M14.25,11.175 L11.175,14.25 L6.825,14.25 L3.75,11.175 L3.75,6.825 L6.825,3.75 L11.175,3.75 L14.25,6.825 L14.25,11.175 Z" jetway-hook-id="E2AC6E62-2490-4887-BA58-8E0210E0AEF5" id="Shape" fill="#80868B" fill-rule="nonzero"></path>
+            <circle jetway-hook-id="653D9293-2CAA-48B8-ADA0-74D16760E661" id="Oval" fill="#80868B" fill-rule="nonzero" cx="9" cy="12" r="1"></circle>
+            <polygon jetway-hook-id="1129C75E-A0B0-4935-A454-BFCB2D0BB9C3" id="Path" fill="#80868B" fill-rule="nonzero" points="8.25 5.25 9.75 5.25 9.75 10.5 8.25 10.5"></polygon>
+        </g>
+    </g>
+</svg>

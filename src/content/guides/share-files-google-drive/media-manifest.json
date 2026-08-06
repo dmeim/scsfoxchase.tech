@@ -1,0 +1,63 @@
+{
+  "guide": "share-files-google-drive",
+  "source_answers": [
+    "2494822",
+    "7166529",
+    "2494893",
+    "2494892",
+    "2494888",
+    "9195194"
+  ],
+  "media": [
+    {
+      "file": "desktop-61ff4c8d.gif",
+      "url": "https://lh3.googleusercontent.com/DIicfevmmGM81mUx4-BPwyiZgBuble81UXBdppnvkoNfPl28u-rvG7xg7X8csMKPAQ",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 61956,
+      "public_path": "/guides/share-files-google-drive/desktop-61ff4c8d.gif",
+      "answer": "7166529"
+    },
+    {
+      "file": "android-946d5c79.gif",
+      "url": "https://lh3.googleusercontent.com/JkWrY4eYDdJ2xij9kbLh9nCVngOT5qEGV9bXcrt8ZVJc65MQu6KJi8QAghrsOZs-_g",
+      "platform": "Android",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 3717067,
+      "public_path": "/guides/share-files-google-drive/android-946d5c79.gif",
+      "answer": "2494893"
+    },
+    {
+      "file": "ios-bf0313cd.gif",
+      "url": "https://lh3.googleusercontent.com/PAbhSrSU0OW_lidg4p-jrenWcpMYpwXayP7LOIgr0T8fhkVj-URGee3wMlmg2G7NoPXq",
+      "platform": "iOS",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 2290252,
+      "public_path": "/guides/share-files-google-drive/ios-bf0313cd.gif",
+      "answer": "2494893"
+    },
+    {
+      "file": "android-c199b569.gif",
+      "url": "https://lh3.googleusercontent.com/PqvGiI9pi0Ku5VSN_bAzAIKyc48zHyFa5DC0ddYKSLLa4Kk8EbduWwi7A3F3jj6uqaEF",
+      "platform": "Android",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 1154908,
+      "public_path": "/guides/share-files-google-drive/android-c199b569.gif",
+      "answer": "2494822"
+    },
+    {
+      "file": "web-visitor-sharing-307e7787.gif",
+      "url": "https://lh3.googleusercontent.com/djCNNnZxV2SfnPj1bzqu9DKsG43XgJosz9rWo-LQh7Bah8XcoHl_E8GsVJDwX3Ri21Y",
+      "platform": "Desktop",
+      "alt": "Web visitor sharing",
+      "content_type": "image/gif",
+      "bytes": 940624,
+      "public_path": "/guides/share-files-google-drive/web-visitor-sharing-307e7787.gif",
+      "answer": "9195194"
+    }
+  ]
+}

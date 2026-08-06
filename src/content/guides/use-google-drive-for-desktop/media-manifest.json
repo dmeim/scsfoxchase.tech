@@ -1,0 +1,53 @@
+{
+  "guide": "use-google-drive-for-desktop",
+  "source_answers": [
+    "10838124",
+    "12178485",
+    "13401938",
+    "13470231",
+    "17196458",
+    "2565956"
+  ],
+  "media": [
+    {
+      "file": "desktop-be1a227b.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/IaqjA9Mp1WpL27sTRgnc87QlxRsg8ONaiUWM",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 1919,
+      "public_path": "/guides/use-google-drive-for-desktop/desktop-be1a227b.svg",
+      "answer": "13470231"
+    },
+    {
+      "file": "desktop-54940eec.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/L2JydbTyNAqtBFUl6xcp14jaa1lnOTkVUYgi",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 1673,
+      "public_path": "/guides/use-google-drive-for-desktop/desktop-54940eec.svg",
+      "answer": "13470231"
+    },
+    {
+      "file": "apple-menu-a2147b16.png",
+      "url": "https://lh3.googleusercontent.com/TZ8ucPLhMnt-8bRsu4jiCWS7elnYWSQtC3KxDY-FjAN4cswbucd2UZGR1h4PPS3i",
+      "platform": "Desktop",
+      "alt": "Apple menu",
+      "content_type": "image/png",
+      "bytes": 7627,
+      "public_path": "/guides/use-google-drive-for-desktop/apple-menu-a2147b16.png",
+      "answer": "12178485"
+    },
+    {
+      "file": "desktop-9ab1e961.png",
+      "url": "https://lh3.googleusercontent.com/bLFW_F9Yy6ww20P0m95yB93LCHXvi-GWhaZCDXrNP40K7Frw0Mcv0zNDf0AT_BWEijVe",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 5795,
+      "public_path": "/guides/use-google-drive-for-desktop/desktop-9ab1e961.png",
+      "answer": "10838124"
+    }
+  ]
+}
