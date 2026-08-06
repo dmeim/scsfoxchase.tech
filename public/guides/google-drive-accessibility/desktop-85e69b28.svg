@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="18px" height="18px" viewBox="0 0 18 18" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" jetway-hooks="{}">
+    <title>trash</title>
+    <g jetway-hook-id="7CEF3DE8-D018-4083-97E3-2E1D2D0FFD3E" id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g jetway-hook-id="F140D57C-B87B-4B9B-AC9B-C642E3A378AA" id="trash">
+            <polygon jetway-hook-id="78E52946-4C67-4E42-AF39-9A5CB31616FA" id="Path" points="0 0 18 0 18 18 0 18"></polygon>
+            <path d="M3,4.5 L3,3 L6.375,3 L7.125,2.25 L10.875,2.25 L11.625,3 L15,3 L15,4.5 L12.75,4.5 L12.75,12.75 L5.25,12.75 L5.25,4.5 L3,4.5 Z M14.2517751,4.5 L3.75177515,4.5 L3.75177515,12.75 C3.75177515,13.575 3.67677515,14.25 4.50177515,14.25 L13.5017751,14.25 C14.3267751,14.25 14.2517751,13.575 14.2517751,12.75 L14.2517751,4.5 Z" jetway-hook-id="E7C306C5-7B5B-49D4-938F-40C0189E10C1" id="Shape" fill="#80868B" fill-rule="nonzero"></path>
+            <line x1="7.5" y1="5.625" x2="7.5" y2="11.625" jetway-hook-id="8BB7F375-7686-4755-A38D-228ECA6D0D36" id="Line" stroke="#80868B" stroke-width="1.5" fill="#80868B" fill-rule="nonzero"></line>
+            <line x1="10.5" y1="5.625" x2="10.5" y2="11.625" jetway-hook-id="6D1B4181-50BC-4C02-836A-20EB9C7DCDE4" id="Line" stroke="#80868B" stroke-width="1.5" fill="#80868B" fill-rule="nonzero"></line>
+        </g>
+    </g>
+</svg>

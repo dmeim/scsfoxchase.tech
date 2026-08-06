@@ -25,6 +25,10 @@ Student/staff technology help on scsfoxchase.tech: a Help hub, Forms and Guides 
 | `/guide/shared-drives-and-access-google-drive` | Shared drives and access limits in Google Drive | Live |
 | `/guide/use-google-drive-for-desktop` | Use Google Drive for desktop | Live |
 | `/guide/fix-google-drive-problems` | Fix common Google Drive problems | Live |
+| `/guide/use-gemini-in-google-drive` | Use Gemini in Google Drive | Live |
+| `/guide/google-drive-accessibility` | Accessibility and display options in Google Drive | Live |
+| `/guide/google-drive-with-other-apps` | Use Google Drive with other apps and Office files | Live |
+| `/guide/google-drive-privacy-basics` | Privacy basics for Google Drive | Live |
 
 Nav label is **Help** → `/help`. Active for `/help`, `/forms`, `/guides`, `/form/*`, and `/guide/*`.
 

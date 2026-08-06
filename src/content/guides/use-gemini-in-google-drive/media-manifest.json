@@ -1,0 +1,63 @@
+{
+  "guide": "use-gemini-in-google-drive",
+  "source_answers": [
+    "16686008",
+    "16685111",
+    "16686465",
+    "16671865",
+    "16685527",
+    "16963068"
+  ],
+  "media": [
+    {
+      "file": "desktop-61272c1b.png",
+      "url": "https://lh3.googleusercontent.com/xFxu61CHUquqClqgBtZKzUUq_kPTEecWtdTRmac-mhL5MHJ-9h6WUUyB-t-3j54nAg",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 43746,
+      "public_path": "/guides/use-gemini-in-google-drive/desktop-61272c1b.png",
+      "answer": "16686008"
+    },
+    {
+      "file": "desktop-278f657a.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/4qjT7R1KKtlkm3dNLlVWDNmooZUKNxYaxF0m",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 404,
+      "public_path": "/guides/use-gemini-in-google-drive/desktop-278f657a.svg",
+      "answer": "16685527"
+    },
+    {
+      "file": "desktop-3dcf1e62.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/6APda3FlDQ2Xz2QL2VaOHhTI4MQjcQbI4kaI",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 804,
+      "public_path": "/guides/use-gemini-in-google-drive/desktop-3dcf1e62.svg",
+      "answer": "16685111"
+    },
+    {
+      "file": "desktop-1da1964a.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/LWDSRpxYQ8iCg9Nlo54cDeliJ8t5CkZ1CyUl",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 355,
+      "public_path": "/guides/use-gemini-in-google-drive/desktop-1da1964a.svg",
+      "answer": "16685527"
+    },
+    {
+      "file": "desktop-385cc2e9.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/Qp4dyyCqOKiwg5QHobz7RT2bNA8HlbBKB0bY",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 8340,
+      "public_path": "/guides/use-gemini-in-google-drive/desktop-385cc2e9.svg",
+      "answer": "16686008"
+    }
+  ]
+}

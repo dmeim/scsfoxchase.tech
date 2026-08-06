@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="18px" height="18px" viewBox="0 0 18 18" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" jetway-hooks="{}">
+    <title>drive-download</title>
+    <g jetway-hook-id="4B163ED5-1DBF-4B4B-8F27-1C29282AE266" id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g jetway-hook-id="5377A0C1-0F72-47EA-8A0D-1943FC04F92C" id="drive-download">
+            <path d="M14.25,9 L14.25,14.25 L3.75,14.25 L3.75,9 L2.25,9 L2.25,14.25 C2.25,15.075 2.925,15.75 3.75,15.75 L14.25,15.75 C15.075,15.75 15.75,15.075 15.75,14.25 L15.75,9 L14.25,9 Z M9.75,9.5025 L11.6925,7.5675 L12.75,8.625 L9,12.375 L5.25,8.625 L6.3075,7.5675 L8.25,9.5025 L8.25,2.25 L9.75,2.25 L9.75,9.5025 Z" jetway-hook-id="7F98AB7A-0296-468F-92B4-02D9A66D6CD3" id="Shape" fill="#80868B" fill-rule="nonzero"></path>
+            <polygon jetway-hook-id="1F5CEFF1-1A56-489A-A19B-4FF0EA055E5E" id="Path" points="0 0 18 0 18 18 0 18"></polygon>
+        </g>
+    </g>
+</svg>
