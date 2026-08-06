@@ -1,0 +1,71 @@
+{
+  "guide": "get-started-google-drive",
+  "source_answers": [
+    "2424384",
+    "2375082",
+    "2375012",
+    "3214688"
+  ],
+  "media": [
+    {
+      "file": "desktop-d58f3e43.gif",
+      "url": "https://storage.googleapis.com/support-kms-prod/17rOvcB234F1r3zlUolGwxYU8vmCNx66ccgd",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 4068105,
+      "public_path": "/guides/get-started-google-drive/desktop-d58f3e43.gif",
+      "answer": "2424384"
+    },
+    {
+      "file": "desktop-61ff4c8d.gif",
+      "url": "https://lh3.googleusercontent.com/DIicfevmmGM81mUx4-BPwyiZgBuble81UXBdppnvkoNfPl28u-rvG7xg7X8csMKPAQ",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 61956,
+      "public_path": "/guides/get-started-google-drive/desktop-61ff4c8d.gif",
+      "answer": "2424384"
+    },
+    {
+      "file": "android-8feb9b01.gif",
+      "url": "https://lh3.googleusercontent.com/c0fHcqRq7tOTLU0wNUUrCURZwmXBACOJfc6PUDSBqHlYZABKIFucnkHCFPe9c6fGxGM",
+      "platform": "Android",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 570504,
+      "public_path": "/guides/get-started-google-drive/android-8feb9b01.gif",
+      "answer": "2424384"
+    },
+    {
+      "file": "desktop-77b43d7d.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/3D7X5tXmaIfJwQpx9mc8ORwwRU61dUBiQqT0",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 38368,
+      "public_path": "/guides/get-started-google-drive/desktop-77b43d7d.svg",
+      "answer": "2424384"
+    },
+    {
+      "file": "android-f32a2b8a.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/6aHGmebkzcmc4jdEFjy5mdiR0MPQ4ZqkKIKm",
+      "platform": "Android",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 15058,
+      "public_path": "/guides/get-started-google-drive/android-f32a2b8a.svg",
+      "answer": "2424384"
+    },
+    {
+      "file": "desktop-33b3ecec.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/6h4dqAxnueTT5zD0UOM3dMVeS8c96mxsW2Nc",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 50900,
+      "public_path": "/guides/get-started-google-drive/desktop-33b3ecec.svg",
+      "answer": "2424384"
+    }
+  ]
+}

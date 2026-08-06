@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="18px" height="18px" viewBox="0 0 18 18" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" jetway-hooks="{}">
+    <title>link</title>
+    <g jetway-hook-id="01D383C3-62CF-4910-9F2C-36733F36C596" id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g jetway-hook-id="14C2F457-588D-4F00-974A-F790B48D3C62" id="link">
+            <polygon jetway-hook-id="EE493E21-CF62-4641-B2A7-E9187DBF7A82" id="Path" points="0 0 18 0 18 18 0 18"></polygon>
+            <path d="M2.925,9 C2.925,7.7175 3.9675,6.675 5.25,6.675 L8.25,6.675 L8.25,5.25 L5.25,5.25 C3.18,5.25 1.5,6.93 1.5,9 C1.5,11.07 3.18,12.75 5.25,12.75 L8.25,12.75 L8.25,11.325 L5.25,11.325 C3.9675,11.325 2.925,10.2825 2.925,9 Z M6,9.75 L12,9.75 L12,8.25 L6,8.25 L6,9.75 Z M12.75,5.25 L9.75,5.25 L9.75,6.675 L12.75,6.675 C14.0325,6.675 15.075,7.7175 15.075,9 C15.075,10.2825 14.0325,11.325 12.75,11.325 L9.75,11.325 L9.75,12.75 L12.75,12.75 C14.82,12.75 16.5,11.07 16.5,9 C16.5,6.93 14.82,5.25 12.75,5.25 Z" jetway-hook-id="1D52B6AA-BA26-496C-8745-42497ACF3D03" id="Shape" fill="#80868B" fill-rule="nonzero"></path>
+        </g>
+    </g>
+</svg>

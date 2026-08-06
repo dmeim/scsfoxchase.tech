@@ -16,6 +16,11 @@ Student/staff technology help on scsfoxchase.tech: a Help hub, Forms and Guides 
 | `/guide/recover-deleted-file-google-drive` | Recover a deleted file in Google Drive | Live |
 | `/guide/find-files-google-drive` | Find files in Google Drive | Live |
 | `/guide/delete-files-google-drive` | Delete files in Google Drive | Live |
+| `/guide/get-started-google-drive` | Get started with Google Drive | Live |
+| `/guide/manage-google-storage` | Manage Google storage | Live |
+| `/guide/upload-download-open-google-drive` | Upload, download, and open files in Google Drive | Live |
+| `/guide/pdfs-video-and-web-in-google-drive` | PDFs, video, and web content in Google Drive | Live |
+| `/guide/organize-files-google-drive` | Organize files in Google Drive | Live |
 
 Nav label is **Help** → `/help`. Active for `/help`, `/forms`, `/guides`, `/form/*`, and `/guide/*`.
 

@@ -1,0 +1,40 @@
+{
+  "guide": "manage-google-storage",
+  "source_answers": [
+    "9312312",
+    "6374270",
+    "2375123"
+  ],
+  "media": [
+    {
+      "file": "desktop-da397523.png",
+      "url": "https://lh3.googleusercontent.com/DHJryp1F8JDJZtiRPNby7npvJp5xMa8ozBJ10fDCe8TbWz8Y64ZlNnSGDZ12nBsWYLWM",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 25441,
+      "public_path": "/guides/manage-google-storage/desktop-da397523.png",
+      "answer": "9312312"
+    },
+    {
+      "file": "desktop-5bf4a736.png",
+      "url": "https://lh3.googleusercontent.com/WkcyshtCvOQ_96_4wMXS1PBVkXQBiV51CkbyXbOdD-AtXtSdYAW_dZ5ULrX-7WJ_SQ",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 12067,
+      "public_path": "/guides/manage-google-storage/desktop-5bf4a736.png",
+      "answer": "6374270"
+    },
+    {
+      "file": "desktop-25cc28d2.png",
+      "url": "https://lh3.googleusercontent.com/mtLr4plcvknFBcP5MnnzJn_y76sYuirX8ePaK5OIrmF9LF8ZpPbeMx9T2YfPmjX0_s8",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 25441,
+      "public_path": "/guides/manage-google-storage/desktop-25cc28d2.png",
+      "answer": "2375123"
+    }
+  ]
+}

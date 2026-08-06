@@ -1,0 +1,71 @@
+{
+  "guide": "upload-download-open-google-drive",
+  "source_answers": [
+    "2424368",
+    "2423534",
+    "37603",
+    "2423485"
+  ],
+  "media": [
+    {
+      "file": "desktop-20883e20.gif",
+      "url": "https://lh3.googleusercontent.com/16R2BiC3xk_8TOOH-wy-Mrziu_sQpYmFAvV8EQdgzozx6ZxDMtlURQRUYgx9bfHKmw",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 1448128,
+      "public_path": "/guides/upload-download-open-google-drive/desktop-20883e20.gif",
+      "answer": "2423534"
+    },
+    {
+      "file": "desktop-61ff4c8d.gif",
+      "url": "https://lh3.googleusercontent.com/DIicfevmmGM81mUx4-BPwyiZgBuble81UXBdppnvkoNfPl28u-rvG7xg7X8csMKPAQ",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 61956,
+      "public_path": "/guides/upload-download-open-google-drive/desktop-61ff4c8d.gif",
+      "answer": "2424368"
+    },
+    {
+      "file": "ios-3974b2cb.gif",
+      "url": "https://lh3.googleusercontent.com/I_vxDNwgLHLDo-CvQaNuUUrG9T-9gJ8lFgXzOBlx8LH4hPAvKvz62G7xwWXFA68pK-VT",
+      "platform": "iOS",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 2258935,
+      "public_path": "/guides/upload-download-open-google-drive/ios-3974b2cb.gif",
+      "answer": "2423534"
+    },
+    {
+      "file": "ios-7e4ac6fd.gif",
+      "url": "https://lh3.googleusercontent.com/c6VdZ0gO3O8TkHGg_dYB8NLuJPAOTSdisnujgxq8GVA6JFjUy5NdLuh3hyRf6VF3B0s",
+      "platform": "iOS",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 1998447,
+      "public_path": "/guides/upload-download-open-google-drive/ios-7e4ac6fd.gif",
+      "answer": "2424368"
+    },
+    {
+      "file": "android-c2eb66a2.gif",
+      "url": "https://lh3.googleusercontent.com/iWw7UwO6R56fmBV1wtnNQCxxo4yeCa9f2aqnVtCf7KkHsxaMM42D-uScNszrf_ot8R0",
+      "platform": "Android",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 2565934,
+      "public_path": "/guides/upload-download-open-google-drive/android-c2eb66a2.gif",
+      "answer": "2424368"
+    },
+    {
+      "file": "desktop-56d18aa8.gif",
+      "url": "https://lh3.googleusercontent.com/mKsqRj5yduJjZVaMH8gm5j4CLHpsEfthbn6VaIZHunefCTywkBlyCNxHAWcCWQRcihk",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 2071945,
+      "public_path": "/guides/upload-download-open-google-drive/desktop-56d18aa8.gif",
+      "answer": "2424368"
+    }
+  ]
+}

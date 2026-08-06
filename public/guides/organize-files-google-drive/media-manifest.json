@@ -1,0 +1,44 @@
+{
+  "guide": "organize-files-google-drive",
+  "source_answers": [
+    "2375091",
+    "2375177",
+    "2409045",
+    "9700156",
+    "10864219",
+    "6318501",
+    "13495216"
+  ],
+  "media": [
+    {
+      "file": "desktop-b6298241.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/kO4za8uit54KJbwlWWpdzIwmPJesUDuVz0V1",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 339,
+      "public_path": "/guides/organize-files-google-drive/desktop-b6298241.svg",
+      "answer": "2375091"
+    },
+    {
+      "file": "desktop-1e614a27.png",
+      "url": "https://lh3.googleusercontent.com/8-XAtbnnjoPJDffID-0gF3k23ETq0lJuPYU1-pDc_mdlfszuiGgB0-9L5HvrOr5fvg",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 1724,
+      "public_path": "/guides/organize-files-google-drive/desktop-1e614a27.png",
+      "answer": "2375091"
+    },
+    {
+      "file": "desktop-12d53ebc.png",
+      "url": "https://lh3.googleusercontent.com/ScqJoak2PVF2-V2aXsY6-eK49F0sp29BIU1hg-vpKznPD_l1TqPvJowcwF7Rg7EavPo",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 3260,
+      "public_path": "/guides/organize-files-google-drive/desktop-12d53ebc.png",
+      "answer": "2375091"
+    }
+  ]
+}

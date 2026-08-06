@@ -1,0 +1,73 @@
+{
+  "guide": "pdfs-video-and-web-in-google-drive",
+  "source_answers": [
+    "2375013",
+    "176692",
+    "9463834",
+    "2423694",
+    "16466593",
+    "15128833"
+  ],
+  "media": [
+    {
+      "file": "desktop-f26c0d0c.gif",
+      "url": "https://storage.googleapis.com/support-kms-prod/usbl1TkRPM2gPBjFIQ0EVhBK1iBqVkyc2m4h",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 4828296,
+      "public_path": "/guides/pdfs-video-and-web-in-google-drive/desktop-f26c0d0c.gif",
+      "answer": "2423694"
+    },
+    {
+      "file": "desktop-61ff4c8d.gif",
+      "url": "https://lh3.googleusercontent.com/DIicfevmmGM81mUx4-BPwyiZgBuble81UXBdppnvkoNfPl28u-rvG7xg7X8csMKPAQ",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 61956,
+      "public_path": "/guides/pdfs-video-and-web-in-google-drive/desktop-61ff4c8d.gif",
+      "answer": "176692"
+    },
+    {
+      "file": "desktop-71263b49.gif",
+      "url": "https://lh3.googleusercontent.com/gQz95R7Ww_DS5lviJQaF6SBqJJX7bCvDsM4e6wIBemQNSZUz0IWyZguG-fjKOixr86k",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 489777,
+      "public_path": "/guides/pdfs-video-and-web-in-google-drive/desktop-71263b49.gif",
+      "answer": "2423694"
+    },
+    {
+      "file": "desktop-efc58f7c.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/4NmaoYubXPIpevOWMR3OOR4qTjOQzrQBPhNL",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 192,
+      "public_path": "/guides/pdfs-video-and-web-in-google-drive/desktop-efc58f7c.svg",
+      "answer": "176692"
+    },
+    {
+      "file": "desktop-e8ea8073.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/eDufwGKgSDPUIkSSqJC7xKiqM83Ox2B2qvKa",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 1217,
+      "public_path": "/guides/pdfs-video-and-web-in-google-drive/desktop-e8ea8073.svg",
+      "answer": "2423694"
+    },
+    {
+      "file": "desktop-7a3b476a.png",
+      "url": "https://lh3.googleusercontent.com/5FMnuZJ8n7y9pDzU15fJzMxYicxUngX9BaLc7dtNNFuJYQpe01am0lKevcgTl5IBlokE",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 6524,
+      "public_path": "/guides/pdfs-video-and-web-in-google-drive/desktop-7a3b476a.png",
+      "answer": "2423694"
+    }
+  ]
+}
