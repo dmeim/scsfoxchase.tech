@@ -2,7 +2,7 @@
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
 import HelpSection from '../components/HelpSection.astro';
-import { iconBookOpen } from '../scripts/icons';
+import { iconBookOpen, iconMessageCircleQuestion } from '../scripts/icons';
 import { getCollection } from 'astro:content';
 
 const guides = (await getCollection('guides')).sort((a, b) =>
@@ -32,7 +32,10 @@ const tiles = guides.map((g) => ({
             Articles and how-tos. External citations appear as footnotes with sources.
           </p>
         </div>
-        <a href="/help" class="page-nav-btn">Back to Help</a>
+        <a href="/help" class="page-nav-btn">
+          <span class="page-nav-btn-icon" set:html={iconMessageCircleQuestion} />
+          Back to Help
+        </a>
       </header>
 
       <HelpSection

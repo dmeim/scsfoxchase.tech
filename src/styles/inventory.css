@@ -12,9 +12,9 @@ body.asset-lookup-page {
     width: 100%;
 }
 
-/* Beat .container max-width from global.css (loads after this file in prod). */
+/* Match games / global `.container` (1600px). */
 .container.asset-shell {
-    max-width: 1120px;
+    max-width: 1600px;
 }
 
 .asset-lookup-panel,

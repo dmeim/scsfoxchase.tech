@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { iconForm } from '../../scripts/icons';
 ---
 <BaseLayout title="Request A Game - St. Cecilia Technology" bodyClass="forms-page">
   <meta
@@ -68,7 +69,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </div>
 
           <div class="form-actions">
-            <a href="/forms" class="form-back-link">Back to Forms</a>
+            <a href="/forms" class="page-nav-btn">
+              <span class="page-nav-btn-icon" set:html={iconForm} />
+              Back to Forms
+            </a>
             <button class="btn form-submit" type="submit">Submit</button>
           </div>
         </form>

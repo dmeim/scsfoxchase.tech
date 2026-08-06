@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { iconForm } from '../../scripts/icons';
 ---
 <BaseLayout title="Google/Account Help - St. Cecilia Technology" bodyClass="forms-page">
   <meta
@@ -12,7 +13,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     <div class="container form-shell">
       <h2>Google/Account Help</h2>
       <p>This form is coming soon.</p>
-      <a href="/forms" class="page-nav-btn">Back to Forms</a>
+      <a href="/forms" class="page-nav-btn">
+        <span class="page-nav-btn-icon" set:html={iconForm} />
+        Back to Forms
+      </a>
     </div>
   </section>
 </BaseLayout>

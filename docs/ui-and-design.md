@@ -71,7 +71,7 @@ Body font: `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif` (`global.css`). Bra
 
 - **`BaseLayout.astro`** — sticky transparent header, `<main>` slot, optional footer; imports `global.css` + `forms.css`.
 - **Header** — CSS grid `1fr auto 1fr` (brand | center | theme/auth/nav). Transparent so page backgrounds show through. Brand height ~36px desktop.
-- **Container** — `.container` max-width `1600px`, horizontal padding `20px`. Some hubs (forms, inventory, whiteboard) tighten content width (~1120px) in their own stylesheets.
+- **Container** — `.container` max-width `1600px`, horizontal padding `20px`. Home is special (`main .container` can go full-bleed). Help/forms/guides, inventory, and whiteboard hub shells match that 1600px width.
 - **Footer** — transparent, `margin-top: auto` so it sits at the bottom of the flex column body.
 
 ### Homepage (`body.home-page`)

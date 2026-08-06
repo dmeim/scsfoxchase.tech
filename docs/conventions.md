@@ -115,7 +115,7 @@ Image load failures fall back via `src/scripts/placeholder-images.ts`.
 
 Help hub, form catalogs, and guide articles: see [features/forms.md](./features/forms.md) and root `FORMS.md`. Forms metadata: `src/data/forms.ts`. Guides: `src/content/guides/*.md`. Styles: `forms.css`. Icons: Lucide SVG strings in `src/scripts/icons.ts`.
 
-Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Shell width matches inventory: `.container.form-shell` at **1120px**.
+Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Shell width matches games: `.container.form-shell` at **1600px**.
 
 ## Code and stack conventions
 

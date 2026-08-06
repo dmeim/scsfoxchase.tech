@@ -11,7 +11,7 @@ body.whiteboard-hub-page {
 
 /* Frosted content panel — same glass language as forms `.form-panel` / inventory cards */
 .wb-hub-shell {
-  max-width: 1120px;
+  max-width: 1600px;
   width: 100%;
   margin: 0 auto;
   padding: clamp(16px, 2.5vw, 28px);

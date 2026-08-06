@@ -126,8 +126,8 @@ img {
     color: var(--text-color);
 }
 
-/* Header — sticky frosted bar behind brand → nav → auth chips */
-header {
+/* Site chrome only — do not stick nested <header> elements (e.g. guide title cards). */
+body > header {
     background: transparent;
     color: var(--primary-color);
     padding: 6px 0;
@@ -1693,9 +1693,19 @@ main {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.page-nav-btn i {
+.page-nav-btn i,
+.page-nav-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 1.2rem;
+    line-height: 0;
     color: var(--primary-color);
+}
+
+.page-nav-btn-icon svg {
+    width: 1.2em;
+    height: 1.2em;
 }
 
 /* Footer */

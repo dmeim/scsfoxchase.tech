@@ -16,7 +16,7 @@ Help hub plus Forms and Guides catalogs. Prerendered Astro; shared styles in `sr
 
 Header nav marks **Help** active for `/help`, `/forms`, `/guides`, `/form/*`, and `/guide/*`.
 
-Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Shell width: `.container.form-shell` (**1120px**).
+Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Shell width: `.container.form-shell` (**1600px**, same as games).
 
 ## Help hub (`/help`)
 

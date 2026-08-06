@@ -7,12 +7,12 @@ body.help-page {
   min-height: 100dvh;
 }
 
-/* Match inventory `.container.asset-shell` (1120px).
+/* Match games / global `.container` (1600px).
    Kept highly specific so BaseLayout/global order cannot widen/narrow the shell. */
 .container.form-shell,
 body.forms-page main .container.form-shell,
 body.help-page main .container.form-shell {
-  max-width: 1120px;
+  max-width: 1600px;
   width: 100%;
 }
 
@@ -211,21 +211,9 @@ body.help-page main .container.form-shell {
   background: rgba(45, 45, 45, 0.72);
 }
 
-/* Sticky title card — opaque so body text cannot read through while stuck. */
 .guide-title-card {
-  position: sticky;
-  /* Sit just under the sticky frosted header bar (~chips + bar padding). */
-  top: 4rem;
-  z-index: 40;
   margin-bottom: 0;
-  background: var(--light-bg);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: 0 8px 16px -12px color-mix(in srgb, var(--text-color) 35%, transparent);
-}
-
-[data-theme="dark"] .guide-title-card {
-  background: var(--light-bg);
+  position: static;
 }
 
 .guide-title-card h2 {
@@ -251,7 +239,7 @@ body.help-page main .container.form-shell {
 .guide-title-card--diagram {
   padding: 0;
   overflow: hidden;
-  height: clamp(220px, 36vh, 360px);
+  height: clamp(200px, 28vh, 300px);
 }
 
 .guide-diagram {
@@ -265,12 +253,6 @@ body.help-page main .container.form-shell {
   height: 100%;
   position: absolute !important;
   inset: 0;
-}
-
-@media (max-height: 800px) {
-  .guide-title-card--diagram {
-    height: clamp(180px, 30vh, 260px);
-  }
 }
 
 .guide-body-card {
@@ -348,6 +330,33 @@ body.help-page main .container.form-shell {
   font-weight: 700;
 }
 
+.guide-body .guide-media {
+  margin: 0.35em 0 1.1em;
+  max-width: 100%;
+}
+
+.guide-body .guide-media img {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 18%, transparent);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.guide-body .guide-media--phone img {
+  max-width: 280px;
+}
+
+.guide-body .guide-inline-icon {
+  display: inline-block;
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.15em;
+  margin: 0 0.1em;
+}
+
 .guide-body sup.guide-fn,
 .guide-body sup {
   font-size: 0.7em;
@@ -370,11 +379,13 @@ body.help-page main .container.form-shell {
   margin: 0 0 12px;
   color: var(--primary-color);
   font-size: 1.05rem;
+  text-align: center;
 }
 
 .guide-source-chips {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -434,7 +445,8 @@ a.guide-source-chip:hover {
 .guide-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  justify-content: center;
+  gap: 12px;
   margin-top: clamp(16px, 2vw, 24px);
 }
 

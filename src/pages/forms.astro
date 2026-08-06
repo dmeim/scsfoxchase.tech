@@ -2,6 +2,7 @@
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
 import FormsLauncher from '../components/FormsLauncher.astro';
+import { iconMessageCircleQuestion } from '../scripts/icons';
 ---
 <BaseLayout title="Forms - St. Cecilia Technology" bodyClass="help-page">
   <meta
@@ -19,7 +20,10 @@ import FormsLauncher from '../components/FormsLauncher.astro';
             Every technology form we support. Pick one to get started.
           </p>
         </div>
-        <a href="/help" class="page-nav-btn">Back to Help</a>
+        <a href="/help" class="page-nav-btn">
+          <span class="page-nav-btn-icon" set:html={iconMessageCircleQuestion} />
+          Back to Help
+        </a>
       </header>
 
       <FormsLauncher ariaLabel="All technology forms" />

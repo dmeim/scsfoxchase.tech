@@ -1,0 +1,55 @@
+{
+  "guide": "recover-deleted-file-google-drive",
+  "source_article": "https://support.google.com/drive/answer/1716222?hl=en",
+  "media": [
+    {
+      "id": "computer-restore-from-trash",
+      "url": "https://lh3.googleusercontent.com/6b3HQZhYP76mKHm17GU6cG_Y7w05yUQ4u0XgudOZQXocE7xmid1PdnLqFmUAwI5mDt8",
+      "platform": "computer",
+      "alt": "Steps to restore a file or folder from Trash in Google Drive",
+      "source_page": "https://support.google.com/drive/answer/1716222?hl=en&co=GENIE.Platform%3DDesktop",
+      "file": "computer-restore-from-trash.gif",
+      "path": "src/content/guides/recover-deleted-file-google-drive/computer-restore-from-trash.gif",
+      "content_type": "image/gif",
+      "bytes": 1029040,
+      "public_path": "/guides/recover-deleted-file-google-drive/computer-restore-from-trash.gif"
+    },
+    {
+      "id": "android-restore-from-trash",
+      "url": "https://lh3.googleusercontent.com/gW3M_O2LeZaMZ0GKIeGNLclaoOXaAJmboiyFN5XDwOPZi1tNbBjZxDnvO_Zx0AQZ9WB4",
+      "platform": "android",
+      "alt": "Restore a file from Trash in the Google Drive Android app",
+      "source_page": "https://support.google.com/drive/answer/1716222?hl=en&co=GENIE.Platform%3DAndroid",
+      "file": "android-restore-from-trash.gif",
+      "path": "src/content/guides/recover-deleted-file-google-drive/android-restore-from-trash.gif",
+      "content_type": "image/gif",
+      "bytes": 2865571,
+      "public_path": "/guides/recover-deleted-file-google-drive/android-restore-from-trash.gif"
+    },
+    {
+      "id": "ios-restore-from-trash",
+      "url": "https://lh3.googleusercontent.com/DLiJrQDQwVh9rofAiOQHD3nnicw31l-nTMUWQXBi2gMPa9rwHHFQGuE1XtwqynmWBQ",
+      "platform": "ios",
+      "alt": "Restore a file from Trash in the Google Drive iPhone and iPad app",
+      "source_page": "https://support.google.com/drive/answer/1716222?hl=en&co=GENIE.Platform%3DiOS",
+      "file": "ios-restore-from-trash.gif",
+      "path": "src/content/guides/recover-deleted-file-google-drive/ios-restore-from-trash.gif",
+      "content_type": "image/gif",
+      "bytes": 2117067,
+      "public_path": "/guides/recover-deleted-file-google-drive/ios-restore-from-trash.gif"
+    },
+    {
+      "id": "menu-more",
+      "url": "https://lh3.googleusercontent.com/xEydukQOFFqLp3BXQn1YZgFejeCchlcIrlsZCdD8_Y0qnFHJCUjRbJLnRu4s1km9YOtb",
+      "platform": "android+ios",
+      "alt": "More",
+      "source_page": "https://support.google.com/drive/answer/1716222?hl=en&co=GENIE.Platform%3DAndroid",
+      "file": "menu-more.png",
+      "path": "src/content/guides/recover-deleted-file-google-drive/menu-more.png",
+      "content_type": "image/png",
+      "bytes": 112,
+      "public_path": "/guides/recover-deleted-file-google-drive/menu-more.png"
+    }
+  ],
+  "note": "Canonical copies live under src/content/guides/<slug>/ for article + tldraw authoring. public/guides/<slug>/ is the web-served mirror used by Markdown <img> paths."
+}

@@ -2,6 +2,7 @@
 export const prerender = true;
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import GuideDiagram from '../../components/GuideDiagram';
+import { iconBookOpenText, iconMessageCircleQuestion } from '../../scripts/icons';
 import { getCollection, render } from 'astro:content';
 import type { GetStaticPaths } from 'astro';
 
@@ -32,11 +33,11 @@ function sourceFavicon(url?: string): string | null {
 
   <article class="guide-page" aria-labelledby="guide-title">
     <div class="container form-shell guide-layout">
-      <header class="form-panel guide-title-card guide-title-card--diagram">
+      <div class="form-panel guide-title-card guide-title-card--diagram">
         <h2 id="guide-title" class="guide-visually-hidden">{title}</h2>
         <p class="guide-visually-hidden">{description}</p>
         <GuideDiagram client:only="react" />
-      </header>
+      </div>
 
       <div class="form-panel guide-body-card">
         <div class="guide-body">
@@ -91,8 +92,14 @@ function sourceFavicon(url?: string): string | null {
         }
 
         <div class="guide-actions">
-          <a href="/guides" class="form-back-link">Back to Guides</a>
-          <a href="/help" class="form-back-link">Help hub</a>
+          <a href="/guides" class="page-nav-btn">
+            <span class="page-nav-btn-icon" set:html={iconBookOpenText} />
+            Back to Guides
+          </a>
+          <a href="/help" class="page-nav-btn">
+            <span class="page-nav-btn-icon" set:html={iconMessageCircleQuestion} />
+            Back to Help
+          </a>
         </div>
       </div>
     </div>

@@ -1,0 +1,34 @@
+{
+  "guide": "delete-files-google-drive",
+  "media": [
+    {
+      "file": "desktop-8b008d60.gif",
+      "url": "https://storage.googleapis.com/support-kms-prod/ZNzsIOUgj64YDXhOtdBC4O9z38N4oV9EjDD6",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 10541767,
+      "public_path": "/guides/delete-files-google-drive/desktop-8b008d60.gif"
+    },
+    {
+      "file": "desktop-25cc28d2.png",
+      "url": "https://lh3.googleusercontent.com/mtLr4plcvknFBcP5MnnzJn_y76sYuirX8ePaK5OIrmF9LF8ZpPbeMx9T2YfPmjX0_s8",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/png",
+      "bytes": 25441,
+      "public_path": "/guides/delete-files-google-drive/desktop-25cc28d2.png",
+      "note": "Decorative Google Help illustration; not embedded in article body."
+    },
+    {
+      "file": "menu-more.png",
+      "url": "https://lh3.googleusercontent.com/xEydukQOFFqLp3BXQn1YZgFejeCchlcIrlsZCdD8_Y0qnFHJCUjRbJLnRu4s1km9YOtb",
+      "platform": "android+ios",
+      "alt": "More",
+      "content_type": "image/png",
+      "bytes": 112,
+      "public_path": "/guides/delete-files-google-drive/menu-more.png",
+      "note": "Copied from recover-deleted-file-google-drive for inline Menu/More icon."
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 # Git worktrees (local isolation)
 .worktrees/
 .superpowers/
+.pi-subagents/
 
 # Node / Astro
 node_modules/

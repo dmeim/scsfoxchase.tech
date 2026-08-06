@@ -1,0 +1,41 @@
+{
+  "guide": "find-files-google-drive",
+  "media": [
+    {
+      "file": "desktop-2fbf8d8a.gif",
+      "url": "https://lh3.googleusercontent.com/LXYYJRAMWWEYt7kBSMeILSBpSizQROA0j2HtPlsvO6XFAgyUlJ_oiaGFg5Bekn6PgNat",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 805829,
+      "public_path": "/guides/find-files-google-drive/desktop-2fbf8d8a.gif"
+    },
+    {
+      "file": "desktop-151b6b5b.svg",
+      "url": "https://storage.googleapis.com/support-kms-prod/pIz6iI5mp6URLhFtIqe8Jck2IFeKhUXaTCA4",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/svg+xml",
+      "bytes": 916,
+      "public_path": "/guides/find-files-google-drive/desktop-151b6b5b.svg"
+    },
+    {
+      "file": "desktop-e2b6b796.gif",
+      "url": "https://lh3.googleusercontent.com/v5o41TNUwWHYuVPeY-rmEYqS9elpt6qantoy9b4W133v0qM4Y9O_ZW3FunYnMTgniLw",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 93165,
+      "public_path": "/guides/find-files-google-drive/desktop-e2b6b796.gif"
+    },
+    {
+      "file": "desktop-8d0d8b5b.gif",
+      "url": "https://storage.googleapis.com/support-kms-prod/ncDSK4lXkeStAaUPLKr0gIMc74yrdbSpmnx5",
+      "platform": "Desktop",
+      "alt": "",
+      "content_type": "image/gif",
+      "bytes": 13004937,
+      "public_path": "/guides/find-files-google-drive/desktop-8d0d8b5b.gif"
+    }
+  ]
+}

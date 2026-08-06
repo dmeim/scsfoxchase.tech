@@ -13,6 +13,9 @@ Student/staff technology help on scsfoxchase.tech: a Help hub, Forms and Guides 
 | `/form/help-tech` | General Technology Help | Stub |
 | `/form/help-account` | Google/Account Help | Stub |
 | `/guide/how-to-use-help` | How to use this Help site | Sample / authoring reference |
+| `/guide/recover-deleted-file-google-drive` | Recover a deleted file in Google Drive | Live |
+| `/guide/find-files-google-drive` | Find files in Google Drive | Live |
+| `/guide/delete-files-google-drive` | Delete files in Google Drive | Live |
 
 Nav label is **Help** → `/help`. Active for `/help`, `/forms`, `/guides`, `/form/*`, and `/guide/*`.
 
@@ -36,7 +39,7 @@ Nav label is **Help** → `/help`. Active for `/help`, `/forms`, `/guides`, `/fo
 ## UI notes
 
 - Hub/catalog tiles reuse frosted `.forms-tile` treatment.
-- Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Both share `.container.form-shell` at **1120px**.
+- Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page`. Both share `.container.form-shell` at **1600px** (same as games / global `.container`). Home keeps its own layout.
 - Featured tiles on `/help` come from `featured: true` in `src/data/forms.ts` and guide frontmatter.
 
 ## Adding a form
