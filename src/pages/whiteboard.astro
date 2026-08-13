@@ -14,8 +14,9 @@ import '../styles/whiteboard.css';
     <div class="wb-hub-shell">
       <h2 class="wb-hub-title">Whiteboard</h2>
       <p class="wb-hub-lede">
-        Create a board for class or group work, join with a share code or link, or
-        reopen one from this device — or your Google library when signed in.
+        Create a board for class or group work, or join with a share code, link,
+        or UUID. Sign in with Google to save boards to your library and reopen
+        them on any Chromebook.
       </p>
 
       <div class="wb-actions">
@@ -45,34 +46,37 @@ import '../styles/whiteboard.css';
         </form>
       </div>
 
-      <section class="wb-section" aria-labelledby="wb-recents-heading">
-        <h3 id="wb-recents-heading" class="wb-section-title">Recents</h3>
-        <p class="wb-section-empty" data-wb-recents-empty>
-          No recent boards on this device yet. Create one to get started.
-        </p>
-        <div class="wb-card-grid wb-card-grid--recents" data-wb-recents-grid hidden></div>
-      </section>
+      <div data-wb-cloud-lists hidden>
+        <section class="wb-section" aria-labelledby="wb-recents-heading">
+          <h3 id="wb-recents-heading" class="wb-section-title">Recents</h3>
+          <p class="wb-section-empty" data-wb-recents-empty>
+            No recent boards in your Google library yet. Create one to get started.
+          </p>
+          <div class="wb-card-grid wb-card-grid--recents" data-wb-recents-grid hidden></div>
+        </section>
 
-      <section class="wb-section wb-section--assets" aria-labelledby="wb-assets-heading">
-        <h3 id="wb-assets-heading" class="wb-section-title">Assets</h3>
-        <p class="wb-section-empty" data-wb-assets-empty>
-          Images and videos you place on a board show up here automatically.
-        </p>
-        <div class="wb-asset-row" data-wb-assets-row hidden></div>
-      </section>
+        <section class="wb-section wb-section--assets" aria-labelledby="wb-assets-heading">
+          <h3 id="wb-assets-heading" class="wb-section-title">Assets</h3>
+          <p class="wb-section-empty" data-wb-assets-empty>
+            Images and videos you place on a saved board show up here.
+          </p>
+          <div class="wb-asset-row" data-wb-assets-row hidden></div>
+        </section>
 
-      <section class="wb-section" aria-labelledby="wb-library-heading">
-        <h3 id="wb-library-heading" class="wb-section-title">Library</h3>
-        <p class="wb-section-empty" data-wb-library-empty>
-          Boards you open are saved in this browser’s library.
-        </p>
-        <div class="wb-card-grid" data-wb-library-grid hidden></div>
-      </section>
+        <section class="wb-section" aria-labelledby="wb-library-heading">
+          <h3 id="wb-library-heading" class="wb-section-title">Library</h3>
+          <p class="wb-section-empty" data-wb-library-empty>
+            Boards you create while signed in are saved here automatically.
+          </p>
+          <div class="wb-card-grid" data-wb-library-grid hidden></div>
+        </section>
+      </div>
 
       <p class="wb-hub-note" data-wb-hub-note>
-        Library, recents, and assets stay on this device while signed out. Sign in with
-        Google to use your cloud library on any Chromebook. Pasted media is stored so
-        classmates on the same board can see it.
+        Create works without an account. That scratch board stays live if you
+        refresh, but it is not in a library and is removed after 24 hours if it
+        is never saved. Join by code or link also works signed out. Sign in with
+        Google to Save and keep Recents, Library, and Assets.
       </p>
     </div>
   </section>

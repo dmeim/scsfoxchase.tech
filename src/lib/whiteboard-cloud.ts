@@ -1,7 +1,11 @@
 /**
- * Cloud board / asset library client (Phase 4b).
+ * Cloud board / asset library client (Phase 3.1).
  * Indexes live in R2 under library/{ownerKey}/boards.json|assets.json
- * (same WHITEBOARD_ASSETS bucket as media binaries).
+ * (same WHITEBOARD_ASSETS bucket as media binaries). Recents / Library /
+ * Assets are signed-in cloud only — no localStorage board index.
+ *
+ * Save / claim lifts the Phase 2 24h scratch TTL via
+ * GET/PATCH /api/whiteboard/boards/:uuid/meta (`savedToLibrary`).
  */
 import {
 	getAuthHeaders,
@@ -9,6 +13,16 @@ import {
 } from './whiteboard-identity'
 import type { WhiteboardAssetEntry } from './whiteboard-assets'
 import type { WhiteboardLibraryEntry } from '../scripts/whiteboard-library'
+
+export type BoardPublicMeta = {
+	savedToLibrary: boolean
+	cloudOwnerKey: string | null
+	createdAt: string | null
+	unsavedExpiresAt: string | null
+}
+
+const META_CLAIM_ATTEMPTS = 8
+const META_CLAIM_DELAY_MS = 250
 
 async function libraryFetch(
 	path: string,
@@ -39,6 +53,10 @@ async function readJson<T>(res: Response): Promise<T> {
 	return (await res.json()) as T
 }
 
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export async function fetchCloudBoards(): Promise<WhiteboardLibraryEntry[]> {
 	if (!isSignedIn()) return []
 	const res = await libraryFetch('/api/whiteboard/library/boards')
@@ -48,9 +66,15 @@ export async function fetchCloudBoards(): Promise<WhiteboardLibraryEntry[]> {
 
 export async function upsertCloudBoard(
 	entry: WhiteboardLibraryEntry,
+	options: { hostSecret?: string | null } = {},
 ): Promise<WhiteboardLibraryEntry> {
+	const headers = new Headers()
+	if (options.hostSecret) {
+		headers.set('X-Board-Host', options.hostSecret)
+	}
 	const res = await libraryFetch('/api/whiteboard/library/boards', {
 		method: 'PUT',
+		headers,
 		body: JSON.stringify(entry),
 	})
 	const body = await readJson<{ board: WhiteboardLibraryEntry }>(res)
@@ -91,4 +115,73 @@ export async function deleteCloudAsset(assetId: string): Promise<void> {
 			{ method: 'DELETE' },
 		),
 	)
+}
+
+export async function fetchBoardMeta(boardId: string): Promise<BoardPublicMeta> {
+	const res = await fetch(
+		`/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+	)
+	return readJson<BoardPublicMeta>(res)
+}
+
+export async function patchBoardMeta(
+	boardId: string,
+	patch: {
+		savedToLibrary?: boolean
+		cloudOwnerKey?: string | null
+		tempAssetPrefix?: string | null
+	},
+	hostSecret: string,
+): Promise<BoardPublicMeta> {
+	const res = await fetch(
+		`/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+		{
+			method: 'PATCH',
+			headers: {
+				'Content-Type': 'application/json',
+				'X-Board-Host': hostSecret,
+			},
+			body: JSON.stringify(patch),
+		},
+	)
+	return readJson<BoardPublicMeta>(res)
+}
+
+/**
+ * Lift the 24h scratch TTL and record Google Owner on the Durable Object.
+ * First connect stores the host-secret hash; PATCH 403s until then, so we retry.
+ */
+export async function markBoardSavedToLibrary(
+	boardId: string,
+	cloudOwnerKey: string,
+	hostSecret: string,
+): Promise<BoardPublicMeta> {
+	try {
+		const current = await fetchBoardMeta(boardId)
+		if (
+			current.savedToLibrary &&
+			current.cloudOwnerKey === cloudOwnerKey
+		) {
+			return current
+		}
+	} catch {
+		// DO may not exist yet; PATCH below creates the lifetime on first success.
+	}
+
+	let lastError: Error | null = null
+	for (let attempt = 0; attempt < META_CLAIM_ATTEMPTS; attempt++) {
+		try {
+			const meta = await patchBoardMeta(
+				boardId,
+				{ savedToLibrary: true, cloudOwnerKey },
+				hostSecret,
+			)
+			if (meta.savedToLibrary) return meta
+			lastError = new Error('Board meta did not record savedToLibrary')
+		} catch (err) {
+			lastError = err instanceof Error ? err : new Error(String(err))
+		}
+		await sleep(META_CLAIM_DELAY_MS)
+	}
+	throw lastError ?? new Error('Could not save board to the cloud library')
 }

@@ -1,12 +1,13 @@
 /**
- * Cloud Recents / Library / Assets indexes (Phase 4b).
+ * Cloud Recents / Library / Assets indexes (Phase 3.1).
  *
  * Storage: R2 JSON in the existing WHITEBOARD_ASSETS bucket
  *   library/{ownerKey}/boards.json
  *   library/{ownerKey}/assets.json
  *
- * Chosen over a new KV/D1 resource so indexes share the whiteboard asset family
- * without an extra Cloudflare create step. Keys are scoped by google:{accountId}.
+ * Signed-in Clerk sessions only. PUT on a board may include X-Board-Host so
+ * we can lift the Phase 2 24h scratch TTL on the Durable Object (best-effort;
+ * the client also PATCHes /meta after the creating browser connects).
  */
 import { requireClerkWhiteboardAuth } from './clerkAuth'
 
@@ -47,7 +48,7 @@ function corsHeaders(request: Request): HeadersInit {
 		'Access-Control-Allow-Origin': origin,
 		'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
 		'Access-Control-Allow-Headers':
-			'Content-Type, Content-Length, Authorization',
+			'Content-Type, Content-Length, Authorization, X-Board-Host',
 		Vary: 'Origin',
 	}
 }
@@ -132,6 +133,41 @@ function sortByAccessed<T extends { lastAccessedAt: string }>(
 }
 
 /**
+ * Best-effort Phase 2 meta claim. Fails closed if the creating browser has
+ * not connected yet (host hash missing → 403); the client retries PATCH.
+ */
+async function tryMarkSavedToLibrary(
+	env: Env,
+	request: Request,
+	boardId: string,
+	ownerKey: string,
+): Promise<void> {
+	const hostSecret = request.headers.get('X-Board-Host')?.trim()
+	if (!hostSecret) return
+	try {
+		const id = env.WHITEBOARDS.idFromName(boardId)
+		const stub = env.WHITEBOARDS.get(id)
+		const forwardUrl = new URL(request.url)
+		forwardUrl.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
+		forwardUrl.search = ''
+		forwardUrl.searchParams.set('boardId', boardId)
+		forwardUrl.searchParams.set('hostSecret', hostSecret)
+		await stub.fetch(
+			new Request(forwardUrl.toString(), {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					savedToLibrary: true,
+					cloudOwnerKey: ownerKey,
+				}),
+			}),
+		)
+	} catch {
+		// Index write already succeeded.
+	}
+}
+
+/**
  * Handle /api/whiteboard/library/*
  * Returns null if the path is not a library route.
  */
@@ -212,6 +248,7 @@ export async function handleLibraryRequest(
 			if (index >= 0) boards[index] = { ...boards[index], ...next }
 			else boards.unshift(next)
 			await writeJsonArray(bucket, boardsObjectKey(ownerKey), boards)
+			await tryMarkSavedToLibrary(env, request, next.id, ownerKey)
 			return json(200, { board: next }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
