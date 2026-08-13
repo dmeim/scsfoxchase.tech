@@ -74,6 +74,7 @@ export default {
 		}
 
 		// WebSocket upgrade → board Durable Object (idFromName(uuid))
+		// Phase 2: Excalidraw element diffs + persist, not tldraw useSync.
 		const connectMatch = url.pathname.match(
 			/^\/api\/whiteboard\/connect\/([^/]+)\/?$/i,
 		)
@@ -88,6 +89,42 @@ export default {
 			const id = env.WHITEBOARDS.idFromName(boardId)
 			const stub = env.WHITEBOARDS.get(id)
 			return stub.fetch(request)
+		}
+
+		// Phase 2 owner / 24h TTL hook for Phase 3.1 save-to-library.
+		const metaMatch = url.pathname.match(
+			/^\/api\/whiteboard\/boards\/([^/]+)\/meta\/?$/i,
+		)
+		if (metaMatch) {
+			const boardId = decodeURIComponent(metaMatch[1]!)
+			if (!isBoardUuid(boardId)) {
+				return new Response('Invalid board id', { status: 400 })
+			}
+			if (request.method === 'OPTIONS') {
+				return new Response(null, { status: 204 })
+			}
+			const id = env.WHITEBOARDS.idFromName(boardId)
+			const stub = env.WHITEBOARDS.get(id)
+			const forwardUrl = new URL(request.url)
+			forwardUrl.searchParams.set('boardId', boardId)
+			const headerSecret = request.headers.get('X-Board-Host')?.trim()
+			const auth = request.headers.get('Authorization')
+			const bearer =
+				auth?.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : ''
+			const hostSecret =
+				headerSecret || bearer || forwardUrl.searchParams.get('hostSecret')
+			if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
+			const body =
+				request.method === 'GET' || request.method === 'HEAD'
+					? undefined
+					: await request.text()
+			return stub.fetch(
+				new Request(forwardUrl.toString(), {
+					method: request.method,
+					headers: { 'Content-Type': 'application/json' },
+					body,
+				}),
+			)
 		}
 
 		// Prerendered pages + static assets via Astro Cloudflare handler

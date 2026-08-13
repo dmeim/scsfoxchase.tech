@@ -1,8 +1,39 @@
-import { useEffect, useState } from 'react'
-import { Excalidraw } from '@excalidraw/excalidraw'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  CaptureUpdateAction,
+  Excalidraw,
+  getSceneVersion,
+  reconcileElements,
+  restoreElements,
+  serializeAsJSON,
+} from '@excalidraw/excalidraw'
+import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import type {
+  AppState,
+  ExcalidrawImperativeAPI,
+} from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
-import { whenAuthReady } from '../lib/whiteboard-identity'
-import { touchBoardActive } from '../scripts/whiteboard-library'
+import { getActiveIdentity, whenAuthReady } from '../lib/whiteboard-identity'
+import {
+  isForceFollowPayload,
+  isParticipantsPayload,
+} from '../lib/whiteboard-participants'
+import {
+  buildWhiteboardConnectUrl,
+  CLIENT_PING_MS,
+  elementsWithIncreasedVersion,
+  getOrCreateSessionId,
+  mergeSceneElements,
+  rememberElementVersions,
+  SCENE_FLUSH_MS,
+  type SceneAppState,
+  type SceneElement,
+} from '../lib/whiteboard-sync'
+import {
+  getDeviceInstallId,
+  getHostSecret,
+  touchBoardActive,
+} from '../scripts/whiteboard-library'
 
 declare global {
   interface Window {
@@ -12,6 +43,9 @@ declare global {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
+const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 
 function readBoardIdFromLocation(): string | undefined {
   if (typeof window === 'undefined') return undefined
@@ -32,19 +66,55 @@ function ensureExcalidrawAssetPath() {
 
 ensureExcalidrawAssetPath()
 
+function publishParticipants(
+  participants: unknown,
+  yourSessionId: string,
+) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent(PARTICIPANTS_EVENT, {
+      detail: { participants, yourSessionId },
+    }),
+  )
+}
+
+function publishForceFollow(forceFollow: boolean, hostUserId: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent(FORCE_FOLLOW_EVENT, {
+      detail: { forceFollow, hostUserId },
+    }),
+  )
+}
+
 type WhiteboardCanvasProps = {
   boardId?: string
 }
 
 /**
- * Whiteboard canvas island. Phase 1: local empty Excalidraw scene.
- * Live Durable Object sync is Phase 2.
+ * Whiteboard canvas island. Phase 2: Durable Object WebSocket collab.
+ * Remote applies use CaptureUpdateAction.NEVER so they stay out of undo.
  */
 export default function WhiteboardCanvas({
   boardId: boardIdProp,
 }: WhiteboardCanvasProps) {
   const boardId = boardIdProp ?? readBoardIdFromLocation() ?? ''
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const applyingRemoteRef = useRef(false)
+  const lastSceneVersionRef = useRef(0)
+  const lastElementVersionsRef = useRef(new Map<string, number>())
+  const flushTimerRef = useRef<number | null>(null)
+  const pendingFlushRef = useRef<{
+    elements: readonly OrderedExcalidrawElement[]
+    appState: AppState
+  } | null>(null)
+  const fullSyncCounterRef = useRef(0)
+  const pendingRemoteRef = useRef<{
+    elements: SceneElement[]
+    appState: SceneAppState | null
+  } | null>(null)
 
   useEffect(() => {
     ensureExcalidrawAssetPath()
@@ -74,6 +144,272 @@ export default function WhiteboardCanvas({
     }
   }, [boardId])
 
+  const applyRemoteElements = useCallback(
+    (remoteElements: SceneElement[], remoteAppState: SceneAppState | null) => {
+      const api = apiRef.current
+      if (!api) {
+        const pending = pendingRemoteRef.current
+        if (!pending) {
+          pendingRemoteRef.current = {
+            elements: remoteElements,
+            appState: remoteAppState,
+          }
+        } else {
+          pendingRemoteRef.current = {
+            elements: mergeSceneElements(pending.elements, remoteElements).next,
+            appState: remoteAppState ?? pending.appState,
+          }
+        }
+        return
+      }
+      applyingRemoteRef.current = true
+      try {
+        const local = api.getSceneElementsIncludingDeleted()
+        const localAppState = api.getAppState()
+        const restored = restoreElements(remoteElements, local)
+        const reconciled = reconcileElements(
+          local,
+          restored as Parameters<typeof reconcileElements>[1],
+          localAppState,
+        )
+        const viewBackgroundColor =
+          typeof remoteAppState?.viewBackgroundColor === 'string'
+            ? remoteAppState.viewBackgroundColor
+            : undefined
+        api.updateScene({
+          elements: reconciled,
+          ...(viewBackgroundColor
+            ? { appState: { viewBackgroundColor } }
+            : {}),
+          captureUpdate: CaptureUpdateAction.NEVER,
+        })
+        lastSceneVersionRef.current = getSceneVersion(reconciled)
+        rememberElementVersions(
+          reconciled as SceneElement[],
+          lastElementVersionsRef.current,
+        )
+      } finally {
+        queueMicrotask(() => {
+          applyingRemoteRef.current = false
+        })
+      }
+    },
+    [],
+  )
+
+  const sendSceneUpdate = useCallback(
+    (
+      elements: readonly OrderedExcalidrawElement[],
+      appState: AppState,
+      forceFull: boolean,
+    ) => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (applyingRemoteRef.current) return
+
+      const version = getSceneVersion(elements)
+      if (!forceFull && version === lastSceneVersionRef.current) return
+
+      const asScene = elements as unknown as SceneElement[]
+      const dirty = elementsWithIncreasedVersion(
+        asScene,
+        lastElementVersionsRef.current,
+      )
+      if (!forceFull && dirty.length === 0) {
+        lastSceneVersionRef.current = version
+        return
+      }
+
+      fullSyncCounterRef.current += 1
+      const full = forceFull || fullSyncCounterRef.current % 15 === 0
+      const payload = full ? asScene : dirty
+      rememberElementVersions(payload, lastElementVersionsRef.current)
+      lastSceneVersionRef.current = version
+
+      let databaseJson: string | undefined
+      try {
+        databaseJson = serializeAsJSON(elements, appState, {}, 'database')
+      } catch {
+        databaseJson = undefined
+      }
+
+      ws.send(
+        JSON.stringify({
+          type: 'scene:update',
+          elements: payload,
+          full,
+          databaseJson,
+        }),
+      )
+    },
+    [],
+  )
+
+  const flushPending = useCallback(() => {
+    const pending = pendingFlushRef.current
+    pendingFlushRef.current = null
+    if (!pending) return
+    sendSceneUpdate(pending.elements, pending.appState, false)
+  }, [sendSceneUpdate])
+
+  const handleChange = useCallback(
+    (
+      elements: readonly OrderedExcalidrawElement[],
+      appState: AppState,
+    ) => {
+      if (applyingRemoteRef.current) return
+      const version = getSceneVersion(elements)
+      if (version === lastSceneVersionRef.current) return
+      pendingFlushRef.current = { elements, appState }
+      if (flushTimerRef.current != null) return
+      flushTimerRef.current = window.setTimeout(() => {
+        flushTimerRef.current = null
+        flushPending()
+      }, SCENE_FLUSH_MS)
+    },
+    [flushPending],
+  )
+
+  useEffect(() => {
+    if (!boardId) return
+    let cancelled = false
+    let pingTimer: number | null = null
+    let resyncTimer: number | null = null
+    let reconnectTimer: number | null = null
+    let attempt = 0
+
+    const clearTimers = () => {
+      if (pingTimer != null) {
+        window.clearInterval(pingTimer)
+        pingTimer = null
+      }
+      if (resyncTimer != null) {
+        window.clearInterval(resyncTimer)
+        resyncTimer = null
+      }
+    }
+
+    const connect = async () => {
+      if (cancelled) return
+      await whenAuthReady()
+      if (cancelled) return
+
+      const identity = getActiveIdentity()
+      const sessionId = getOrCreateSessionId(boardId)
+      const uri = buildWhiteboardConnectUrl(window.location.origin, {
+        boardId,
+        sessionId,
+        hostSecret: getHostSecret(boardId),
+        displayName: identity?.displayName?.slice(0, 48) ?? '',
+        userId: identity?.accountId || getDeviceInstallId(),
+      })
+
+      const ws = new WebSocket(uri)
+      wsRef.current = ws
+
+      ws.addEventListener('open', () => {
+        attempt = 0
+        clearTimers()
+        pingTimer = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send('{"type":"ping"}')
+          }
+        }, CLIENT_PING_MS)
+        resyncTimer = window.setInterval(() => {
+          const api = apiRef.current
+          if (!api || ws.readyState !== WebSocket.OPEN) return
+          sendSceneUpdate(
+            api.getSceneElementsIncludingDeleted(),
+            api.getAppState(),
+            true,
+          )
+        }, 30_000)
+        if (apiRef.current) {
+          ws.send(JSON.stringify({ type: 'scene:request' }))
+        }
+      })
+
+      ws.addEventListener('message', (event) => {
+        if (typeof event.data !== 'string') return
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(event.data)
+        } catch {
+          return
+        }
+        if (!parsed || typeof parsed !== 'object') return
+        const data = parsed as Record<string, unknown>
+
+        if (data.type === 'pong') return
+
+        if (data.type === 'scene:sync' || data.type === 'scene:update') {
+          const elements = Array.isArray(data.elements)
+            ? (data.elements as SceneElement[])
+            : []
+          const appState =
+            data.appState && typeof data.appState === 'object'
+              ? (data.appState as SceneAppState)
+              : null
+          applyRemoteElements(elements, appState)
+          return
+        }
+
+        if (isParticipantsPayload(data)) {
+          publishParticipants(data.participants, data.yourSessionId)
+          return
+        }
+
+        if (isForceFollowPayload(data)) {
+          publishForceFollow(data.forceFollow, data.hostUserId)
+        }
+      })
+
+      ws.addEventListener('close', () => {
+        clearTimers()
+        if (wsRef.current === ws) wsRef.current = null
+        if (cancelled) return
+        const delay = Math.min(10_000, 500 * 2 ** attempt)
+        attempt += 1
+        reconnectTimer = window.setTimeout(() => {
+          void connect()
+        }, delay)
+      })
+    }
+
+    void connect()
+
+    return () => {
+      cancelled = true
+      clearTimers()
+      if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+      }
+      const ws = wsRef.current
+      wsRef.current = null
+      try {
+        ws?.close()
+      } catch {
+        // ignore
+      }
+    }
+  }, [applyRemoteElements, boardId, sendSceneUpdate])
+
+  const handleApi = useCallback(
+    (api: ExcalidrawImperativeAPI) => {
+      apiRef.current = api
+      const pending = pendingRemoteRef.current
+      if (pending) {
+        pendingRemoteRef.current = null
+        applyRemoteElements(pending.elements, pending.appState)
+      } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'scene:request' }))
+      }
+    },
+    [applyRemoteElements],
+  )
+
   if (!boardId) {
     return (
       <div
@@ -92,7 +428,11 @@ export default function WhiteboardCanvas({
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
-      <Excalidraw theme={theme} />
+      <Excalidraw
+        excalidrawAPI={handleApi}
+        theme={theme}
+        onChange={handleChange}
+      />
     </div>
   )
 }
