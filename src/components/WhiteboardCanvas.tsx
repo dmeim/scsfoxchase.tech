@@ -10,6 +10,7 @@ import {
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type {
   AppState,
+  BinaryFiles,
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
@@ -34,6 +35,8 @@ import {
   getHostSecret,
   touchBoardActive,
 } from '../scripts/whiteboard-library'
+// PHASE 3.2
+import { useWhiteboardExcalidrawFiles } from '../lib/whiteboard-excalidraw-files'
 
 declare global {
   interface Window {
@@ -115,6 +118,8 @@ export default function WhiteboardCanvas({
     elements: SceneElement[]
     appState: SceneAppState | null
   } | null>(null)
+  // PHASE 3.2
+  const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
 
   useEffect(() => {
     ensureExcalidrawAssetPath()
@@ -256,7 +261,10 @@ export default function WhiteboardCanvas({
     (
       elements: readonly OrderedExcalidrawElement[],
       appState: AppState,
+      files: BinaryFiles,
     ) => {
+      // PHASE 3.2 — upload/hydrate R2 files; do not gate on remote-apply.
+      media.syncFiles(elements, files)
       if (applyingRemoteRef.current) return
       const version = getSceneVersion(elements)
       if (version === lastSceneVersionRef.current) return
@@ -267,7 +275,7 @@ export default function WhiteboardCanvas({
         flushPending()
       }, SCENE_FLUSH_MS)
     },
-    [flushPending],
+    [flushPending, media.syncFiles],
   )
 
   useEffect(() => {
@@ -432,6 +440,10 @@ export default function WhiteboardCanvas({
         excalidrawAPI={handleApi}
         theme={theme}
         onChange={handleChange}
+        generateIdForFile={media.generateIdForFile}
+        validateEmbeddable={media.validateEmbeddable}
+        renderEmbeddable={media.renderEmbeddable}
+        onPaste={media.onPaste}
       />
     </div>
   )
