@@ -41,63 +41,24 @@ export default defineConfig({
   integrations: [react()],
 
   vite: {
+    define: {
+      // Excalidraw checks process.env.IS_PREACT; Vite strips process by default.
+      'process.env.IS_PREACT': JSON.stringify('false'),
+    },
     resolve: {
-      // tldraw + @tldraw/sync share singletons; keep one copy of each package.
-      dedupe: [
-        'react',
-        'react-dom',
-        'tldraw',
-        '@tldraw/driver',
-        '@tldraw/editor',
-        '@tldraw/state',
-        '@tldraw/state-react',
-        '@tldraw/store',
-        '@tldraw/sync',
-        '@tldraw/sync-core',
-        '@tldraw/tlschema',
-        '@tldraw/utils',
-        '@tldraw/validate',
-      ],
+      dedupe: ['react', 'react-dom'],
     },
     optimizeDeps: {
-      // Hold the first dep graph until the crawl finishes so Vite does not
-      // rediscover deps mid-session, full-reload, and re-register tldraw on a
-      // sticky globalThis (false "multiple instances" warning).
       holdUntilCrawlEnd: true,
-      // Prebundle on cold start — include the Cloudflare passthrough image
-      // service that was still being discovered after first paint.
       include: [
-        'tldraw',
-        '@tldraw/driver',
-        '@tldraw/sync',
-        '@tldraw/sync-core',
-        '@tldraw/editor',
-        '@tldraw/state',
-        '@tldraw/state-react',
-        '@tldraw/store',
-        '@tldraw/tlschema',
-        '@tldraw/utils',
-        '@tldraw/validate',
+        '@excalidraw/excalidraw',
         'lucide',
         'astro/assets/services/noop',
       ],
     },
     ssr: {
       optimizeDeps: {
-        include: [
-          'tldraw',
-          '@tldraw/driver',
-          '@tldraw/sync',
-          '@tldraw/sync-core',
-          '@tldraw/editor',
-          '@tldraw/state',
-          '@tldraw/state-react',
-          '@tldraw/store',
-          '@tldraw/tlschema',
-          '@tldraw/utils',
-          '@tldraw/validate',
-          'astro/assets/services/noop',
-        ],
+        include: ['astro/assets/services/noop'],
       },
     },
   },

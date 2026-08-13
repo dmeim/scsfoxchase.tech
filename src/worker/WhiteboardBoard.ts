@@ -1,22 +1,10 @@
 /**
  * Durable Object for one whiteboard room (product family: scsfoxchase-tech_whiteboards).
- * Persists tldraw document state in DO SQLite via @tldraw/sync-core.
- * Phase 5: also owns active share code + DO alarm expiry (KV index for join).
- * Phase 6: per-session canEdit + live participant list for the manage panel.
- * Force-follow: host can lock all guests to the host camera.
+ *
+ * PHASE 1 STUB: tldraw TLSocketRoom is gone. This accepts WebSockets and keeps
+ * share-code / host / People HTTP working so the Worker still boots. Live
+ * Excalidraw scene sync is Phase 2 — do not treat this as the collab protocol.
  */
-import {
-	DurableObjectSqliteSyncWrapper,
-	SQLiteSyncStorage,
-	TLSocketRoom,
-	type SessionStateSnapshot,
-} from '@tldraw/sync-core'
-import {
-	createTLSchema,
-	defaultBindingSchemas,
-	defaultShapeSchemas,
-	type TLRecord,
-} from '@tldraw/tlschema'
 import { DurableObject } from 'cloudflare:workers'
 import {
 	isExpiredIso,
@@ -25,11 +13,6 @@ import {
 	SHARE_CODE_TTL_MS,
 	SHARE_CODE_TTL_SECONDS,
 } from './shareCode'
-
-const schema = createTLSchema({
-	shapes: { ...defaultShapeSchemas },
-	bindings: { ...defaultBindingSchemas },
-})
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
 const FORCE_FOLLOW_KEY = 'meta:forceFollow'
@@ -50,7 +33,6 @@ type SessionMeta = {
 
 interface SocketAttachment {
 	sessionId: string
-	snapshot: SessionStateSnapshot | null
 	isHost: boolean
 	canEdit: boolean
 	meta: SessionMeta
@@ -67,13 +49,6 @@ type ParticipantPublic = {
 	displayName: string
 	canEdit: boolean
 	isHost: boolean
-}
-
-/** Internal access to mutate isReadonly on a live session (no public setter). */
-type RoomWithSessions = {
-	room: {
-		sessions: Map<string, { isReadonly: boolean }>
-	}
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -114,7 +89,6 @@ function normalizeAttachment(
 	}
 	return {
 		sessionId: raw?.sessionId ?? sessionId,
-		snapshot: raw?.snapshot ?? null,
 		isHost,
 		canEdit: raw?.canEdit !== false,
 		meta: {
@@ -125,14 +99,20 @@ function normalizeAttachment(
 	}
 }
 
+function sendJson(ws: WebSocket, payload: unknown): void {
+	try {
+		ws.send(JSON.stringify(payload))
+	} catch {
+		// Socket may already be closing.
+	}
+}
+
 export class WhiteboardBoard extends DurableObject<Env> {
-	private room: TLSocketRoom<TLRecord, SessionMeta> | null = null
-	/** Map sessionId → ws so onSessionSnapshot can serialize to the right socket. */
+	/** Map sessionId → ws so HTTP handlers can reach a live socket. */
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
-	/** Sessions that have completed sync handshake (Connected). */
-	private readonly announcedSessions = new Set<string>()
 	/** Cached force-follow flag (null until first storage read). */
 	private forceFollowCache: boolean | null = null
+	private socketsHydrated = false
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -142,59 +122,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 	}
 
-	private getOrCreateRoom(): TLSocketRoom<TLRecord, SessionMeta> {
-		if (!this.room) {
-			const sql = new DurableObjectSqliteSyncWrapper(this.ctx.storage, {
-				tablePrefix: 'tldraw_',
-			})
-			const storage = new SQLiteSyncStorage<TLRecord>({ sql })
-
-			this.room = new TLSocketRoom<TLRecord, SessionMeta>({
-				schema,
-				storage,
-				// Cloudflare keeps sockets alive across hibernation; disable room idle prune.
-				clientTimeout: Infinity,
-				onSessionSnapshot: (sessionId, snapshot) => {
-					const ws = this.sessionIdToWs.get(sessionId)
-					if (!ws) return
-					const prev = (ws.deserializeAttachment() as SocketAttachment | null) ?? {
-						sessionId,
-						snapshot: null,
-						isHost: false,
-						canEdit: true,
-						meta: { displayName: '', userId: '', isHost: false },
-					}
-					ws.serializeAttachment({ ...prev, snapshot })
-				},
-				onSessionRemoved: (_room, { sessionId }) => {
-					this.sessionIdToWs.delete(sessionId)
-					this.announcedSessions.delete(sessionId)
-					this.broadcastParticipants()
-				},
-			})
-
-			// Resume any sessions that survived hibernation.
-			for (const ws of this.ctx.getWebSockets()) {
-				const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
-				if (!raw?.sessionId) continue
-				const attachment = normalizeAttachment(raw, raw.sessionId)
-				ws.serializeAttachment(attachment)
-				if (attachment.snapshot) {
-					this.room.handleSocketResume({
-						sessionId: attachment.sessionId,
-						socket: ws,
-						snapshot: {
-							...attachment.snapshot,
-							isReadonly: !attachment.canEdit,
-						},
-						meta: attachment.meta,
-					})
-					this.sessionIdToWs.set(attachment.sessionId, ws)
-					this.announcedSessions.add(attachment.sessionId)
-				}
-			}
+	/** Rebuild the session map after hibernation. */
+	private hydrateSockets(): void {
+		if (this.socketsHydrated) return
+		this.socketsHydrated = true
+		for (const ws of this.ctx.getWebSockets()) {
+			const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
+			if (!raw?.sessionId) continue
+			const attachment = normalizeAttachment(raw, raw.sessionId)
+			ws.serializeAttachment(attachment)
+			this.sessionIdToWs.set(attachment.sessionId, ws)
 		}
-		return this.room
 	}
 
 	/**
@@ -220,6 +158,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	async fetch(request: Request): Promise<Response> {
+		this.hydrateSockets()
 		const url = new URL(request.url)
 		const connectMatch = url.pathname.match(
 			/^\/api\/whiteboard\/connect\/([^/]+)\/?$/i,
@@ -265,7 +204,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		const hostSecret = url.searchParams.get('hostSecret')
 		const isHost = await this.resolveHost(hostSecret)
-		// Default canEdit true for new guests; host always can edit.
 		const canEdit = true
 		const meta: SessionMeta = {
 			displayName: sanitizeDisplayName(url.searchParams.get('displayName')),
@@ -278,7 +216,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		const attachment: SocketAttachment = {
 			sessionId,
-			snapshot: null,
 			isHost,
 			canEdit,
 			meta,
@@ -286,16 +223,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
 
-		this.getOrCreateRoom().handleSocketConnect({
-			sessionId,
-			socket: serverWebSocket,
-			isReadonly: !canEdit,
-			meta,
-		})
-
-		// Push the live People list to everyone (including the newcomer).
 		this.broadcastParticipants()
-		// Force-follow state (Connected sessions only; also re-sent on announce).
 		void this.broadcastForceFollow()
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
@@ -318,26 +246,21 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const canEditParam = url.searchParams.get('canEdit')
 		const canEdit = canEditParam === '1' || canEditParam === 'true'
 
+		this.hydrateSockets()
 		const ws = this.sessionIdToWs.get(sessionId)
 		if (!ws) {
-			// Fall back to room sessions in case map is stale after hibernation.
-			const room = this.getOrCreateRoom()
-			const found = room.getSessions().some((s) => s.sessionId === sessionId)
-			if (!found) {
-				return json(404, { error: 'Session not connected' })
-			}
+			return json(404, { error: 'Session not connected' })
 		}
 
-		const attachment = ws
-			? ((ws.deserializeAttachment() as SocketAttachment | null) ?? null)
-			: null
+		const attachment = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			sessionId,
+		)
 
-		if (attachment?.isHost || this.isSessionHost(sessionId)) {
-			// Host cannot be demoted.
+		if (attachment.isHost || attachment.meta.isHost) {
 			if (!canEdit) {
 				return json(400, { error: 'Host edit permission cannot be turned off' })
 			}
-			// Host already canEdit; still return current row.
 			const row = this.participantFromSession(sessionId)
 			return json(200, row ?? { sessionId, canEdit: true, isHost: true, userId: '', displayName: '' })
 		}
@@ -389,7 +312,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
-	/** Prefer a connected host session's tldraw userId for startFollowingUser. */
 	private resolveHostUserId(): string {
 		for (const row of this.listParticipants()) {
 			if (row.isHost && row.userId) return row.userId
@@ -398,7 +320,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private async broadcastForceFollow(): Promise<void> {
-		const room = this.getOrCreateRoom()
 		const forceFollow = await this.getForceFollow()
 		const hostUserId = this.resolveHostUserId()
 		const payload = {
@@ -406,44 +327,24 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			forceFollow,
 			hostUserId,
 		}
-		for (const sessionId of this.sessionIdToWs.keys()) {
-			const session = room
-				.getSessions()
-				.find((s) => s.sessionId === sessionId)
-			if (!session?.isConnected) continue
-			try {
-				room.sendCustomMessage(sessionId, payload)
-			} catch {
-				// Session may have raced out mid-broadcast.
-			}
+		for (const ws of this.sessionIdToWs.values()) {
+			sendJson(ws, payload)
 		}
 	}
 
-	private isSessionHost(sessionId: string): boolean {
-		const room = this.getOrCreateRoom()
-		const session = room.getSessions().find((s) => s.sessionId === sessionId)
-		return Boolean(session?.meta?.isHost)
-	}
-
 	private participantFromSession(sessionId: string): ParticipantPublic | null {
-		const room = this.getOrCreateRoom()
-		const session = room.getSessions().find((s) => s.sessionId === sessionId)
-		if (!session) return null
-
 		const ws = this.sessionIdToWs.get(sessionId)
-		const attachment = ws
-			? ((ws.deserializeAttachment() as SocketAttachment | null) ?? null)
-			: null
-
-		const canEdit = attachment ? attachment.canEdit : !session.isReadonly
-		const meta = attachment?.meta ?? session.meta
-
+		if (!ws) return null
+		const attachment = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			sessionId,
+		)
 		return {
 			sessionId,
-			userId: meta?.userId ?? '',
-			displayName: meta?.displayName ?? '',
-			canEdit,
-			isHost: Boolean(meta?.isHost || attachment?.isHost),
+			userId: attachment.meta.userId,
+			displayName: attachment.meta.displayName,
+			canEdit: attachment.canEdit,
+			isHost: attachment.isHost || attachment.meta.isHost,
 		}
 	}
 
@@ -466,66 +367,32 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private broadcastParticipants(): void {
-		const room = this.getOrCreateRoom()
 		const participants = this.listParticipants()
-		for (const sessionId of this.sessionIdToWs.keys()) {
-			const session = room
-				.getSessions()
-				.find((s) => s.sessionId === sessionId)
-			// Custom messages only deliver once the sync handshake reaches Connected.
-			if (!session?.isConnected) continue
-			try {
-				room.sendCustomMessage(sessionId, {
-					type: 'wb:participants',
-					yourSessionId: sessionId,
-					participants,
-				})
-			} catch {
-				// Session may have raced out mid-broadcast.
-			}
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			sendJson(ws, {
+				type: 'wb:participants',
+				yourSessionId: sessionId,
+				participants,
+			})
 		}
 	}
 
-	/**
-	 * Update server-side isReadonly (blocks document diffs) and notify the client.
-	 */
 	private applyCanEdit(sessionId: string, canEdit: boolean): void {
-		const room = this.getOrCreateRoom()
-
-		const internal = (room as unknown as RoomWithSessions).room
-		const live = internal.sessions.get(sessionId)
-		if (live) {
-			live.isReadonly = !canEdit
-		}
-
 		const ws = this.sessionIdToWs.get(sessionId)
 		if (ws) {
-			const prev = (ws.deserializeAttachment() as SocketAttachment | null) ?? {
+			const prev = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
-				snapshot: null,
-				isHost: false,
-				canEdit: true,
-				meta: { displayName: '', userId: '', isHost: false },
-			}
-			const nextSnapshot = prev.snapshot
-				? { ...prev.snapshot, isReadonly: !canEdit }
-				: null
+			)
 			ws.serializeAttachment({
 				...prev,
 				canEdit,
-				snapshot: nextSnapshot,
 			})
-		}
-
-		try {
-			room.sendCustomMessage(sessionId, {
+			sendJson(ws, {
 				type: 'wb:canEdit',
 				canEdit,
 			})
-		} catch {
-			// ignore
 		}
-
 		this.broadcastParticipants()
 	}
 
@@ -672,7 +539,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			await this.revokeActiveCode()
 			return
 		}
-		// Alarm fired early — reschedule (shouldn't happen often).
 		await this.ctx.storage.setAlarm(Date.parse(expiresAt))
 	}
 
@@ -681,63 +547,27 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return attachment?.sessionId ?? null
 	}
 
-	override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+	override async webSocketMessage(ws: WebSocket, _message: string | ArrayBuffer) {
+		this.hydrateSockets()
 		const sessionId = this.getSessionId(ws)
 		if (!sessionId) return
-
 		this.sessionIdToWs.set(sessionId, ws)
-		const room = this.getOrCreateRoom()
-		room.handleSocketMessage(sessionId, message)
-
-		// First Connected transition → refresh People lists (custom msgs need Connected).
-		if (!this.announcedSessions.has(sessionId)) {
-			const session = room
-				.getSessions()
-				.find((s) => s.sessionId === sessionId)
-			if (session?.isConnected) {
-				this.announcedSessions.add(sessionId)
-				this.broadcastParticipants()
-				void this.broadcastForceFollow()
-			}
-		}
+		// Phase 1: ignore client payloads. Phase 2 owns Excalidraw scene sync.
 	}
 
 	override async webSocketClose(ws: WebSocket) {
-		this.handleWebSocketEnd(ws, 'handleSocketClose')
+		this.handleWebSocketEnd(ws)
 	}
 
 	override async webSocketError(ws: WebSocket) {
-		this.handleWebSocketEnd(ws, 'handleSocketError')
+		this.handleWebSocketEnd(ws)
 	}
 
-	private handleWebSocketEnd(
-		ws: WebSocket,
-		method: 'handleSocketClose' | 'handleSocketError',
-	) {
+	private handleWebSocketEnd(ws: WebSocket) {
+		this.hydrateSockets()
 		const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
 		if (!raw?.sessionId) return
-		const attachment = normalizeAttachment(raw, raw.sessionId)
-
-		this.sessionIdToWs.delete(attachment.sessionId)
-		this.announcedSessions.delete(attachment.sessionId)
-
-		const room = this.getOrCreateRoom()
-
-		// If the DO was hibernating, resume briefly so presence can be cleared.
-		if (attachment.snapshot && !room.getSessionSnapshot(attachment.sessionId)) {
-			room.handleSocketResume({
-				sessionId: attachment.sessionId,
-				socket: ws,
-				snapshot: {
-					...attachment.snapshot,
-					isReadonly: !attachment.canEdit,
-				},
-				meta: attachment.meta,
-			})
-		}
-
-		room[method](attachment.sessionId)
-		// onSessionRemoved also broadcasts; call again in case removal is deferred.
+		this.sessionIdToWs.delete(raw.sessionId)
 		this.broadcastParticipants()
 	}
 }

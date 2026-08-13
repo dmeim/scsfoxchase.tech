@@ -8,7 +8,6 @@ Runtime and build configuration for Worker `scsfoxchase-tech`. Bindings (DO / R2
 
 | Variable | Public / secret | Required | Where set | Purpose |
 |----------|-----------------|----------|-----------|---------|
-| `PUBLIC_TLDRAW_LICENSE_KEY` | Public (build-time) | Yes for licensed tldraw UI | Workers Builds build vars; local `.env` | Astro inlines into the client; passed to tldraw as `licenseKey` |
 | `PUBLIC_CLERK_PUBLISHABLE_KEY` | Public | Yes for Clerk | Workers Builds build + runtime vars; local `.env` and `.dev.vars` | Client `ClerkProvider` / sign-in UI; Worker `authenticateRequest` |
 | `PUBLIC_CLERK_ALLOWED_DOMAINS` | Public | No | Workers Builds vars; local `.env` / `.dev.vars` | Optional allowlist: comma-separated email domains and/or full emails |
 | `CLERK_SECRET_KEY` | **Secret** | Yes for cloud library / `google:*` writes | `npx wrangler secret put`; local `.dev.vars` only | Worker verifies Clerk sessions via `@clerk/backend` |
@@ -36,7 +35,7 @@ No extra env vars for sync, assets, or share codes. Those use bindings:
 
 | Kind | How |
 |------|-----|
-| Build vars | Cloudflare dashboard → Worker `scsfoxchase-tech` → Workers Builds / Variables: `PUBLIC_TLDRAW_LICENSE_KEY`, `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`, `NODE_VERSION=22` |
+| Build vars | Cloudflare dashboard → Worker `scsfoxchase-tech` → Workers Builds / Variables: `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`, `NODE_VERSION=22` |
 | Runtime vars | Same dashboard variables so the Worker process can read Clerk public config |
 | Secrets | `npx wrangler secret put CLERK_SECRET_KEY` (never in git or plaintext dashboard dumps committed to the repo) |
 
@@ -65,8 +64,6 @@ PUBLIC_CLERK_PUBLISHABLE_KEY=
 PUBLIC_CLERK_ALLOWED_DOMAINS=stceciliafc.com
 ```
 
-Put the tldraw license in `.env` as `PUBLIC_TLDRAW_LICENSE_KEY` for local board UI.
-
 ## Clerk domains
 
 Custom Frontend API and accounts (encoded in live publishable keys; CSP in `public/_headers`):
@@ -94,5 +91,5 @@ Authorized parties checked by the Worker include `https://scsfoxchase.tech`, `ht
 | `.env.example` | Documented public + secret names for Astro / build |
 | `.dev.vars.example` | Documented Worker local secrets/vars |
 | `wrangler.jsonc` | Bindings only; secrets are not stored here |
-| `public/_headers` | CSP allowlists for Clerk, Google, Turnstile, tldraw CDN |
+| `public/_headers` | CSP allowlists for Clerk, Google, Turnstile, same-origin whiteboard |
 | `worker-configuration.d.ts` | TypeScript `Env` shape for the Worker |

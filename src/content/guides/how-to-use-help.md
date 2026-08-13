@@ -26,15 +26,11 @@ Use a form when you need staff to take action. Use a guide when you need instruc
 
 Each guide is a Markdown file with frontmatter:
 
-1. `title` and `description` — used for catalogs, the browser tab, and (when a diagram is present) a visually hidden page heading
+1. `title` and `description` — used for catalogs, the browser tab, and the guide title card
 2. `featured` — when `true`, the guide appears on the Help hub
 3. `sources` — list of external citations (optional)
 
 The article body uses normal headings and paragraphs. When a sentence draws on an outside source, mark it with a superscript that matches a `sources` entry.
-
-## Optional title-card diagram
-
-Guides currently mount a normal tldraw canvas in the title card (stock `<Tldraw />`). Loading a sibling `.tldraw` file will come back once that baseline is solid.
 
 ## Citing external sources
 
@@ -52,9 +48,8 @@ The **Sources** section at the bottom of the page is generated from frontmatter 
 ## Adding a new guide later
 
 1. Create `src/content/guides/<slug>.md` using this file as the template
-2. Optionally add `src/content/guides/<slug>.tldraw` (edit in tldraw Desktop)
-3. Set `featured: true` only if it should appear on `/help`
-4. Link footnotes in the body with `<sup class="guide-fn"><a href="#source-N">N</a></sup>`
-5. Fill `sources` in frontmatter so the rendered Sources list stays accurate
+2. Set `featured: true` only if it should appear on `/help`
+3. Link footnotes in the body with `<sup class="guide-fn"><a href="#source-N">N</a></sup>`
+4. Fill `sources` in frontmatter so the rendered Sources list stays accurate
 
 The guide will show up automatically on `/guides` and at `/guide/<slug>`.

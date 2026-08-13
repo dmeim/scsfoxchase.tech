@@ -65,7 +65,6 @@ Use Deploy command `npx wrangler deploy` for this asset-heavy static site. Prefe
 
 | Kind | Names |
 |------|--------|
-| Build env (required) | `PUBLIC_TLDRAW_LICENSE_KEY` — inlined into the client at build time |
 | Build + runtime | `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS` |
 | Worker secret | `CLERK_SECRET_KEY` via `npx wrangler secret put CLERK_SECRET_KEY` (never commit) |
 
@@ -110,7 +109,7 @@ Whiteboard sync, assets, share codes, and cloud libraries are documented under [
 
 Asset config in Wrangler uses `not_found_handling: "404-page"` so missing assets return 404 instead of SPA HTML (avoids `nosniff` breakage on CSS).
 
-CSP allows Clerk custom domains (`clerk.scsfoxchase.tech`, `accounts.scsfoxchase.tech`), Google OAuth, Turnstile, tldraw CDN, and same-origin whiteboard WebSocket/asset routes. See [environment.md](./environment.md) for Clerk domain notes.
+CSP allows Clerk custom domains (`clerk.scsfoxchase.tech`, `accounts.scsfoxchase.tech`), Google OAuth, Turnstile, and same-origin whiteboard WebSocket/asset routes. See [environment.md](./environment.md) for Clerk domain notes.
 
 ## Verification checklist
 

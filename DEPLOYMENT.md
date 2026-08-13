@@ -58,7 +58,6 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 | Deploy command | `npx wrangler deploy` |
 | Worker name | `scsfoxchase-tech` |
 | Node version | **22+** (set `NODE_VERSION=22` in Workers Builds vars, or rely on `.nvmrc` / `package.json` `engines`) |
-| Build env var | `PUBLIC_TLDRAW_LICENSE_KEY` — required so Astro inlines the tldraw license at build time |
 | Build / runtime env | `PUBLIC_CLERK_PUBLISHABLE_KEY` — Clerk publishable key (client + Worker `authenticateRequest`) |
 | Build / runtime env | `PUBLIC_CLERK_ALLOWED_DOMAINS` — optional allowlist, e.g. `stceciliafc.com` or `stceciliafc.com,you@gmail.com` |
 | Worker secret | `CLERK_SECRET_KEY` — `npx wrangler secret put CLERK_SECRET_KEY` (never commit) |
