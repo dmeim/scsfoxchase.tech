@@ -1,11 +1,32 @@
 /**
  * Durable Object for one whiteboard room (product family: scsfoxchase-tech_whiteboards).
  *
- * PHASE 1 STUB: tldraw TLSocketRoom is gone. This accepts WebSockets and keeps
- * share-code / host / People HTTP working so the Worker still boots. Live
- * Excalidraw scene sync is Phase 2 — do not treat this as the collab protocol.
+ * Phase 2: native WebSocket Excalidraw scene sync + persist. Share-code
+ * mint/revoke/alarm and People HTTP stay on this same object.
+ *
+ * One alarm slot: the sooner of share-code expiry (12h) and unsaved TTL (24h).
+ * Refresh does not wipe the scene. “Lose work” = never saved to a cloud library.
  */
 import { DurableObject } from 'cloudflare:workers'
+import {
+	FULL_RESYNC_EVERY,
+	MAX_SCENE_JSON_BYTES,
+	META_BOARD_ID_KEY,
+	META_CLOUD_OWNER_KEY,
+	META_CREATED_AT_KEY,
+	META_SAVED_TO_LIBRARY_KEY,
+	META_TEMP_ASSET_PREFIX_KEY,
+	META_UNSAVED_EXPIRES_AT_KEY,
+	UNSAVED_BOARD_TTL_MS,
+	mergeSceneElements,
+	parseDatabaseScene,
+	parseSceneElements,
+	stringifyDatabaseScene,
+	toDatabaseScene,
+	type OwnerHook,
+	type SceneAppState,
+	type SceneElement,
+} from '../lib/whiteboard-sync'
 import {
 	isExpiredIso,
 	kvCodeKey,
@@ -51,6 +72,11 @@ type ParticipantPublic = {
 	isHost: boolean
 }
 
+type LiveScene = {
+	elements: SceneElement[]
+	appState: SceneAppState
+}
+
 async function sha256Hex(value: string): Promise<string> {
 	const data = new TextEncoder().encode(value)
 	const digest = await crypto.subtle.digest('SHA-256', data)
@@ -74,6 +100,21 @@ function sanitizeDisplayName(raw: string | null): string {
 function sanitizeUserId(raw: string | null): string {
 	if (!raw) return ''
 	return raw.trim().slice(0, 128)
+}
+
+function sanitizeOwnerKey(raw: string | null | undefined): string | null {
+	if (!raw) return null
+	const value = raw.trim().slice(0, 160)
+	if (!/^(local|google):[A-Za-z0-9_.:@-]{1,128}$/.test(value)) return null
+	return value
+}
+
+function sanitizeAssetPrefix(raw: string | null | undefined): string | null {
+	if (!raw) return null
+	const value = raw.trim().slice(0, 200)
+	if (!value.startsWith('assets/')) return null
+	if (value.includes('..')) return null
+	return value
 }
 
 /** Normalize attachments from older deploys that lacked canEdit/meta. */
@@ -113,6 +154,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	/** Cached force-follow flag (null until first storage read). */
 	private forceFollowCache: boolean | null = null
 	private socketsHydrated = false
+	private sceneCache: LiveScene | null = null
+	private sceneLoaded = false
+	private updatesSinceFullSync = 0
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -120,6 +164,16 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.ctx.setWebSocketAutoResponse(
 			new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'),
 		)
+		this.ctx.blockConcurrencyWhile(async () => {
+			this.ctx.storage.sql.exec(`
+				CREATE TABLE IF NOT EXISTS excalidraw_scene (
+					id INTEGER PRIMARY KEY CHECK (id = 1),
+					database_json TEXT NOT NULL,
+					live_json TEXT NOT NULL,
+					updated_at INTEGER NOT NULL
+				)
+			`)
+		})
 	}
 
 	/** Rebuild the session map after hibernation. */
@@ -137,7 +191,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	/**
 	 * Store host secret hash on first connect that supplies a secret;
-	 * verify on later connects.
+	 * verify on later connects. Creating browser is ephemeral Owner.
 	 */
 	private async resolveHost(hostSecret: string | null): Promise<boolean> {
 		if (!hostSecret) return false
@@ -164,7 +218,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			/^\/api\/whiteboard\/connect\/([^/]+)\/?$/i,
 		)
 		if (connectMatch && request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
-			return this.handleConnect(request, url)
+			return this.handleConnect(
+				request,
+				url,
+				decodeURIComponent(connectMatch[1]!),
+			)
 		}
 
 		const codeMatch = url.pathname.match(
@@ -174,6 +232,15 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			const boardId =
 				url.searchParams.get('boardId') || decodeURIComponent(codeMatch[1]!)
 			return this.handleCodeHttp(request, url, boardId)
+		}
+
+		const metaMatch = url.pathname.match(
+			/^\/api\/whiteboard\/boards\/([^/]+)\/meta\/?$/i,
+		)
+		if (metaMatch) {
+			const boardId =
+				url.searchParams.get('boardId') || decodeURIComponent(metaMatch[1]!)
+			return this.handleMetaHttp(request, url, boardId)
 		}
 
 		const participantMatch = url.pathname.match(
@@ -196,7 +263,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return new Response('Not found', { status: 404 })
 	}
 
-	private async handleConnect(request: Request, url: URL): Promise<Response> {
+	private async handleConnect(
+		request: Request,
+		url: URL,
+		boardId: string,
+	): Promise<Response> {
 		const sessionId = url.searchParams.get('sessionId')
 		if (!sessionId) {
 			return new Response('Missing sessionId', { status: 400 })
@@ -204,6 +275,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		const hostSecret = url.searchParams.get('hostSecret')
 		const isHost = await this.resolveHost(hostSecret)
+		// Phase 2: every connected session may edit. Phase 3.3 enforces roles.
 		const canEdit = true
 		const meta: SessionMeta = {
 			displayName: sanitizeDisplayName(url.searchParams.get('displayName')),
@@ -214,6 +286,16 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const { 0: clientWebSocket, 1: serverWebSocket } = new WebSocketPair()
 		this.ctx.acceptWebSocket(serverWebSocket)
 
+		const previous = this.sessionIdToWs.get(sessionId)
+		if (previous && previous !== serverWebSocket) {
+			try {
+				previous.close(4000, 'replaced')
+			} catch {
+				// already closed
+			}
+			this.sessionIdToWs.delete(sessionId)
+		}
+
 		const attachment: SocketAttachment = {
 			sessionId,
 			isHost,
@@ -223,10 +305,284 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
 
+		await this.ensureBoardLifetime(boardId)
+		const owner = await this.readOwnerHook(isHost)
+		const savedToLibrary = await this.isSavedToLibrary()
+		sendJson(serverWebSocket, {
+			type: 'wb:hello',
+			sessionId,
+			isHost,
+			canEdit,
+			savedToLibrary,
+			owner,
+		})
+		await this.sendFullScene(serverWebSocket)
+
 		this.broadcastParticipants()
 		void this.broadcastForceFollow()
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
+	}
+
+	private async handleMetaHttp(
+		request: Request,
+		url: URL,
+		boardId: string,
+	): Promise<Response> {
+		if (request.method === 'GET') {
+			await this.ensureBoardLifetime(boardId)
+			return json(200, await this.readPublicMeta())
+		}
+
+		if (request.method !== 'PATCH') {
+			return json(405, { error: 'Method not allowed' })
+		}
+
+		const hostSecret = url.searchParams.get('hostSecret')
+		if (!(await this.assertHost(hostSecret))) {
+			return json(403, { error: 'Host secret required' })
+		}
+
+		let body: {
+			savedToLibrary?: unknown
+			cloudOwnerKey?: unknown
+			tempAssetPrefix?: unknown
+		}
+		try {
+			body = (await request.json()) as typeof body
+		} catch {
+			return json(400, { error: 'Invalid JSON body' })
+		}
+
+		if (typeof body.savedToLibrary === 'boolean') {
+			await this.ctx.storage.put(META_SAVED_TO_LIBRARY_KEY, body.savedToLibrary)
+			if (body.savedToLibrary) {
+				await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+			} else {
+				const createdAt =
+					(await this.ctx.storage.get<string>(META_CREATED_AT_KEY)) ??
+					new Date().toISOString()
+				const expiresAt = new Date(
+					Date.parse(createdAt) + UNSAVED_BOARD_TTL_MS,
+				).toISOString()
+				await this.ctx.storage.put(META_UNSAVED_EXPIRES_AT_KEY, expiresAt)
+			}
+		}
+
+		if ('cloudOwnerKey' in body) {
+			if (body.cloudOwnerKey === null) {
+				await this.ctx.storage.delete(META_CLOUD_OWNER_KEY)
+			} else if (typeof body.cloudOwnerKey === 'string') {
+				const key = sanitizeOwnerKey(body.cloudOwnerKey)
+				if (!key) return json(400, { error: 'Invalid cloudOwnerKey' })
+				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, key)
+			}
+		}
+
+		if ('tempAssetPrefix' in body) {
+			if (body.tempAssetPrefix === null) {
+				await this.ctx.storage.delete(META_TEMP_ASSET_PREFIX_KEY)
+			} else if (typeof body.tempAssetPrefix === 'string') {
+				const prefix = sanitizeAssetPrefix(body.tempAssetPrefix)
+				if (!prefix) return json(400, { error: 'Invalid tempAssetPrefix' })
+				await this.ctx.storage.put(META_TEMP_ASSET_PREFIX_KEY, prefix)
+			}
+		}
+
+		await this.scheduleNextAlarm()
+		return json(200, await this.readPublicMeta())
+	}
+
+	private async readPublicMeta(): Promise<{
+		savedToLibrary: boolean
+		cloudOwnerKey: string | null
+		createdAt: string | null
+		unsavedExpiresAt: string | null
+		owner: OwnerHook
+	}> {
+		const savedToLibrary = await this.isSavedToLibrary()
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		return {
+			savedToLibrary,
+			cloudOwnerKey,
+			createdAt: (await this.ctx.storage.get<string>(META_CREATED_AT_KEY)) ?? null,
+			unsavedExpiresAt:
+				(await this.ctx.storage.get<string>(META_UNSAVED_EXPIRES_AT_KEY)) ??
+				null,
+			owner: await this.readOwnerHook(false),
+		}
+	}
+
+	private async readOwnerHook(isHost: boolean): Promise<OwnerHook> {
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		const saved = await this.isSavedToLibrary()
+		const google =
+			saved && typeof cloudOwnerKey === 'string' && cloudOwnerKey.startsWith('google:')
+		return {
+			kind: google ? 'google' : 'ephemeral',
+			cloudOwnerKey,
+			isHost,
+		}
+	}
+
+	private async isSavedToLibrary(): Promise<boolean> {
+		return Boolean(await this.ctx.storage.get<boolean>(META_SAVED_TO_LIBRARY_KEY))
+	}
+
+	/**
+	 * First connect starts the 24h unsaved clock. Later connects / Chromebook
+	 * refreshes must not reset it or delete the scene.
+	 */
+	private async ensureBoardLifetime(boardId: string): Promise<void> {
+		const existingId = await this.ctx.storage.get<string>(META_BOARD_ID_KEY)
+		if (!existingId) {
+			await this.ctx.storage.put(META_BOARD_ID_KEY, boardId)
+		}
+
+		const createdAt = await this.ctx.storage.get<string>(META_CREATED_AT_KEY)
+		if (!createdAt) {
+			const now = new Date()
+			await this.ctx.storage.put(META_CREATED_AT_KEY, now.toISOString())
+			if (!(await this.isSavedToLibrary())) {
+				await this.ctx.storage.put(
+					META_UNSAVED_EXPIRES_AT_KEY,
+					new Date(now.getTime() + UNSAVED_BOARD_TTL_MS).toISOString(),
+				)
+			}
+		}
+
+		await this.scheduleNextAlarm()
+	}
+
+	private async loadScene(): Promise<LiveScene> {
+		if (this.sceneLoaded && this.sceneCache) return this.sceneCache
+		this.sceneLoaded = true
+		const row = this.ctx.storage.sql
+			.exec<{ live_json: string; database_json: string }>(
+				'SELECT live_json, database_json FROM excalidraw_scene WHERE id = 1',
+			)
+			.toArray()[0]
+		if (!row) {
+			this.sceneCache = { elements: [], appState: {} }
+			return this.sceneCache
+		}
+		try {
+			const live = JSON.parse(row.live_json) as unknown
+			if (Array.isArray(live)) {
+				this.sceneCache = { elements: parseSceneElements(live), appState: {} }
+			} else if (live && typeof live === 'object') {
+				const rec = live as Record<string, unknown>
+				this.sceneCache = {
+					elements: parseSceneElements(rec.elements),
+					appState:
+						rec.appState && typeof rec.appState === 'object'
+							? (rec.appState as SceneAppState)
+							: {},
+				}
+			}
+		} catch {
+			this.sceneCache = null
+		}
+		if (!this.sceneCache) {
+			const database = parseDatabaseScene(row.database_json)
+			this.sceneCache = database
+				? { elements: database.elements, appState: database.appState }
+				: { elements: [], appState: {} }
+		}
+		if (!this.sceneCache.appState || Object.keys(this.sceneCache.appState).length === 0) {
+			const database = parseDatabaseScene(row.database_json)
+			if (database) this.sceneCache.appState = database.appState
+		}
+		return this.sceneCache
+	}
+
+	private persistScene(
+		scene: LiveScene,
+		databaseJson: string | undefined,
+	): void {
+		const parsed = databaseJson ? parseDatabaseScene(databaseJson) : null
+		const database = parsed
+			? stringifyDatabaseScene(parsed)
+			: stringifyDatabaseScene(toDatabaseScene(scene.elements, scene.appState))
+		if (database.length > MAX_SCENE_JSON_BYTES) return
+		const liveJson = JSON.stringify({
+			elements: scene.elements,
+			appState: scene.appState,
+		})
+		if (liveJson.length > MAX_SCENE_JSON_BYTES) return
+		this.ctx.storage.sql.exec(
+			`INSERT INTO excalidraw_scene (id, database_json, live_json, updated_at)
+			 VALUES (1, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			   database_json = excluded.database_json,
+			   live_json = excluded.live_json,
+			   updated_at = excluded.updated_at`,
+			database,
+			liveJson,
+			Date.now(),
+		)
+		this.sceneCache = scene
+		this.sceneLoaded = true
+	}
+
+	private async sendFullScene(ws: WebSocket): Promise<void> {
+		const scene = await this.loadScene()
+		sendJson(ws, {
+			type: 'scene:sync',
+			elements: scene.elements,
+			appState: scene.appState,
+		})
+	}
+
+	private broadcastScene(
+		payload: unknown,
+		exceptSessionId: string | null,
+	): void {
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			if (exceptSessionId && sessionId === exceptSessionId) continue
+			sendJson(ws, payload)
+		}
+	}
+
+	private async applySceneUpdate(
+		fromSessionId: string,
+		incoming: SceneElement[],
+		databaseJson: string | undefined,
+		full: boolean,
+	): Promise<void> {
+		if (incoming.length === 0 && !full && !databaseJson) return
+		const scene = await this.loadScene()
+		const { next, accepted } = mergeSceneElements(scene.elements, incoming)
+		if (accepted.length === 0 && !databaseJson) return
+
+		let appState = scene.appState
+		if (databaseJson) {
+			const parsed = parseDatabaseScene(databaseJson)
+			if (parsed) appState = parsed.appState
+		}
+		const nextScene: LiveScene = { elements: next, appState }
+		this.persistScene(nextScene, databaseJson)
+
+		this.updatesSinceFullSync += 1
+		if (full || this.updatesSinceFullSync >= FULL_RESYNC_EVERY) {
+			this.updatesSinceFullSync = 0
+			this.broadcastScene(
+				{
+					type: 'scene:sync',
+					elements: nextScene.elements,
+					appState: nextScene.appState,
+				},
+				null,
+			)
+			return
+		}
+
+		this.broadcastScene(
+			{ type: 'scene:update', elements: accepted, full: false },
+			fromSessionId,
+		)
 	}
 
 	private async handleParticipantPatch(
@@ -513,33 +869,112 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		await this.ctx.storage.put(ACTIVE_CODE_KEY, code)
 		await this.ctx.storage.put(CODE_EXPIRES_AT_KEY, expiresAt)
-		await this.ctx.storage.setAlarm(Date.parse(expiresAt))
+		await this.scheduleNextAlarm()
 
 		return { code, expiresAt }
 	}
 
 	private async revokeActiveCode(): Promise<void> {
+		await this.clearActiveCodeKeys()
+		await this.scheduleNextAlarm()
+	}
+
+	private async clearActiveCodeKeys(): Promise<void> {
 		const code = await this.ctx.storage.get<string>(ACTIVE_CODE_KEY)
 		if (code) {
 			await this.env.WHITEBOARD_CODES.delete(kvCodeKey(code))
 		}
 		await this.ctx.storage.delete(ACTIVE_CODE_KEY)
 		await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+	}
+
+	/**
+	 * Durable Objects have one alarm. Fire the sooner of share-code expiry
+	 * and unsaved 24h TTL; the handler reschedules whatever is still pending.
+	 */
+	private async scheduleNextAlarm(): Promise<void> {
+		const times: number[] = []
+		const codeExpiresAt = await this.ctx.storage.get<string>(CODE_EXPIRES_AT_KEY)
+		if (codeExpiresAt && !isExpiredIso(codeExpiresAt)) {
+			const t = Date.parse(codeExpiresAt)
+			if (!Number.isNaN(t)) times.push(t)
+		}
+		if (!(await this.isSavedToLibrary())) {
+			const unsavedExpiresAt = await this.ctx.storage.get<string>(
+				META_UNSAVED_EXPIRES_AT_KEY,
+			)
+			if (unsavedExpiresAt && !isExpiredIso(unsavedExpiresAt)) {
+				const t = Date.parse(unsavedExpiresAt)
+				if (!Number.isNaN(t)) times.push(t)
+			}
+		}
+		if (times.length === 0) {
+			try {
+				await this.ctx.storage.deleteAlarm()
+			} catch {
+				// no alarm set
+			}
+			return
+		}
+		await this.ctx.storage.setAlarm(Math.min(...times))
+	}
+
+	private async expireUnsavedBoard(): Promise<void> {
+		this.ctx.storage.sql.exec('DELETE FROM excalidraw_scene')
+		this.sceneCache = { elements: [], appState: {} }
+		this.sceneLoaded = true
+		await this.cleanupTempAssets()
+		await this.clearActiveCodeKeys()
+		await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+		await this.ctx.storage.delete(META_CREATED_AT_KEY)
+		this.broadcastScene(
+			{ type: 'scene:sync', elements: [], appState: {} },
+			null,
+		)
+	}
+
+	/** Phase 3.2 stores `meta:tempAssetPrefix`; we best-effort delete that R2 prefix. */
+	private async cleanupTempAssets(): Promise<void> {
+		const prefix = sanitizeAssetPrefix(
+			await this.ctx.storage.get<string>(META_TEMP_ASSET_PREFIX_KEY),
+		)
+		if (!prefix || !this.env.WHITEBOARD_ASSETS) return
 		try {
-			await this.ctx.storage.deleteAlarm()
+			let cursor: string | undefined
+			do {
+				const listed = await this.env.WHITEBOARD_ASSETS.list({
+					prefix,
+					cursor,
+					limit: 100,
+				})
+				await Promise.all(
+					listed.objects.map((object) =>
+						this.env.WHITEBOARD_ASSETS.delete(object.key),
+					),
+				)
+				cursor = listed.truncated ? listed.cursor : undefined
+			} while (cursor)
 		} catch {
-			// no alarm set
+			// R2 cleanup is best-effort; scene already dropped.
 		}
 	}
 
-	/** KV TTL + DO alarm: clear active code when expired. */
+	/** KV TTL + DO alarm: share codes (12h) and unsaved boards (24h). */
 	override async alarm(): Promise<void> {
 		const expiresAt = await this.ctx.storage.get<string>(CODE_EXPIRES_AT_KEY)
 		if (!expiresAt || isExpiredIso(expiresAt)) {
-			await this.revokeActiveCode()
-			return
+			await this.clearActiveCodeKeys()
 		}
-		await this.ctx.storage.setAlarm(Date.parse(expiresAt))
+
+		const saved = await this.isSavedToLibrary()
+		const unsavedExpiresAt = await this.ctx.storage.get<string>(
+			META_UNSAVED_EXPIRES_AT_KEY,
+		)
+		if (!saved && unsavedExpiresAt && isExpiredIso(unsavedExpiresAt)) {
+			await this.expireUnsavedBoard()
+		}
+
+		await this.scheduleNextAlarm()
 	}
 
 	private getSessionId(ws: WebSocket): string | null {
@@ -547,15 +982,55 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return attachment?.sessionId ?? null
 	}
 
-	override async webSocketMessage(ws: WebSocket, _message: string | ArrayBuffer) {
+	override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
 		this.hydrateSockets()
 		const sessionId = this.getSessionId(ws)
 		if (!sessionId) return
 		this.sessionIdToWs.set(sessionId, ws)
-		// Phase 1: ignore client payloads. Phase 2 owns Excalidraw scene sync.
+		if (typeof message !== 'string') return
+
+		let parsed: unknown
+		try {
+			parsed = JSON.parse(message)
+		} catch {
+			return
+		}
+		if (!parsed || typeof parsed !== 'object') return
+		const data = parsed as Record<string, unknown>
+		const type = data.type
+
+		if (type === 'scene:request') {
+			await this.sendFullScene(ws)
+			return
+		}
+
+		if (type === 'scene:update') {
+			const elements = parseSceneElements(data.elements)
+			const databaseJson =
+				typeof data.databaseJson === 'string' &&
+				data.databaseJson.length <= MAX_SCENE_JSON_BYTES
+					? data.databaseJson
+					: undefined
+			await this.applySceneUpdate(
+				sessionId,
+				elements,
+				databaseJson,
+				data.full === true,
+			)
+		}
 	}
 
-	override async webSocketClose(ws: WebSocket) {
+	override async webSocketClose(
+		ws: WebSocket,
+		code: number,
+		reason: string,
+		_wasClean: boolean,
+	) {
+		try {
+			ws.close(code, reason)
+		} catch {
+			// already closing
+		}
 		this.handleWebSocketEnd(ws)
 	}
 
