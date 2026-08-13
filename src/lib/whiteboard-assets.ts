@@ -1,5 +1,5 @@
 /**
- * Whiteboard asset library (localStorage + cloud) + R2-backed TLAssetStore.
+ * Whiteboard asset library (localStorage + cloud) + R2 upload helpers.
  *
  * Owner keys:
  * - Signed out: local:{deviceInstallId}
@@ -8,7 +8,6 @@
  * R2 object keys: assets/{ownerKey}/{assetId}
  * Resolve URL: /api/whiteboard/assets/{encodeURIComponent(ownerKey)}/{assetId}
  */
-import type { TLAssetStore } from 'tldraw'
 import {
 	deleteCloudAsset,
 	fetchCloudAssets,
@@ -21,6 +20,11 @@ import {
 	isBoardUuid,
 	readBoardIdFromPath,
 } from '../scripts/whiteboard-library'
+
+type WhiteboardAssetStore = {
+	upload: (asset: { id?: string }, file: File) => Promise<{ src: string }>
+	resolve: (asset: { props: { src?: string } }) => string | undefined
+}
 
 export const ASSETS_KEY = 'scsfoxchase.whiteboard.assets'
 
@@ -266,7 +270,7 @@ function assertUploadAllowed(file: File): void {
 /**
  * Mint library UUID, upload to R2 under the active owner key, upsert active Assets index.
  */
-export const r2AssetStore: TLAssetStore = {
+export const r2AssetStore: WhiteboardAssetStore = {
 	async upload(_asset, file) {
 		assertUploadAllowed(file)
 

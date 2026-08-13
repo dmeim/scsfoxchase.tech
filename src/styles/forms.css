@@ -223,38 +223,6 @@ body.help-page main .container.form-shell {
   margin: 0;
 }
 
-/* Screen-reader / SEO title when the visible title lives on the canvas. */
-.guide-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.guide-title-card--diagram {
-  padding: 0;
-  overflow: hidden;
-  height: clamp(200px, 28vh, 300px);
-}
-
-.guide-diagram {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-.guide-diagram .tl-container {
-  width: 100%;
-  height: 100%;
-  position: absolute !important;
-  inset: 0;
-}
-
 .guide-body-card {
   margin-top: 0;
 }

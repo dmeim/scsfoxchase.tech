@@ -1,7 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
-import TldrawBoard from '../components/TldrawBoard';
+import WhiteboardCanvas from '../components/WhiteboardCanvas';
 import '../styles/whiteboard.css';
 ---
 <BaseLayout
@@ -15,10 +15,13 @@ import '../styles/whiteboard.css';
     name="description"
     content="Collaborative whiteboard canvas for St. Cecilia Technology"
   />
+  <script slot="head" is:inline>
+    window.EXCALIDRAW_ASSET_PATH = '/excalidraw/';
+  </script>
 
   <div class="board-shell">
     <div class="board-canvas-root">
-      <TldrawBoard client:only="react" />
+      <WhiteboardCanvas client:only="react" />
     </div>
   </div>
 
@@ -34,7 +37,7 @@ import '../styles/whiteboard.css';
       window.location.replace('/whiteboard');
     } else {
       // Wait for Clerk to settle so signed-in users don't upsert into local first.
-      // TldrawBoard also calls touchBoardActive; duplicate is idempotent upsert.
+      // WhiteboardCanvas also calls touchBoardActive; duplicate is idempotent upsert.
       void whenAuthReady()
         .then(() => touchBoardActive(boardId))
         .then((entry) => {

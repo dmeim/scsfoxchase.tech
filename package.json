@@ -7,10 +7,13 @@
     "node": ">=22"
   },
   "scripts": {
+    "copy-excalidraw-fonts": "node scripts/copy-excalidraw-fonts.mjs",
+    "predev": "npm run copy-excalidraw-fonts",
+    "prebuild": "npm run copy-excalidraw-fonts",
     "dev": "astro dev --host",
     "build": "astro build",
     "preview": "astro preview",
-    "deploy": "astro build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy"
   },
   "keywords": [],
   "author": "",
@@ -20,16 +23,13 @@
     "@astrojs/react": "^6.0.2",
     "@clerk/backend": "^3.15.1",
     "@clerk/react": "^6.12.11",
-    "@tldraw/sync": "^5.3.0",
-    "@tldraw/sync-core": "^5.3.0",
-    "@tldraw/tlschema": "^5.3.0",
+    "@excalidraw/excalidraw": "0.18.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "astro": "^7.0.9",
     "lucide": "^1.28.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "tldraw": "^5.3.0"
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260804.1",
