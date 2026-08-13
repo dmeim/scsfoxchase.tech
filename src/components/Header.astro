@@ -34,7 +34,13 @@ const helpActive =
       <div id="theme-toggle-host" class="theme-toggle-host"></div>
     </div>
 
-    <div class="header-center" data-whiteboard-menu data-whiteboard-mode={boardChrome ? 'manage' : 'hub'}>
+    <!-- Temporarily hidden while the tldraw license issue is resolved; routes remain available. -->
+    <div
+      class="header-center"
+      data-whiteboard-menu
+      data-whiteboard-mode={boardChrome ? 'manage' : 'hub'}
+      hidden
+    >
       {boardChrome ? (
         <>
           <button
