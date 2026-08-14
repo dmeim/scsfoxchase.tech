@@ -1,10 +1,10 @@
 import {
   assetResolveUrl,
-  listAssetsActive,
   removeAssetActive,
   setAssetTitleActive,
   type WhiteboardAssetEntry,
 } from '../lib/whiteboard-assets';
+import { fetchCloudAssets } from '../lib/whiteboard-cloud';
 import { lookupShareCode } from '../lib/whiteboard-codes';
 import {
   isClerkConfigured,
@@ -21,7 +21,6 @@ import {
   parseJoinInput,
   removeBoardActive,
   setBoardTitleActive,
-  touchBoardActive,
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
 
@@ -196,13 +195,34 @@ function renderSection(
   grid.innerHTML = entries.map(cardHtml).join('');
 }
 
+const NOTE_SIGNED_OUT =
+  'Create works without an account. That scratch board stays live if you refresh, but it is not in a library and is removed after 24 hours if it is never saved. Join by code or link also works signed out. Sign in with Google to Save and keep Recents, Library, and Assets.';
+const NOTE_SIGNED_IN =
+  'New boards save to your Google library and you are Owner. A scratch board you created while signed out can be Saved from this account to claim Owner and lift the 24-hour limit. Leaving without Save means the board was never kept in your library — refresh does not erase it.';
+
+function setHubNote(message: string) {
+  const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');
+  if (note) note.textContent = message;
+}
+
+function setCloudListsVisible(visible: boolean) {
+  const lists = document.querySelector<HTMLElement>('[data-wb-cloud-lists]');
+  if (lists) lists.hidden = !visible;
+}
+
 async function renderAssets() {
   const row = document.querySelector<HTMLElement>('[data-wb-assets-row]');
   const empty = document.querySelector<HTMLElement>('[data-wb-assets-empty]');
   if (!row || !empty) return;
+  if (!isSignedIn()) {
+    row.innerHTML = '';
+    row.hidden = true;
+    empty.hidden = false;
+    return;
+  }
   let entries: WhiteboardAssetEntry[] = [];
   try {
-    entries = await listAssetsActive();
+    entries = await fetchCloudAssets();
   } catch {
     entries = [];
   }
@@ -210,9 +230,8 @@ async function renderAssets() {
     row.innerHTML = '';
     row.hidden = true;
     empty.hidden = false;
-    empty.textContent = isSignedIn()
-      ? 'Images and videos you place on a board while signed in show up here.'
-      : 'Images and videos you place on a board show up here automatically.';
+    empty.textContent =
+      'Images and videos you place on a saved board show up here.';
     return;
   }
   empty.hidden = true;
@@ -221,6 +240,15 @@ async function renderAssets() {
 }
 
 async function renderLibrary() {
+  if (!isSignedIn()) {
+    setCloudListsVisible(false);
+    setHubNote(NOTE_SIGNED_OUT);
+    return;
+  }
+
+  setCloudListsVisible(true);
+  setHubNote(NOTE_SIGNED_IN);
+
   let recents: WhiteboardLibraryEntry[] = [];
   let library: WhiteboardLibraryEntry[] = [];
   try {
@@ -234,14 +262,12 @@ async function renderLibrary() {
   const recentsEmpty = document.querySelector<HTMLElement>('[data-wb-recents-empty]');
   const libraryEmpty = document.querySelector<HTMLElement>('[data-wb-library-empty]');
   if (recentsEmpty) {
-    recentsEmpty.textContent = isSignedIn()
-      ? 'No recent boards in your Google library yet. Create one to get started.'
-      : 'No recent boards on this device yet. Create one to get started.';
+    recentsEmpty.textContent =
+      'No recent boards in your Google library yet. Create one to get started.';
   }
   if (libraryEmpty) {
-    libraryEmpty.textContent = isSignedIn()
-      ? 'Boards you open while signed in are saved to your Google library.'
-      : 'Boards you open are saved in this browser’s library.';
+    libraryEmpty.textContent =
+      'Boards you create while signed in are saved here automatically. Join by code or link does not add a board until you Save.';
   }
 
   renderSection(
@@ -255,13 +281,6 @@ async function renderLibrary() {
     libraryEmpty,
     library,
   );
-
-  const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');
-  if (note) {
-    note.textContent = isSignedIn()
-      ? 'Signed in: Recents, Library, and Assets are tied to your Google account. Sign out to return to this device’s local lists (they are kept separately).'
-      : 'Library, recents, and assets stay on this device while signed out. Sign in with Google to use your cloud library on any Chromebook. Pasted media is stored so classmates on the same board can see it.';
-  }
 }
 
 type CardKind = 'board' | 'asset';
@@ -433,7 +452,7 @@ function bindCardMenus(root: Element) {
     }
     input?.setCustomValidity('');
 
-    // Gate on auth-ready so a pre-AuthBridge rename does not write localStorage.
+    // Gate on auth-ready so a pre-AuthBridge rename does not miss the cloud library.
     void (async () => {
       await whenAuthReady();
       if (kind === 'asset') {
@@ -484,26 +503,8 @@ function initWhiteboardHub() {
   };
 
   const showAuthPendingUi = () => {
-    for (const sel of [
-      '[data-wb-recents-empty]',
-      '[data-wb-assets-empty]',
-      '[data-wb-library-empty]',
-    ] as const) {
-      const el = root.querySelector<HTMLElement>(sel);
-      if (!el) continue;
-      el.hidden = false;
-      el.textContent = 'Loading…';
-    }
-    for (const sel of [
-      '[data-wb-recents-grid]',
-      '[data-wb-assets-row]',
-      '[data-wb-library-grid]',
-    ] as const) {
-      const el = root.querySelector<HTMLElement>(sel);
-      if (!el) continue;
-      el.innerHTML = '';
-      el.hidden = true;
-    }
+    setCloudListsVisible(false);
+    setHubNote('Loading…');
   };
 
   createBtn?.addEventListener('click', () => {
@@ -547,11 +548,6 @@ function initWhiteboardHub() {
         } else {
           boardId = parsed.id;
         }
-        try {
-          await touchBoardActive(boardId);
-        } catch {
-          // Cloud upsert can fail offline; still open the board.
-        }
         showActionHint('Opening board…');
         window.location.href = `/board/${encodeURIComponent(boardId)}`;
       } catch (err) {
@@ -564,8 +560,8 @@ function initWhiteboardHub() {
     })();
   });
 
-  // Wait for Clerk to settle so signed-in users don't briefly see local lists
-  // or create under local:{deviceInstallId}.
+  // Wait for Clerk to settle so signed-in create autosaves as google:{accountId}
+  // and signed-out users never see Recents / Library / Assets.
   if (isClerkConfigured()) {
     showAuthPendingUi();
   }
