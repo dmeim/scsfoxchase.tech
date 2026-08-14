@@ -103,6 +103,34 @@ export default function WhiteboardCanvas({
   handleRoleMessageRef.current = roles.handleSocketMessage
   const canEditRef = useRef(roles.canEdit)
   canEditRef.current = roles.canEdit
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el || !roles.forceFollowLocked) return
+    const stop = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    const opts: AddEventListenerOptions = { capture: true, passive: false }
+    const types = [
+      'wheel',
+      'gesturestart',
+      'gesturechange',
+      'gestureend',
+      'pointerdown',
+      'touchstart',
+      'touchmove',
+    ] as const
+    for (const type of types) {
+      el.addEventListener(type, stop, opts)
+    }
+    return () => {
+      for (const type of types) {
+        el.removeEventListener(type, stop, opts)
+      }
+    }
+  }, [roles.forceFollowLocked])
 
   useEffect(() => {
     ensureExcalidrawAssetPath()
@@ -414,7 +442,7 @@ export default function WhiteboardCanvas({
   }
 
   return (
-    <div style={{ position: 'absolute', inset: 0 }}>
+    <div ref={wrapRef} style={{ position: 'absolute', inset: 0 }}>
       <Excalidraw
         excalidrawAPI={handleApi}
         theme={theme}
@@ -431,6 +459,18 @@ export default function WhiteboardCanvas({
         onUserFollow={roles.onUserFollow}
         onScrollChange={roles.onScrollChange}
       />
+      {roles.forceFollowLocked ? (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 6,
+            background: 'transparent',
+            touchAction: 'none',
+          }}
+        />
+      ) : null}
       {roles.viewModeEnabled ? (
         <div
           style={{
@@ -438,7 +478,7 @@ export default function WhiteboardCanvas({
             top: 8,
             left: '50%',
             transform: 'translateX(-50%)',
-            zIndex: 4,
+            zIndex: 7,
             padding: '4px 10px',
             borderRadius: 2,
             background: 'var(--primary-color)',
