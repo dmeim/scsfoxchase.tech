@@ -446,6 +446,48 @@ a.whiteboard-toggle:hover {
     gap: 2px;
 }
 
+.whiteboard-people-target {
+    display: flex;
+    align-items: center;
+    max-width: 140px;
+}
+
+.whiteboard-people-target-select,
+.whiteboard-people-role {
+    width: 100%;
+    max-width: 78px;
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    background: transparent;
+    border: 1px solid rgba(18, 95, 49, 0.28);
+    border-radius: 2px;
+    padding: 2px 2px;
+}
+
+.whiteboard-people-target-select {
+    max-width: 140px;
+}
+
+.whiteboard-people-role-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(18, 95, 49, 0.8);
+    justify-self: start;
+}
+
+[data-theme="dark"] .whiteboard-people-target-select,
+[data-theme="dark"] .whiteboard-people-role {
+    color: var(--light-text);
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .whiteboard-people-role-label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
 .whiteboard-share-toolbar-wrap {
     position: relative;
 }
@@ -612,7 +654,7 @@ a.whiteboard-toggle:hover {
 
 .whiteboard-people-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 64px 40px;
+    grid-template-columns: minmax(0, 1fr) 72px 78px;
     align-items: center;
     gap: 6px;
     font-size: 0.7rem;
@@ -639,7 +681,7 @@ a.whiteboard-toggle:hover {
 
 .whiteboard-people-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 64px 40px;
+    grid-template-columns: minmax(0, 1fr) 72px 78px;
     align-items: center;
     gap: 6px;
     min-height: 28px;

@@ -1,10 +1,12 @@
 /**
- * Participant edit-permission routes (Phase 6).
+ * Participant role routes (Phase 3.3).
  *
  * PATCH /api/whiteboard/boards/:uuid/participants/:sessionId
- * Auth: host secret (Authorization: Bearer / X-Board-Host / ?hostSecret=)
- * Body: { "canEdit": boolean }
+ * Auth: host secret (Owner scratch) or live session token (Owner / Manager)
+ * Body: { "role": "manager" | "editor" | "viewer" }
  */
+
+import { isAssignableRole } from '../lib/whiteboard-sync'
 
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -19,7 +21,8 @@ function corsHeaders(request: Request): HeadersInit {
 	return {
 		'Access-Control-Allow-Origin': origin,
 		'Access-Control-Allow-Methods': 'PATCH, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Board-Host',
+		'Access-Control-Allow-Headers':
+			'Content-Type, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth',
 		Vary: 'Origin',
 	}
 }
@@ -81,17 +84,26 @@ export async function handleParticipantRequest(
 	}
 
 	const hostSecret = extractHostSecret(request, url)
-	if (!hostSecret) {
-		return json(401, { error: 'Host secret required' }, request)
+	const actorSessionId = request.headers.get('X-Board-Session')?.trim() || ''
+	const actorAuth = request.headers.get('X-Board-Auth')?.trim() || ''
+	if (!hostSecret && !(actorSessionId && actorAuth)) {
+		return json(401, { error: 'Owner or Manager proof required' }, request)
 	}
 
-	let canEdit: boolean | undefined
+	let role: string
 	try {
-		const body = (await request.json()) as { canEdit?: unknown }
-		if (typeof body.canEdit !== 'boolean') {
-			return json(400, { error: 'Body must include boolean canEdit' }, request)
+		const body = (await request.json()) as { role?: unknown; canEdit?: unknown }
+		if (isAssignableRole(body.role)) {
+			role = body.role
+		} else if (typeof body.canEdit === 'boolean') {
+			role = body.canEdit ? 'editor' : 'viewer'
+		} else {
+			return json(
+				400,
+				{ error: 'Body must include role manager | editor | viewer' },
+				request,
+			)
 		}
-		canEdit = body.canEdit
 	} catch {
 		return json(400, { error: 'Invalid JSON body' }, request)
 	}
@@ -101,8 +113,10 @@ export async function handleParticipantRequest(
 	const forwardUrl = new URL(request.url)
 	forwardUrl.searchParams.set('boardId', boardId)
 	forwardUrl.searchParams.set('sessionId', sessionId)
-	forwardUrl.searchParams.set('hostSecret', hostSecret)
-	forwardUrl.searchParams.set('canEdit', canEdit ? '1' : '0')
+	forwardUrl.searchParams.set('role', role)
+	if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
+	if (actorSessionId) forwardUrl.searchParams.set('actorSessionId', actorSessionId)
+	if (actorAuth) forwardUrl.searchParams.set('actorAuth', actorAuth)
 
 	const response = await stub.fetch(
 		new Request(forwardUrl.toString(), {
@@ -111,7 +125,6 @@ export async function handleParticipantRequest(
 		}),
 	)
 
-	// Re-wrap so CORS headers apply on the Worker edge response.
 	const text = await response.text()
 	return new Response(text, {
 		status: response.status,
