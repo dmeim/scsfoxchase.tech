@@ -50,6 +50,7 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 | `/api/whiteboard/join/:code` | `src/worker.ts` → KV | Resolve share code → board UUID |
 | `/api/whiteboard/boards/:uuid/code` | `src/worker.ts` → DO + KV | GET/POST/DELETE share code (Open/Closed/rotate) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | `src/worker.ts` → R2 | PUT/GET/DELETE whiteboard media |
+| `/api/whiteboard/admin/wipe-storage` | `src/worker.ts` → DO RPC | Bearer `WHITEBOARD_ADMIN_SECRET`; `deleteAll` on listed DO hex IDs |
 | `/api/whiteboard/library/boards` | `src/worker.ts` → R2 JSON | Signed-in cloud board index (Clerk) |
 | `/api/whiteboard/library/assets` | `src/worker.ts` → R2 JSON | Signed-in cloud asset index (Clerk) |
 | `/games.html` | redirect | → `/games` |

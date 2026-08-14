@@ -12,6 +12,7 @@
  * - CLERK_SECRET_KEY (secret)
  * - PUBLIC_CLERK_PUBLISHABLE_KEY (var; also baked into client at build)
  * - PUBLIC_CLERK_ALLOWED_DOMAINS (optional; comma-separated domains/emails)
+ * - WHITEBOARD_ADMIN_SECRET (secret; POST /api/whiteboard/admin/wipe-storage)
  */
 interface Env {
 	WHITEBOARDS: DurableObjectNamespace
@@ -22,4 +23,5 @@ interface Env {
 	PUBLIC_CLERK_PUBLISHABLE_KEY?: string
 	CLERK_PUBLISHABLE_KEY?: string
 	PUBLIC_CLERK_ALLOWED_DOMAINS?: string
+	WHITEBOARD_ADMIN_SECRET?: string
 }

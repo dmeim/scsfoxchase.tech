@@ -18,6 +18,7 @@ import { handleCodeRequest } from './worker/codeRoutes'
 import { handleLibraryRequest } from './worker/libraryRoutes'
 import { handleForceFollowRequest } from './worker/forceFollowRoutes'
 import { handleParticipantRequest } from './worker/participantRoutes'
+import { handleAdminRequest } from './worker/adminRoutes'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
 
 export { WhiteboardBoard }
@@ -36,6 +37,12 @@ export default {
 		ctx: ExecutionContext,
 	): Promise<Response> {
 		const url = new URL(request.url)
+
+		// Authenticated one-shot: wipe listed Durable Object SQLite (tldraw leftovers)
+		if (url.pathname.startsWith('/api/whiteboard/admin/')) {
+			const adminResponse = await handleAdminRequest(request, env)
+			if (adminResponse) return adminResponse
+		}
 
 		// Cloud board / asset library indexes (Clerk session required)
 		if (url.pathname.startsWith('/api/whiteboard/library')) {
