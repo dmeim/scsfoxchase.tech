@@ -55,8 +55,8 @@ Custom messages the DO sends to connected clients:
 | `wb:hello` | `{ sessionId, role, canEdit, authToken, owner, … }` | Session identity for the manage panel |
 | `wb:participants` | `{ yourSessionId, yourRole, participants[] }` | People list |
 | `wb:role` | `{ role, canEdit }` | Role change for this session |
-| `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Camera lock |
-| `wb:sceneBounds` | `{ socketId, bounds }` | Follow camera (Excalidraw follow breaks on pan/zoom) |
+| `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Follow Me — lock follower cameras to the target |
+| `wb:sceneBounds` | `{ socketId, bounds }` | Leader viewport; voluntary Follow uses this until pan unfollows; Follow Me snaps to cached bounds |
 
 Document persistence is the DO scene — not the hub library indexes. Removing a board from Recents/Library only drops the **index entry**.
 

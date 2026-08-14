@@ -2,6 +2,8 @@
 
 Live presence, four roles, Follow, and Follow Me / force-follow. Live **cursors are not v1**.
 
+**Follow this person** is voluntary: pan or zoom unfollows. **Follow Me** is forced: the camera is locked to the leader until Owner/Manager turns it off. Guests cannot pan away.
+
 ## Overview
 
 Connected sessions appear in the board manage panel under **People**. Anyone may follow another person’s camera. **Owner** and **Manager** can change roles (with the rules below) and force the room — or one person — to follow a target. Viewers cannot mutate the document: Excalidraw `viewModeEnabled` **and** the Durable Object drops their `scene:update` writes.
@@ -65,9 +67,9 @@ Manage panel Follow buttons dispatch `scsfoxchase:whiteboard-follow` with `{ use
 
 Following state is published back as `scsfoxchase:whiteboard-following` so Follow buttons show **Following**.
 
-Excalidraw follow breaks on pan/zoom — the island re-asserts `userToFollow` on `onScrollChange` while force-follow applies, and uses bounds messages for both voluntary and forced Follow.
+Stock Excalidraw follow **breaks on pan/zoom**. That is the intended unfollow for voluntary Follow: `onUserFollow` with `UNFOLLOW` clears the target. Bounds messages still keep the camera aligned while the guest stays following.
 
-While force-follow targets this session, unfollow / follow-other is re-asserted back to the forced target.
+Voluntary Follow is ignored while Follow Me is locking this session (force-follow wins).
 
 ## Role changes (Owner / Manager)
 
@@ -127,14 +129,17 @@ Client: `setForceFollow` in `src/lib/whiteboard-participants.ts`.
 - Broadcast `wb:forceFollow` with `{ forceFollow, targetUserId, targetSessionId, subjects }` to connected sessions.
 - Also sent on connect / when a session becomes connected.
 
-### Camera lock
+### Camera lock (PR #7)
 
-In `whiteboard-excalidraw-roles.ts`:
+Voluntary Follow and Follow Me are **not** the same camera path. Follow Me must survive Excalidraw’s pan-to-unfollow.
 
-- Forced target for this user comes from room-wide `targetUserId` or per-user `subjects`.
-- `updateScene({ appState: { userToFollow }, captureUpdate: NEVER })`.
-- `onUserFollow` / pan re-assert if the guest tries to leave.
-- Turning force-follow off stops the forced camera (does not clear an unrelated voluntary follow unless force-follow had been active).
+In `whiteboard-excalidraw-roles.ts` + `WhiteboardCanvas.tsx`:
+
+- Forced target for this user comes from room-wide `targetUserId` or per-user `subjects`. `forceFollowLocked` is true when this session is forced onto someone else.
+- On enable, snap immediately with **cached** `wb:sceneBounds` for that leader (`zoomToFitBounds`), then keep applying new bounds.
+- `onScrollChange` schedules a rAF re-assert; `onUserFollow` UNFOLLOW is ignored and the forced target is restored.
+- Pointer/wheel/touch/gesture events on the canvas wrapper are stopped in the capture phase. A transparent overlay (`touch-action: none`, `z-index: 6`) sits above Excalidraw so guests cannot pan or zoom away.
+- Turning Follow Me off stops the forced camera (it does not restore an unrelated voluntary follow that Follow Me had cleared).
 
 Manage panel listens for `scsfoxchase:whiteboard-force-follow` to keep the On/Off switch in sync.
 
@@ -160,7 +165,7 @@ Manage panel listens for `scsfoxchase:whiteboard-force-follow` to keep the On/Of
 | `src/worker/forceFollowRoutes.ts` | PATCH force-follow edge |
 | `src/lib/whiteboard-participants.ts` | Client PATCH helpers + payload guards |
 | `src/lib/whiteboard-display-name.ts` | Guest names / People labels |
-| `src/lib/whiteboard-excalidraw-roles.ts` | `viewModeEnabled`, `userToFollow`, window events |
-| `src/components/WhiteboardCanvas.tsx` | Wires Excalidraw props |
+| `src/lib/whiteboard-excalidraw-roles.ts` | `viewModeEnabled`, `userToFollow`, Follow Me snap + `forceFollowLocked` |
+| `src/components/WhiteboardCanvas.tsx` | Wires Excalidraw props; overlay + capture-phase pan block while locked |
 | `src/scripts/whiteboard-menu.ts` | People UI, role + Follow Me controls |
 | `src/components/Header.astro` | People / Follow Me markup |

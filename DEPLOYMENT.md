@@ -173,5 +173,5 @@ npm run build && npm run preview
 # 2. Sign in with Google on a scratch board this browser created → Save claims Owner; Recents/Library appear.
 # 3. Signed-in Create autosaves; paste an image (R2 google:{id}) and an MP4 (same-origin /whiteboard-player).
 # 4. Sign out → hub lists hide; scratch create still works; cloud data remains for next sign-in.
-# 5. Join by share code as a guest: Viewer (view-only banner); Owner can set Editor. Follow + Follow Me.
+# 5. Join by share code as a guest: Viewer (view-only banner); Owner can set Editor. Follow (pan unfollows). Follow Me locks the camera.
 ```

@@ -50,7 +50,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | [whiteboard/sync-storage.md](./whiteboard/sync-storage.md) | Durable Objects, R2 media, Excalidraw sync |
 | [whiteboard/auth-libraries.md](./whiteboard/auth-libraries.md) | Clerk auth, cloud-only library, scratch 24h TTL |
 | [whiteboard/share-codes.md](./whiteboard/share-codes.md) | Share codes (KV + DO) |
-| [whiteboard/people-permissions.md](./whiteboard/people-permissions.md) | Owner / Manager / Editor / Viewer, Follow |
+| [whiteboard/people-permissions.md](./whiteboard/people-permissions.md) | Owner / Manager / Editor / Viewer; Follow vs Follow Me camera lock |
 
 ## Quick pointers
 
