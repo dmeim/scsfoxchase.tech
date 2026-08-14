@@ -108,7 +108,7 @@ Anyone who can open the board URL can call the code API (UUID is the capability)
 
 ### Follow Me
 
-Owner/Manager control beside the **People** heading (hidden unless this session can force-follow). Toggle plus a target select (self or another participant). Same camera-lock machinery as voluntary Follow, different authority. See [people-permissions.md](./people-permissions.md).
+Owner/Manager control beside the **People** heading (hidden unless this session can force-follow). Toggle plus a target select (self or another participant). Unlike voluntary Follow (pan to unfollow), Follow Me **locks** the camera — guests cannot pan away; the island snaps to leader bounds and covers the canvas with a transparent overlay. See [people-permissions.md](./people-permissions.md).
 
 ### People
 

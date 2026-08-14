@@ -1,14 +1,14 @@
 # tldraw → Excalidraw
 
-Canonical spec for replacing the St. Cecilia whiteboard. Research is retained below the locked decisions. **Implement from “Locked decisions” and “Task list,” not from older “keep dual library / archive old boards” notes.**
+Canonical spec for replacing the St. Cecilia whiteboard. **Shipped on `main`.** Research below “Locked decisions” is historical. Do not treat “What we had then (outgoing)” as the live product. Live docs: [`docs/whiteboard/`](docs/whiteboard/README.md).
 
 | | |
 |---|---|
 | **Date** | 2026-08-13 |
-| **Status** | Decided — ready to implement |
-| **Outgoing editor** | `tldraw` / `@tldraw/sync` / `@tldraw/sync-core` / `@tldraw/tlschema` **5.3.0** — **delete entirely** |
-| **Incoming editor** | `@excalidraw/excalidraw` **0.18.1** (MIT) — pin this version |
-| **Why** | tldraw hobby license may not renew. We are done with that vendor. No users in production yet; test boards and unfinished Help canvases may be destroyed. |
+| **Status** | **Shipped** — Phases 1–4 on `main`; Follow Me camera lock is PR #7 (`76eb03a`, 2026-08-14). Production Worker `scsfoxchase-tech` matches that commit. |
+| **Outgoing editor** | `tldraw` / `@tldraw/sync` / `@tldraw/sync-core` / `@tldraw/tlschema` **5.3.0** — **deleted** |
+| **Incoming editor** | `@excalidraw/excalidraw` **0.18.1** (MIT) — pinned |
+| **Why** | tldraw hobby license may not renew. We are done with that vendor. |
 
 ---
 
@@ -61,8 +61,8 @@ Only **Owner** can grant/revoke **Manager** (co-teachers / co-presenters).
 
 ### Follow
 
-- **Follow this person:** button on each People row. Anyone may follow someone for themselves.
-- **Follow Me / force follow:** Owner or Manager sets the room (or a person) to follow a target — themselves or a student showing work. Same camera-lock machinery, different target. Re-assert if the guest pans away (Excalidraw follow breaks on pan/zoom).
+- **Follow this person:** button on each People row. Anyone may follow someone for themselves. **Pan/zoom unfollows** (stock Excalidraw).
+- **Follow Me / force follow:** Owner or Manager sets the room (or a person) to follow a target — themselves or a student showing work. The camera is **locked**: guests cannot pan away. The client snaps to cached leader bounds, blocks wheel/pointer pan, and covers the canvas with a transparent overlay (PR #7).
 - Live **cursors are not v1.** Do not block on them.
 
 ### Share / hub / nav
@@ -87,10 +87,12 @@ Only **Owner** can grant/revoke **Manager** (co-teachers / co-presenters).
 - Signed-in create is in the cloud library; Owner is that account.
 - Join-by-code works; guests are Viewers with generated names; Owner/Manager can set Editor/Viewer/Manager (rules above).
 - Viewers cannot mutate the document (UI + server).
-- Follow person + force follow / Follow Me work.
+- Follow person + force follow / Follow Me work (**Follow Me locks the camera**; voluntary Follow still unfollows on pan).
 - Images/GIFs on the canvas via R2; YouTube embeds; MP4/WebM via the player wrapper; unsigned/unsaved media expires in 24h.
 - Zero tldraw in the repo or Worker. Header Whiteboard is visible.
 - `npm run build` succeeds.
+
+These criteria are met on production `main`. Follow Me camera lock shipped after Phase 4 docs (PR #7).
 
 ---
 
@@ -108,11 +110,13 @@ Excalidraw solves the license problem. It is not a drop-in. We **rewrite the roo
 
 ---
 
-## What we have today (outgoing)
+## What we had then (outgoing, historical)
 
-The product is two layers: **our classroom shell** and **stock tldraw**. The canvas is a stock `<Tldraw />` — no custom tools, shapes, or UI overrides.
+**Pre-rewrite snapshot.** The live product is Excalidraw 0.18.1 on a Durable Object WebSocket — see [`docs/whiteboard/`](docs/whiteboard/README.md).
 
-The header Whiteboard chip is `hidden` in `Header.astro`. Routes still work. The manage panel is implemented but unreachable while that wrapper is hidden. Clerk stays in the global header. No homepage launcher tile.
+The product was two layers: **our classroom shell** and **stock tldraw**. The canvas was a stock `<Tldraw />` — no custom tools, shapes, or UI overrides.
+
+The header Whiteboard chip was `hidden` in `Header.astro`. Routes still worked. The manage panel was implemented but unreachable while that wrapper was hidden. Clerk stayed in the global header. No homepage launcher tile.
 
 ### Classroom shell
 
@@ -320,7 +324,7 @@ Three worktrees from the **same Phase 2 base**. Strict file ownership. If you mu
 - Guests: generated names; default Viewer; stable `deviceInstallId`.
 - People panel: name, role controls (Owner/Manager), Follow on every row, Follow Me / force-follow retargetable to any participant.
 - `viewModeEnabled` + DO reject Viewer writes.
-- Anyone: voluntary Follow. Owner/Manager: force room or a person to follow a target; re-assert on pan.
+- Anyone: voluntary Follow (pan to unfollow). Owner/Manager: Follow Me / force-follow. **Shipped extra (PR #7):** Follow Me locks the camera (snap to leader bounds + overlay); guests cannot pan away.
 
 **Owns:** `src/components/Header.astro` manage/People markup, `src/scripts/whiteboard-menu.ts`, `src/worker/participantRoutes.ts`, `src/worker/forceFollowRoutes.ts`, `src/lib/whiteboard-participants.ts`, `src/lib/whiteboard-display-name.ts`, role/follow message handlers on the board island and **only** the people/follow sections of `WhiteboardBoard.ts` (do not replace the scene store from Phase 2).
 
@@ -336,6 +340,7 @@ Three worktrees from the **same Phase 2 base**. Strict file ownership. If you mu
 - Chromebook notes: fonts self-hosted, hub still fits `max-height: 800px`.
 - Remove stale dual-library / tldraw host-secret docs that contradict Locked decisions.
 - If Phase 3 PRs left obvious glue bugs, fix only glue (do not new-feature).
+- **After merge:** PR #7 documented Follow Me camera lock (this wrap-up). Phase 4 docs shipped before that lock existed.
 
 **Owns:** `docs/**`, `AGENTS.md`, leftover comment/CSP drift.
 

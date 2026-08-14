@@ -14,7 +14,7 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 | Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; R2 files by `fileId` | [sync-storage.md](./sync-storage.md) |
 | Auth + library | Clerk Google sign-in; cloud-only Recents / Library / Assets; scratch boards expire in 24h | [auth-libraries.md](./auth-libraries.md) |
 | Share codes | Short `A1B2` codes in KV; Open / Closed / Copy / New; hub join | [share-codes.md](./share-codes.md) |
-| People + permissions | Owner / Manager / Editor / Viewer; Follow; Follow Me / force-follow | [people-permissions.md](./people-permissions.md) |
+| People + permissions | Owner / Manager / Editor / Viewer; Follow (pan to unfollow); Follow Me (camera locked) | [people-permissions.md](./people-permissions.md) |
 
 ## Routes
 
@@ -90,4 +90,4 @@ flowchart LR
 
 - `AGENTS.md` — project overview (whiteboard sections)
 - `DEPLOYMENT.md` — Workers Builds, Clerk Frontend API `clerk.scsfoxchase.tech`
-- `tldraw-to-excalidraw.md` — rewrite spec (historical research + locked decisions)
+- `tldraw-to-excalidraw.md` — rewrite spec (**shipped**; research appendix is historical)
