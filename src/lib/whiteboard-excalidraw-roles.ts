@@ -145,8 +145,30 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	})
 	const followedByRef = useRef(false)
 	const applyingFollowRef = useRef(false)
+	const applyingGenRef = useRef(0)
 	const boundsTimerRef = useRef<number | null>(null)
 	const lastBoundsJsonRef = useRef('')
+	const lastRemoteBoundsBySocketRef = useRef(
+		new Map<string, [number, number, number, number]>(),
+	)
+	const forceCameraRafRef = useRef<number | null>(null)
+	const [forceFollowLocked, setForceFollowLocked] = useState(false)
+
+	const beginApplyingFollow = () => {
+		applyingFollowRef.current = true
+		const gen = ++applyingGenRef.current
+		requestAnimationFrame(() => {
+			if (gen === applyingGenRef.current) {
+				applyingFollowRef.current = false
+			}
+		})
+	}
+
+	const cancelForceCameraRaf = () => {
+		if (forceCameraRafRef.current == null) return
+		window.cancelAnimationFrame(forceCameraRafRef.current)
+		forceCameraRafRef.current = null
+	}
 
 	const myUserId = () => userIdRef.current
 	const mySessionId = () => sessionIdRef.current
@@ -199,24 +221,18 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		(target: UserToFollow | null) => {
 			const api = apiRef.current
 			if (!api) return
-			applyingFollowRef.current = true
-			try {
-				api.updateScene({
-					appState: {
-						userToFollow: target
-							? {
-									socketId: target.socketId as Collaborator['socketId'],
-									username: target.username,
-								}
-							: null,
-					},
-					captureUpdate: CaptureUpdateAction.NEVER,
-				})
-			} finally {
-				queueMicrotask(() => {
-					applyingFollowRef.current = false
-				})
-			}
+			beginApplyingFollow()
+			api.updateScene({
+				appState: {
+					userToFollow: target
+						? {
+								socketId: target.socketId as Collaborator['socketId'],
+								username: target.username,
+							}
+						: null,
+				},
+				captureUpdate: CaptureUpdateAction.NEVER,
+			})
 			const person = target
 				? findPerson((row) => row.sessionId === target.socketId)
 				: undefined
@@ -225,42 +241,67 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		[apiRef, findPerson],
 	)
 
-	const reassertFollow = useCallback(() => {
-		applyUserToFollow(effectiveFollow())
-	}, [applyUserToFollow, effectiveFollow])
-
 	const applyRemoteBounds = useCallback(
 		(socketId: string, bounds: [number, number, number, number]) => {
 			const target = effectiveFollow()
 			if (!target || target.socketId !== socketId) return
 			const api = apiRef.current
 			if (!api) return
-			applyingFollowRef.current = true
-			try {
-				const next = zoomToFitBounds({
-					bounds,
-					appState: api.getAppState(),
-					fitToViewport: true,
-					viewportZoomFactor: 1,
-				})
-				api.updateScene({
-					appState: {
-						...next.appState,
-						userToFollow: {
-							socketId: target.socketId as Collaborator['socketId'],
-							username: target.username,
-						},
-					},
-					captureUpdate: CaptureUpdateAction.NEVER,
-				})
-			} finally {
-				queueMicrotask(() => {
-					applyingFollowRef.current = false
-				})
+			const current = api.getAppState()
+			const next = zoomToFitBounds({
+				bounds,
+				appState: current,
+				fitToViewport: true,
+				viewportZoomFactor: 1,
+			})
+			const alreadyFitted =
+				current.scrollX === next.appState.scrollX &&
+				current.scrollY === next.appState.scrollY &&
+				current.zoom.value === next.appState.zoom.value &&
+				current.userToFollow?.socketId === target.socketId
+			if (alreadyFitted) {
+				const person = findPerson((row) => row.sessionId === target.socketId)
+				publishFollowing(person?.userId ?? target.socketId)
+				return
 			}
+			beginApplyingFollow()
+			api.updateScene({
+				appState: {
+					...next.appState,
+					userToFollow: {
+						socketId: target.socketId as Collaborator['socketId'],
+						username: target.username,
+					},
+				},
+				captureUpdate: CaptureUpdateAction.NEVER,
+			})
+			const person = findPerson((row) => row.sessionId === target.socketId)
+			publishFollowing(person?.userId ?? target.socketId)
 		},
-		[apiRef, effectiveFollow],
+		[apiRef, effectiveFollow, findPerson],
 	)
+
+	const reassertFollow = useCallback(() => {
+		const forced = forcedTarget()
+		const target = forced ?? voluntaryTargetRef.current
+		if (forced) {
+			const cached = lastRemoteBoundsBySocketRef.current.get(forced.socketId)
+			if (cached) {
+				applyRemoteBounds(forced.socketId, cached)
+				return
+			}
+		}
+		applyUserToFollow(target)
+	}, [applyRemoteBounds, applyUserToFollow, forcedTarget])
+
+	const scheduleForceCameraLock = useCallback(() => {
+		if (forceCameraRafRef.current != null) return
+		forceCameraRafRef.current = window.requestAnimationFrame(() => {
+			forceCameraRafRef.current = null
+			if (!forcedTarget()) return
+			reassertFollow()
+		})
+	}, [forcedTarget, reassertFollow])
 
 	const sendJson = useCallback(
 		(payload: unknown) => {
@@ -275,6 +316,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		(force = false) => {
 			const api = apiRef.current
 			if (!api) return
+			if (forcedTarget()) return
 			if (!followedByRef.current && !force) return
 			const bounds = getVisibleSceneBounds(api.getAppState())
 			const json = JSON.stringify(bounds)
@@ -286,7 +328,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				bounds,
 			})
 		},
-		[apiRef, sendJson],
+		[apiRef, forcedTarget, sendJson],
 	)
 
 	const scheduleSceneBounds = useCallback(() => {
@@ -325,20 +367,17 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	const onUserFollow = useCallback(
 		(payload: { userToFollow: UserToFollow; action: 'FOLLOW' | 'UNFOLLOW' }) => {
 			if (applyingFollowRef.current) return
+			if (forcedTarget()) {
+				cancelForceCameraRaf()
+				reassertFollow()
+				return
+			}
 			if (payload.action === 'UNFOLLOW') {
-				if (forcedTarget()) {
-					reassertFollow()
-					return
-				}
 				if (voluntaryTargetRef.current) {
 					voluntaryTargetRef.current = null
 					subscribeFollow(null)
 					publishFollowing(null)
 				}
-				return
-			}
-			if (forcedTarget()) {
-				reassertFollow()
 				return
 			}
 			voluntaryTargetRef.current = payload.userToFollow
@@ -354,10 +393,11 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	const onScrollChange = useCallback(() => {
 		if (applyingFollowRef.current) return
 		if (forcedTarget()) {
-			reassertFollow()
+			scheduleForceCameraLock()
+			return
 		}
 		scheduleSceneBounds()
-	}, [forcedTarget, reassertFollow, scheduleSceneBounds])
+	}, [forcedTarget, scheduleForceCameraLock, scheduleSceneBounds])
 
 	const refreshFollowedBy = useCallback(() => {
 		const sid = mySessionId()
@@ -461,6 +501,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					yourSessionId,
 					self?.role ?? roleRef.current,
 				)
+				setForceFollowLocked(Boolean(forcedTarget()))
 				refreshFollowedBy()
 				reassertFollow()
 				return true
@@ -473,6 +514,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				if (payload.forceFollow) {
 					voluntaryTargetRef.current = null
 				}
+				setForceFollowLocked(Boolean(forcedTarget()))
 				refreshFollowedBy()
 				reassertFollow()
 				subscribeFollow(effectiveFollow())
@@ -489,7 +531,10 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				const socketId =
 					typeof data.socketId === 'string' ? data.socketId : ''
 				const bounds = parseBounds(data.bounds)
-				if (socketId && bounds) applyRemoteBounds(socketId, bounds)
+				if (socketId && bounds) {
+					lastRemoteBoundsBySocketRef.current.set(socketId, bounds)
+					applyRemoteBounds(socketId, bounds)
+				}
 				return true
 			}
 
@@ -499,6 +544,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			applyRemoteBounds,
 			boardId,
 			effectiveFollow,
+			forcedTarget,
 			reassertFollow,
 			refreshFollowedBy,
 			sendSceneBounds,
@@ -535,6 +581,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			if (boundsTimerRef.current != null) {
 				window.clearTimeout(boundsTimerRef.current)
 			}
+			cancelForceCameraRaf()
 		}
 	}, [])
 
@@ -542,6 +589,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		role,
 		canEdit,
 		viewModeEnabled: role === 'viewer' || !canEdit,
+		forceFollowLocked,
 		displayName,
 		collaborators,
 		onUserFollow,
