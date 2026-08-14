@@ -25,6 +25,8 @@ Two layers stay in sync:
 1. **KV** (`WHITEBOARD_CODES`) — join lookup index.
 2. **Durable Object** (`WhiteboardBoard`) — `meta:activeCode`, `meta:codeExpiresAt`, DO **alarm** at expiry, mint rate log.
 
+The DO has **one** alarm slot: the sooner of share-code expiry (12h) and unsaved-board TTL (24h). The alarm handler reschedules whatever is still pending.
+
 On mint/rotate the DO writes KV and schedules an alarm. On revoke or alarm, it deletes the KV key and clears DO code meta. `GET` that finds an expired DO code revokes it and returns closed.
 
 ## HTTP API
@@ -86,6 +88,7 @@ On `/board/{uuid}`, header manage panel (`Header.astro` + `whiteboard-menu.ts`):
   - **Copy Link** — permanent `{origin}/board/{uuid}` URL
   - Expiry line updated about every 30s (`formatShareExpiry` → “Codes expire in 11h 42m. A new code is needed to share again.”)
   - Static hint: bookmark the board page to return later
+  - **People** (roles + Follow) — see [people-permissions.md](./people-permissions.md)
 
 Auth for these calls: none beyond knowing the board UUID.
 
@@ -94,10 +97,9 @@ Auth for these calls: none beyond knowing the board UUID.
 1. User enters code (or link/UUID) on `/whiteboard`.
 2. `parseJoinInput` classifies as `code` or `board`.
 3. For codes: `GET /api/whiteboard/join/:code` → UUID.
-4. `touchBoardActive(boardId)` (best-effort).
-5. Navigate to `/board/{uuid}`.
+4. Navigate to `/board/{uuid}`. Join does **not** write Recents/Library.
 
-Joining does **not** make the user the host. Host privileges stay with the browser that holds the host secret. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
+Joining does **not** make the user Owner. Scratch Owner stays with the creating browser (host secret). Saved boards use the Google Owner. Joiners are **Viewer** by default. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
 
 ## Key files
 

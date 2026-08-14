@@ -109,7 +109,7 @@ Whiteboard sync, assets, share codes, and cloud libraries are documented under [
 
 Asset config in Wrangler uses `not_found_handling: "404-page"` so missing assets return 404 instead of SPA HTML (avoids `nosniff` breakage on CSS).
 
-CSP allows Clerk custom domains (`clerk.scsfoxchase.tech`, `accounts.scsfoxchase.tech`), Google OAuth, Turnstile, and same-origin whiteboard WebSocket/asset routes. See [environment.md](./environment.md) for Clerk domain notes.
+CSP allows Clerk custom domains (`clerk.scsfoxchase.tech`, `accounts.scsfoxchase.tech`), Google OAuth, Turnstile, same-origin Whiteboard WebSocket/asset/font routes, and YouTube/Vimeo `frame-src` for canvas embeds. See [environment.md](./environment.md) for Clerk domain notes. There is no tldraw license key.
 
 ## Verification checklist
 
@@ -123,17 +123,17 @@ After deploy (custom domain or workers.dev preview):
 - [ ] Static assets: `/_astro/*`, `/images/*`, `/sw.js`
 - [ ] Security headers from `public/_headers` (CSP, HSTS, etc.)
 - [ ] Clerk Sign in works on production (`pk_live_` keys; localhost needs a Clerk development instance)
-- [ ] Whiteboard APIs: connect WebSocket, join by share code, asset PUT/GET when signed in/out as expected
+- [ ] Whiteboard APIs: connect WebSocket, join by share code, asset PUT/GET for `temp:` / `google:` keys as expected
 
-Local multiplayer / auth smoke test:
+Local Whiteboard smoke test:
 
 ```bash
 npm run build && npm run preview
 # or: npm run dev
 ```
 
-1. Signed out: `/whiteboard` → Create, paste image, confirm Assets (local).
-2. Sign in with Google → hub lists switch to cloud.
-3. Create a board + paste media while signed in → cloud Recents/Assets; R2 keys use `google:{id}`.
-4. Sign out → local lists return unchanged.
-5. Two windows on the same `/board/{uuid}`: sync works; signed-in cursor shows display name.
+1. Signed out: `/whiteboard` → Create (Recents hidden). Two windows on `/board/{uuid}` sync shapes; refresh keeps the scene.
+2. Sign in with Google on a scratch board this browser created → Save claims Owner; hub Recents/Library appear.
+3. Signed-in create autosaves; paste image + MP4 → cloud Assets; R2 uses `google:{id}` after save (scratch uses `temp:{boardId}`).
+4. Sign out → hub lists hide; cloud data remains for next sign-in.
+5. Join by code as a guest: Viewer; Owner can set Editor. Follow + Follow Me.

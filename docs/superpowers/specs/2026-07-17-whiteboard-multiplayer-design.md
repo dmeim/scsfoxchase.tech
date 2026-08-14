@@ -1,7 +1,9 @@
 # Whiteboard Multiplayer Design
 
+> **Superseded (2026-08).** This July 2026 tldraw dual-library design is historical. The live product is **Whiteboard** on Excalidraw 0.18.1 with a Durable Object WebSocket, cloud-only library, and four roles — see `tldraw-to-excalidraw.md` and [`docs/whiteboard/`](../../whiteboard/README.md). Do not implement from this file.
+
 **Date:** 2026-07-17  
-**Status:** Draft — Updated 2026-07-17 — assets hub + Google identity  
+**Status:** Draft — superseded  
 **Site:** scsfoxchase.tech (Astro static + Cloudflare Worker)
 
 ## Goal

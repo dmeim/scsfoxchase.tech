@@ -63,7 +63,7 @@ Used across `home.css`, `newgames.css`, `forms.css`, `whiteboard.css`, and relat
 
 Additional page-specific breakpoints (e.g. `900px`, `520px`, `480px`) appear in inventory and games CSS; prefer matching the nearest existing pattern rather than inventing a new scale.
 
-**When adding sections or controls:** verify desktop, Chromebook height, and iPad width. Avoid introducing page scroll on those three targets.
+**When adding sections or controls:** verify desktop, Chromebook height, and iPad width. Avoid introducing page scroll on those three targets. Whiteboard hub already compresses at `max-height: 800px`; keep Excalidraw fonts self-hosted (`EXCALIDRAW_ASSET_PATH`).
 
 ## Content: games collection
 
@@ -121,7 +121,7 @@ Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page
 
 | Topic | Convention |
 |-------|------------|
-| Framework | Astro 7 file-based routing; React only where islands are required (Clerk, tldraw) |
+| Framework | Astro 7 file-based routing; React only where islands are required (Clerk, Whiteboard / Excalidraw) |
 | Prerender | Every page: `export const prerender = true` |
 | Worker APIs | Only under `/api/whiteboard/*` in `src/worker.ts` / `src/worker/` |
 | Service worker | Never intercept `/api/*` |
@@ -134,13 +134,14 @@ Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page
 
 | Concept | Form |
 |---------|------|
-| Owner (signed out) | `local:{deviceInstallId}` |
-| Owner (signed in) | `google:{accountId}` |
+| Owner (signed-in saved) | `google:{accountId}` |
+| Scratch canvas media | `temp:{boardId}` (24h TTL) |
 | Media key | `assets/{ownerKey}/{assetId}` |
 | Cloud indexes | `library/{ownerKey}/boards.json`, `library/{ownerKey}/assets.json` |
 | Share code KV | `code:{A1B2}` (TTL 12h) |
+| Guest / device id | `localStorage` `scsfoxchase.whiteboard.deviceInstallId` (names + Follow id; not a board library) |
 
-Do not invent alternate owner prefixes or put board sync state in R2 when the Durable Object owns the room.
+Do not invent alternate owner prefixes or put board sync state in R2 when the Durable Object owns the room. Do not restore a localStorage board library.
 
 ### Agent-oriented rules
 

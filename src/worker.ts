@@ -77,7 +77,7 @@ export default {
 		}
 
 		// WebSocket upgrade → board Durable Object (idFromName(uuid))
-		// Phase 2: Excalidraw element diffs + persist, not tldraw useSync.
+		// Excalidraw element diffs + persist (scene:update / scene:sync).
 		const connectMatch = url.pathname.match(
 			/^\/api\/whiteboard\/connect\/([^/]+)\/?$/i,
 		)

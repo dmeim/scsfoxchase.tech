@@ -51,5 +51,5 @@
       "public_path": "/guides/recover-deleted-file-google-drive/menu-more.png"
     }
   ],
-  "note": "Canonical copies live under src/content/guides/<slug>/ for article + tldraw authoring. public/guides/<slug>/ is the web-served mirror used by Markdown <img> paths."
+  "note": "Canonical copies live under src/content/guides/<slug>/. public/guides/<slug>/ is the web-served mirror used by Markdown <img> paths."
 }

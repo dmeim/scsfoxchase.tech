@@ -1,10 +1,17 @@
-# Auth and dual libraries
+# Auth and cloud library
 
-Clerk Google sign-in, owner keys, and how Recents / Library / Assets switch between local and cloud without wiping either side.
+Clerk Google sign-in, owner keys, and how Recents / Library / Assets work as a **signed-in cloud library only**. There is no dual local/cloud board library.
 
 ## Overview
 
-Whiteboards work **signed out** (device-local indexes + `local:*` R2 assets) and **signed in** (Google account cloud indexes + `google:*` assets). Sign-in and sign-out swap which namespace the hub and manage panel read/write. The other namespace stays intact on the device or in R2.
+- **Create** works signed in or out.
+- **Local saving is gone.** No `localStorage` board library; signed-out Recents / Library / Assets are not shown.
+- **Save / reopen from Library** requires Google sign-in. Signed-in **create autosaves** to the cloud library. That Google account is **Owner**.
+- Signed-out create is a **live scratch board** (URL + Durable Object). The creating browser is **ephemeral Owner** (host secret) so roles and Follow still work. It is not in anyone’s library.
+- “Leave and lose work” means **never saved to the cloud library**, not “destroy on refresh.” Chromebooks refresh. The scene stays in the DO; **unsaved boards and their temp R2 objects are deleted after 24 hours**.
+- Sign in on a scratch board this browser created and Save: that Google account **claims Owner**, temp R2 files move under `google:{accountId}`, 24h TTL comes off.
+
+Join by share code, link, or UUID still works with **no account**. Joiners are **Viewer** by default.
 
 ## Clerk on the client
 
@@ -35,38 +42,36 @@ Used by:
 
 - All `/api/whiteboard/library/*` routes
 - `PUT` / `DELETE` on `google:*` asset paths
+- `POST /api/whiteboard/assets/claim`
 
-Secrets / vars: `CLERK_SECRET_KEY` (Worker secret), `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`. Local: `.dev.vars` (see `.dev.vars.example`).
+Secrets / vars: `CLERK_SECRET_KEY` (Worker secret), `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`. Local: `.dev.vars` (see `.dev.vars.example`). There is no `PUBLIC_TLDRAW_LICENSE_KEY`.
 
 ## Owner keys
 
 | Mode | Owner key | How it is chosen |
 |------|-----------|------------------|
-| Signed out | `local:{deviceInstallId}` | UUID in `localStorage` (`scsfoxchase.whiteboard.deviceInstallId`), minted on first use |
-| Signed in | `google:{accountId}` | Google OAuth `sub` when present; otherwise Clerk `user.id` |
+| Signed-in saved board | `google:{accountId}` | Google OAuth `sub` when present; otherwise Clerk `user.id` |
+| Unsaved / signed-out canvas files | `temp:{boardId}` | Board UUID; 24h TTL on R2 |
+| Guest identity (not a library) | `deviceInstallId` in `localStorage` | Stable per browser for generated display names and Follow `userId` |
 
-`getOwnerKey()` in `src/scripts/whiteboard-library.ts` returns the active identity’s key or the local key.
+`getOwnerKey()` in `src/scripts/whiteboard-library.ts` returns the signed-in Google key or `local:{deviceInstallId}` (legacy hub uploads). Live canvas media uses `ownerKeyForBoardMeta` → `temp:` or `google:`.
 
 R2 media keys: `assets/{ownerKey}/{assetId}`.  
 Cloud indexes: `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json`.
 
-Clearing site data creates a new `deviceInstallId` and a new empty local namespace.
+Clearing site data creates a new `deviceInstallId` and a new guest name. It does not wipe a Google library.
 
-## Dual library mode
-
-Active helpers (`*Active` in `whiteboard-library.ts` / `whiteboard-assets.ts`) branch on `isSignedIn()`:
+## Cloud library vs scratch
 
 | Surface | Signed out | Signed in |
 |---------|------------|-----------|
-| Recents / Library | `localStorage` `scsfoxchase.whiteboard.library` | `GET/PUT/DELETE /api/whiteboard/library/boards` |
-| Assets hub index | `localStorage` `scsfoxchase.whiteboard.assets` | `/api/whiteboard/library/assets` |
-| New uploads | R2 under `local:…` | R2 under `google:…` (+ Bearer) |
-| Create / touch / rename board | Local upsert | Cloud upsert |
-| Delete board/asset from hub | Local index only | Cloud index only |
+| Recents / Library / Assets hub | Hidden | `GET/PUT/DELETE /api/whiteboard/library/boards` and `…/assets` |
+| Create | Scratch DO + host secret; 24h TTL | Autosave to cloud; Owner = this Google account |
+| Join | Opens the board as Viewer | Same; does **not** add Recents unless you already own it or Save a scratch you created |
+| Save / claim | N/A (sign in first) | Creating-browser host secret + Clerk → Owner, lift TTL, move temp R2 |
+| Canvas files | `temp:{boardId}` | `google:{accountId}` after save |
 
-**Important:** Removing a board or asset in one mode does not delete the other mode’s index. Sign out returns you to the device lists that were there before sign-in.
-
-Hub and manage panel wait for `whenAuthReady()` so signed-in users do not briefly write or render local lists. `onAuthChange` re-renders hub lists when identity flips.
+Hub and manage panel wait for `whenAuthReady()` so signed-in users do not miss cloud upserts. `onAuthChange` re-renders hub lists when identity flips. Signing in on a scratch tab this browser created claims the board (`bindBoardPageScratchClaim`).
 
 Identity module: `src/lib/whiteboard-identity.ts` (`setActiveIdentity`, `getSessionToken` / `getAuthHeaders`, `identityFromClerkUser`).
 
@@ -74,9 +79,11 @@ Identity module: `src/lib/whiteboard-identity.ts` (`setActiveIdentity`, `getSess
 
 | Context | Source |
 |---------|--------|
-| People list (full) | `displayName` from Clerk (`fullName` or first+last) sent on connect |
-| Cursor / presence tag | `shortDisplayName` → e.g. `Ada L.` (`src/lib/whiteboard-display-name.ts`) |
-| Guests | Empty display name → People label `Guest {sessionTail}` |
+| People list (full) | Clerk `fullName` (or first+last) when signed in; otherwise a generated guest name |
+| Guests | `getOrCreateGuestDisplayName(deviceInstallId)` — school-safe adjective + animal, sticky on this browser (`scsfoxchase.whiteboard.guestDisplayName`) |
+| Follow collaborator tag | Same People label (live **cursors are not v1**) |
+
+Helpers: `src/lib/whiteboard-display-name.ts`.
 
 ## Cloud library API summary
 
@@ -85,11 +92,13 @@ All require a valid Clerk session. Indexes are scoped to the authenticated `owne
 | Method | Path | Body / notes |
 |--------|------|----------------|
 | `GET` | `/api/whiteboard/library/boards` | `{ boards, ownerKey }` sorted by `lastAccessedAt` |
-| `PUT` | `/api/whiteboard/library/boards` | Board entry upsert |
+| `PUT` | `/api/whiteboard/library/boards` | Board entry upsert; optional `X-Board-Host` to claim DO meta |
 | `DELETE` | `/api/whiteboard/library/boards/:uuid` | Drop index row |
 | `GET` | `/api/whiteboard/library/assets` | `{ assets, ownerKey }` |
 | `PUT` | `/api/whiteboard/library/assets` | Asset entry; `ownerKey` must match session |
 | `DELETE` | `/api/whiteboard/library/assets/:uuid` | Drop index row |
+| `GET` | `/api/whiteboard/boards/:uuid/meta` | `{ savedToLibrary, cloudOwnerKey, unsavedExpiresAt, … }` |
+| `PATCH` | `/api/whiteboard/boards/:uuid/meta` | Host secret; `savedToLibrary` + `cloudOwnerKey` lifts 24h TTL |
 
 Client wrappers: `src/lib/whiteboard-cloud.ts`.
 
@@ -101,8 +110,8 @@ Client wrappers: `src/lib/whiteboard-cloud.ts`.
 | `src/lib/whiteboard-identity.ts` | Identity, tokens, allowlist helpers |
 | `src/worker/clerkAuth.ts` | Worker session verification |
 | `src/worker/libraryRoutes.ts` | Cloud board/asset indexes |
-| `src/worker/assetRoutes.ts` | Google write auth for assets |
-| `src/scripts/whiteboard-library.ts` | Owner key, dual-mode board helpers |
-| `src/lib/whiteboard-assets.ts` | Dual-mode asset index + uploads |
+| `src/worker/assetRoutes.ts` | Google write auth + temp claim |
+| `src/scripts/whiteboard-library.ts` | Cloud create / touch / claim, host secret |
+| `src/lib/whiteboard-assets.ts` | Temp/google owner keys + hub asset index |
 | `src/lib/whiteboard-cloud.ts` | Authenticated library fetch client |
-| `.dev.vars.example` / `.env.example` | Clerk env templates |
+| `.dev.vars.example` / `.env.example` | Clerk env templates (no license key) |
