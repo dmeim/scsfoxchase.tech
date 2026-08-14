@@ -1,9 +1,9 @@
 /**
- * Host-only force-follow toggle.
+ * Owner/Manager force-follow (Phase 3.3).
  *
  * PATCH /api/whiteboard/boards/:uuid/force-follow
- * Auth: host secret (Authorization: Bearer / X-Board-Host / ?hostSecret=)
- * Body: { "forceFollow": boolean }
+ * Auth: host secret (Owner scratch) or live session token (Owner / Manager)
+ * Body: { "forceFollow": boolean, "targetUserId"?: string, "subjectUserId"?: string }
  */
 
 const UUID_RE =
@@ -19,7 +19,8 @@ function corsHeaders(request: Request): HeadersInit {
 	return {
 		'Access-Control-Allow-Origin': origin,
 		'Access-Control-Allow-Methods': 'PATCH, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Board-Host',
+		'Access-Control-Allow-Headers':
+			'Content-Type, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth',
 		Vary: 'Origin',
 	}
 }
@@ -77,13 +78,21 @@ export async function handleForceFollowRequest(
 	}
 
 	const hostSecret = extractHostSecret(request, url)
-	if (!hostSecret) {
-		return json(401, { error: 'Host secret required' }, request)
+	const actorSessionId = request.headers.get('X-Board-Session')?.trim() || ''
+	const actorAuth = request.headers.get('X-Board-Auth')?.trim() || ''
+	if (!hostSecret && !(actorSessionId && actorAuth)) {
+		return json(401, { error: 'Owner or Manager proof required' }, request)
 	}
 
 	let forceFollow: boolean
+	let targetUserId = ''
+	let subjectUserId = ''
 	try {
-		const body = (await request.json()) as { forceFollow?: unknown }
+		const body = (await request.json()) as {
+			forceFollow?: unknown
+			targetUserId?: unknown
+			subjectUserId?: unknown
+		}
 		if (typeof body.forceFollow !== 'boolean') {
 			return json(
 				400,
@@ -92,6 +101,12 @@ export async function handleForceFollowRequest(
 			)
 		}
 		forceFollow = body.forceFollow
+		if (typeof body.targetUserId === 'string') {
+			targetUserId = body.targetUserId.trim().slice(0, 128)
+		}
+		if (typeof body.subjectUserId === 'string') {
+			subjectUserId = body.subjectUserId.trim().slice(0, 128)
+		}
 	} catch {
 		return json(400, { error: 'Invalid JSON body' }, request)
 	}
@@ -100,8 +115,12 @@ export async function handleForceFollowRequest(
 	const stub = env.WHITEBOARDS.get(id)
 	const forwardUrl = new URL(request.url)
 	forwardUrl.searchParams.set('boardId', boardId)
-	forwardUrl.searchParams.set('hostSecret', hostSecret)
 	forwardUrl.searchParams.set('forceFollow', forceFollow ? '1' : '0')
+	if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
+	if (actorSessionId) forwardUrl.searchParams.set('actorSessionId', actorSessionId)
+	if (actorAuth) forwardUrl.searchParams.set('actorAuth', actorAuth)
+	if (targetUserId) forwardUrl.searchParams.set('targetUserId', targetUserId)
+	if (subjectUserId) forwardUrl.searchParams.set('subjectUserId', subjectUserId)
 
 	const response = await stub.fetch(
 		new Request(forwardUrl.toString(), {

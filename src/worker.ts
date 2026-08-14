@@ -52,7 +52,7 @@ export default {
 			if (codeResponse) return codeResponse
 		}
 
-		// Per-session edit permissions (Phase 6)
+		// PHASE 3.3: participant roles
 		if (
 			url.pathname.match(
 				/^\/api\/whiteboard\/boards\/[^/]+\/participants\/[^/]+/i,
@@ -62,7 +62,7 @@ export default {
 			if (participantResponse) return participantResponse
 		}
 
-		// Host force-follow camera lockdown
+		// PHASE 3.3: Owner/Manager force-follow
 		if (
 			url.pathname.match(/^\/api\/whiteboard\/boards\/[^/]+\/force-follow/i)
 		) {

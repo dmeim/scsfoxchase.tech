@@ -14,11 +14,7 @@ import type {
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
-import { getActiveIdentity, whenAuthReady } from '../lib/whiteboard-identity'
-import {
-  isForceFollowPayload,
-  isParticipantsPayload,
-} from '../lib/whiteboard-participants'
+import { whenAuthReady } from '../lib/whiteboard-identity'
 import {
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
@@ -31,12 +27,16 @@ import {
   type SceneElement,
 } from '../lib/whiteboard-sync'
 import {
-  getDeviceInstallId,
   getHostSecret,
   touchBoardActive,
 } from '../scripts/whiteboard-library'
 // PHASE 3.2
 import { useWhiteboardExcalidrawFiles } from '../lib/whiteboard-excalidraw-files'
+// PHASE 3.3
+import {
+  getBoardConnectIdentity,
+  useWhiteboardExcalidrawRoles,
+} from '../lib/whiteboard-excalidraw-roles'
 
 declare global {
   interface Window {
@@ -46,9 +46,6 @@ declare global {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
-const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 
 function readBoardIdFromLocation(): string | undefined {
   if (typeof window === 'undefined') return undefined
@@ -68,27 +65,6 @@ function ensureExcalidrawAssetPath() {
 }
 
 ensureExcalidrawAssetPath()
-
-function publishParticipants(
-  participants: unknown,
-  yourSessionId: string,
-) {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(
-    new CustomEvent(PARTICIPANTS_EVENT, {
-      detail: { participants, yourSessionId },
-    }),
-  )
-}
-
-function publishForceFollow(forceFollow: boolean, hostUserId: string) {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(
-    new CustomEvent(FORCE_FOLLOW_EVENT, {
-      detail: { forceFollow, hostUserId },
-    }),
-  )
-}
 
 type WhiteboardCanvasProps = {
   boardId?: string
@@ -120,6 +96,13 @@ export default function WhiteboardCanvas({
   } | null>(null)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
+
+  // PHASE 3.3
+  const roles = useWhiteboardExcalidrawRoles({ boardId, apiRef, wsRef })
+  const handleRoleMessageRef = useRef(roles.handleSocketMessage)
+  handleRoleMessageRef.current = roles.handleSocketMessage
+  const canEditRef = useRef(roles.canEdit)
+  canEditRef.current = roles.canEdit
 
   useEffect(() => {
     ensureExcalidrawAssetPath()
@@ -211,6 +194,7 @@ export default function WhiteboardCanvas({
       const ws = wsRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
       if (applyingRemoteRef.current) return
+      if (!canEditRef.current) return
 
       const version = getSceneVersion(elements)
       if (!forceFull && version === lastSceneVersionRef.current) return
@@ -266,6 +250,7 @@ export default function WhiteboardCanvas({
       // PHASE 3.2 — upload/hydrate R2 files; do not gate on remote-apply.
       media.syncFiles(elements, files)
       if (applyingRemoteRef.current) return
+      if (!canEditRef.current) return
       const version = getSceneVersion(elements)
       if (version === lastSceneVersionRef.current) return
       pendingFlushRef.current = { elements, appState }
@@ -302,14 +287,14 @@ export default function WhiteboardCanvas({
       await whenAuthReady()
       if (cancelled) return
 
-      const identity = getActiveIdentity()
+      const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
         sessionId,
         hostSecret: getHostSecret(boardId),
-        displayName: identity?.displayName?.slice(0, 48) ?? '',
-        userId: identity?.accountId || getDeviceInstallId(),
+        displayName: identity.displayName,
+        userId: identity.userId,
       })
 
       const ws = new WebSocket(uri)
@@ -350,6 +335,9 @@ export default function WhiteboardCanvas({
 
         if (data.type === 'pong') return
 
+        // PHASE 3.3
+        if (handleRoleMessageRef.current(data)) return
+
         if (data.type === 'scene:sync' || data.type === 'scene:update') {
           const elements = Array.isArray(data.elements)
             ? (data.elements as SceneElement[])
@@ -360,15 +348,6 @@ export default function WhiteboardCanvas({
               : null
           applyRemoteElements(elements, appState)
           return
-        }
-
-        if (isParticipantsPayload(data)) {
-          publishParticipants(data.participants, data.yourSessionId)
-          return
-        }
-
-        if (isForceFollowPayload(data)) {
-          publishForceFollow(data.forceFollow, data.hostUserId)
         }
       })
 
@@ -444,7 +423,34 @@ export default function WhiteboardCanvas({
         validateEmbeddable={media.validateEmbeddable}
         renderEmbeddable={media.renderEmbeddable}
         onPaste={media.onPaste}
+        isCollaborating
+        name={roles.displayName}
+        // PHASE 3.3
+        viewModeEnabled={roles.viewModeEnabled}
+        collaborators={roles.collaborators}
+        onUserFollow={roles.onUserFollow}
+        onScrollChange={roles.onScrollChange}
       />
+      {roles.viewModeEnabled ? (
+        <div
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 4,
+            padding: '4px 10px',
+            borderRadius: 2,
+            background: 'var(--primary-color)',
+            color: '#fff',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            pointerEvents: 'none',
+          }}
+        >
+          View only
+        </div>
+      ) : null}
     </div>
   )
 }

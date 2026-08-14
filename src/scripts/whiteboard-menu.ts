@@ -8,13 +8,15 @@ import {
 } from '../lib/whiteboard-codes'
 import { peopleListLabel } from '../lib/whiteboard-display-name'
 import {
+  getBoardSessionAuth,
   setForceFollow,
-  setParticipantCanEdit,
+  setParticipantRole,
   type ParticipantRow,
+  type WhiteboardRole,
 } from '../lib/whiteboard-participants'
+import { assignableRolesFor } from '../lib/whiteboard-sync'
 import {
   getEntryActive,
-  getHostSecret,
   readBoardIdFromPath,
   setBoardTitleActive,
 } from './whiteboard-library'
@@ -23,6 +25,11 @@ const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
 const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
 const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
+const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
+
+function roleLabel(role: WhiteboardRole): string {
+  return role.charAt(0).toUpperCase() + role.slice(1)
+}
 
 function initWhiteboardMenu() {
   const root = document.querySelector<HTMLElement>('[data-whiteboard-menu]')
@@ -64,6 +71,9 @@ function initWhiteboardMenu() {
   const forceFollowHint = root.querySelector<HTMLElement>(
     '[data-wb-force-follow-hint]',
   )
+  const forceFollowTarget = root.querySelector<HTMLSelectElement>(
+    '[data-wb-force-follow-target]',
+  )
 
   if (!toggle || !panel) return
 
@@ -75,13 +85,16 @@ function initWhiteboardMenu() {
 
   let participants: ParticipantRow[] = []
   let yourSessionId = ''
+  let yourRole: WhiteboardRole | '' =
+    (boardId && getBoardSessionAuth(boardId)?.role) || ''
   let followingUserId: string | null = null
-  let editBusy = false
+  let roleBusy = false
   let forceFollowBusy = false
   let forceFollowOn = false
-  const isHost = Boolean(boardId && getHostSecret(boardId))
+  let forceFollowTargetUserId = ''
+  const canForceFollow = () => yourRole === 'owner' || yourRole === 'manager'
 
-  if (forceFollowBlock) forceFollowBlock.hidden = !isHost
+  if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
 
   const syncTitleFromLibrary = () => {
     if (!boardId || !titleInput) return
@@ -160,10 +173,35 @@ function initWhiteboardMenu() {
     forceFollowHint.textContent = message
   }
 
-  const renderForceFollowUi = (on: boolean) => {
+  const renderForceFollowUi = (on: boolean, targetUserId?: string) => {
     forceFollowOn = on
+    if (typeof targetUserId === 'string') forceFollowTargetUserId = targetUserId
     if (forceFollowToggle) forceFollowToggle.checked = on
     if (forceFollowState) forceFollowState.textContent = on ? 'On' : 'Off'
+    if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
+    if (forceFollowTarget) {
+      forceFollowTarget.disabled = !canForceFollow()
+      const self = participants.find((p) => p.sessionId === yourSessionId)
+      const selfUserId = self?.userId ?? ''
+      forceFollowTarget.replaceChildren()
+      const meOpt = document.createElement('option')
+      meOpt.value = selfUserId
+      meOpt.textContent = 'Me'
+      forceFollowTarget.append(meOpt)
+      for (const person of participants) {
+        if (!person.userId || person.userId === selfUserId) continue
+        const opt = document.createElement('option')
+        opt.value = person.userId
+        opt.textContent = peopleListLabel(person.displayName, person.sessionId)
+        forceFollowTarget.append(opt)
+      }
+      const wanted = forceFollowTargetUserId || selfUserId
+      if (wanted && [...forceFollowTarget.options].some((o) => o.value === wanted)) {
+        forceFollowTarget.value = wanted
+      } else {
+        forceFollowTarget.value = selfUserId
+      }
+    }
   }
 
   const stopExpiryTimer = () => {
@@ -247,6 +285,7 @@ function initWhiteboardMenu() {
     if (participants.length === 0) {
       peopleList.hidden = true
       peopleEmpty.hidden = false
+      renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
       return
     }
 
@@ -264,12 +303,12 @@ function initWhiteboardMenu() {
       name.className = 'whiteboard-people-name'
       const label = peopleListLabel(person.displayName, person.sessionId)
       name.textContent = isSelf ? `${label} (you)` : label
-      name.title = label
+      name.title = `${label} · ${roleLabel(person.role)}`
 
       const followBtn = document.createElement('button')
       followBtn.type = 'button'
       followBtn.className = 'whiteboard-people-follow'
-      const canFollow = Boolean(person.userId) && !isSelf
+      const canFollow = Boolean(person.userId)
       followBtn.disabled = !canFollow
       const isFollowing = Boolean(
         person.userId && followingUserId && followingUserId === person.userId,
@@ -286,43 +325,44 @@ function initWhiteboardMenu() {
         })
       }
 
-      const editLabel = document.createElement('label')
-      editLabel.className = 'whiteboard-switch whiteboard-people-edit'
-      const editText = document.createElement('span')
-      editText.className = 'visually-hidden'
-      editText.textContent = `Edit for ${label}`
-      const editInput = document.createElement('input')
-      editInput.type = 'checkbox'
-      // Host self always on; demoted guests (including self) show real canEdit.
-      editInput.checked = person.isHost ? true : person.canEdit
-      editInput.setAttribute('aria-label', `Allow ${label} to edit`)
-      // Host/self cannot toggle themselves; only host toggles other guests.
-      if (person.isHost || isSelf) {
-        editInput.disabled = true
-      } else {
-        editInput.disabled = !isHost || editBusy
-      }
-      const track = document.createElement('span')
-      track.className = 'whiteboard-switch-track'
-      track.setAttribute('aria-hidden', 'true')
-      editLabel.append(editText, editInput, track)
-
-      if (isHost && !person.isHost && !isSelf && boardId) {
-        editInput.addEventListener('change', () => {
-          if (editBusy) {
-            editInput.checked = person.canEdit
+      const assignable = yourRole
+        ? assignableRolesFor(yourRole, person.role)
+        : null
+      let roleControl: HTMLElement
+      if (assignable && boardId) {
+        const select = document.createElement('select')
+        select.className = 'whiteboard-people-role'
+        select.setAttribute('aria-label', `Role for ${label}`)
+        select.disabled = roleBusy
+        for (const role of assignable) {
+          const opt = document.createElement('option')
+          opt.value = role
+          opt.textContent = roleLabel(role)
+          if (role === person.role) opt.selected = true
+          select.append(opt)
+        }
+        if (!assignable.includes(person.role as (typeof assignable)[number])) {
+          const current = document.createElement('option')
+          current.value = person.role
+          current.textContent = roleLabel(person.role)
+          current.selected = true
+          select.prepend(current)
+        }
+        select.addEventListener('change', () => {
+          const next = select.value
+          if (next !== 'manager' && next !== 'editor' && next !== 'viewer') {
+            select.value = person.role
             return
           }
-          editBusy = true
+          if (roleBusy) {
+            select.value = person.role
+            return
+          }
+          roleBusy = true
           setPeopleHint(null)
-          const wantEdit = editInput.checked
           void (async () => {
             try {
-              const updated = await setParticipantCanEdit(
-                boardId,
-                person.sessionId,
-                wantEdit,
-              )
+              const updated = await setParticipantRole(boardId, person.sessionId, next)
               const idx = participants.findIndex(
                 (p) => p.sessionId === updated.sessionId,
               )
@@ -330,34 +370,50 @@ function initWhiteboardMenu() {
                 participants[idx] = { ...participants[idx]!, ...updated }
               }
             } catch (err) {
-              editInput.checked = person.canEdit
+              select.value = person.role
               setPeopleHint(
                 err instanceof Error && err.message
                   ? err.message
-                  : 'Could not update edit permission.',
+                  : 'Could not update role.',
               )
             } finally {
-              editBusy = false
+              roleBusy = false
               renderPeople()
             }
           })()
         })
+        roleControl = select
+      } else {
+        const badge = document.createElement('span')
+        badge.className = 'whiteboard-people-role-label'
+        badge.textContent = roleLabel(person.role)
+        roleControl = badge
       }
 
-      li.append(name, followBtn, editLabel)
+      li.append(name, followBtn, roleControl)
       peopleList.append(li)
     }
+    renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
   }
 
   window.addEventListener(PARTICIPANTS_EVENT, ((event: CustomEvent) => {
     const detail = event.detail as {
       participants?: ParticipantRow[]
       yourSessionId?: string
+      yourRole?: WhiteboardRole
     }
     participants = Array.isArray(detail.participants) ? detail.participants : []
     yourSessionId =
       typeof detail.yourSessionId === 'string' ? detail.yourSessionId : ''
+    if (detail.yourRole) yourRole = detail.yourRole
     renderPeople()
+  }) as EventListener)
+
+  window.addEventListener(HELLO_EVENT, ((event: CustomEvent) => {
+    const detail = event.detail as { role?: WhiteboardRole; sessionId?: string }
+    if (detail.role) yourRole = detail.role
+    if (typeof detail.sessionId === 'string') yourSessionId = detail.sessionId
+    if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
   }) as EventListener)
 
   window.addEventListener(FOLLOWING_EVENT, ((event: CustomEvent) => {
@@ -368,8 +424,14 @@ function initWhiteboardMenu() {
   }) as EventListener)
 
   window.addEventListener(FORCE_FOLLOW_EVENT, ((event: CustomEvent) => {
-    const detail = event.detail as { forceFollow?: boolean }
-    renderForceFollowUi(Boolean(detail.forceFollow))
+    const detail = event.detail as {
+      forceFollow?: boolean
+      targetUserId?: string
+    }
+    renderForceFollowUi(
+      Boolean(detail.forceFollow),
+      typeof detail.targetUserId === 'string' ? detail.targetUserId : undefined,
+    )
   }) as EventListener)
 
   const setOpen = (open: boolean) => {
@@ -382,7 +444,6 @@ function initWhiteboardMenu() {
       titleInput?.setCustomValidity('')
       void refreshShareState()
       renderPeople()
-      renderForceFollowUi(forceFollowOn)
       window.requestAnimationFrame(() => {
         titleInput?.focus()
         titleInput?.select()
@@ -535,19 +596,44 @@ function initWhiteboardMenu() {
   })
 
   forceFollowToggle?.addEventListener('change', () => {
-    if (!boardId || !isHost || forceFollowBusy) {
+    if (!boardId || !canForceFollow() || forceFollowBusy) {
       if (forceFollowToggle) forceFollowToggle.checked = forceFollowOn
       return
     }
     forceFollowBusy = true
     setForceFollowHint(null)
     const wantOn = forceFollowToggle.checked
+    const targetUserId = forceFollowTarget?.value || undefined
     void (async () => {
       try {
-        const result = await setForceFollow(boardId, wantOn)
-        renderForceFollowUi(result.forceFollow)
+        const result = await setForceFollow(boardId, wantOn, { targetUserId })
+        renderForceFollowUi(result.forceFollow, result.targetUserId)
       } catch (err) {
-        renderForceFollowUi(forceFollowOn)
+        renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
+        setForceFollowHint(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not update force follow.',
+        )
+      } finally {
+        forceFollowBusy = false
+      }
+    })()
+  })
+
+  forceFollowTarget?.addEventListener('change', () => {
+    if (!boardId || !canForceFollow() || forceFollowBusy || !forceFollowOn) {
+      return
+    }
+    forceFollowBusy = true
+    setForceFollowHint(null)
+    const targetUserId = forceFollowTarget.value || undefined
+    void (async () => {
+      try {
+        const result = await setForceFollow(boardId, true, { targetUserId })
+        renderForceFollowUi(result.forceFollow, result.targetUserId)
+      } catch (err) {
+        renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
         setForceFollowHint(
           err instanceof Error && err.message
             ? err.message

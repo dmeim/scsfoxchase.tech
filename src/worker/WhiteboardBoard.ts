@@ -8,6 +8,7 @@
  * Refresh does not wipe the scene. “Lose work” = never saved to a cloud library.
  */
 import { DurableObject } from 'cloudflare:workers'
+import { generateGuestDisplayName } from '../lib/whiteboard-display-name'
 import {
 	FULL_RESYNC_EVERY,
 	MAX_SCENE_JSON_BYTES,
@@ -18,14 +19,20 @@ import {
 	META_TEMP_ASSET_PREFIX_KEY,
 	META_UNSAVED_EXPIRES_AT_KEY,
 	UNSAVED_BOARD_TTL_MS,
+	canAssignRole,
+	isAssignableRole,
+	isWhiteboardRole,
 	mergeSceneElements,
 	parseDatabaseScene,
 	parseSceneElements,
+	roleCanEdit,
 	stringifyDatabaseScene,
 	toDatabaseScene,
+	type AssignableRole,
 	type OwnerHook,
 	type SceneAppState,
 	type SceneElement,
+	type WhiteboardRole,
 } from '../lib/whiteboard-sync'
 import {
 	isExpiredIso,
@@ -37,6 +44,8 @@ import {
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
 const FORCE_FOLLOW_KEY = 'meta:forceFollow'
+// PHASE 3.3
+const ROLES_KEY = 'meta:roles'
 const ACTIVE_CODE_KEY = 'meta:activeCode'
 const CODE_EXPIRES_AT_KEY = 'meta:codeExpiresAt'
 const CODE_MINT_LOG_KEY = 'meta:codeMintLog'
@@ -56,7 +65,18 @@ interface SocketAttachment {
 	sessionId: string
 	isHost: boolean
 	canEdit: boolean
+	// PHASE 3.3
+	role: WhiteboardRole
+	authToken: string
 	meta: SessionMeta
+}
+
+// PHASE 3.3
+type StoredRoles = Record<string, AssignableRole>
+type StoredForceFollow = {
+	enabled: boolean
+	targetUserId: string
+	subjects: Record<string, string>
 }
 
 type CodeState = {
@@ -68,6 +88,7 @@ type ParticipantPublic = {
 	sessionId: string
 	userId: string
 	displayName: string
+	role: WhiteboardRole
 	canEdit: boolean
 	isHost: boolean
 }
@@ -117,7 +138,7 @@ function sanitizeAssetPrefix(raw: string | null | undefined): string | null {
 	return value
 }
 
-/** Normalize attachments from older deploys that lacked canEdit/meta. */
+/** Normalize attachments from older deploys that lacked canEdit/meta/role. */
 function normalizeAttachment(
 	raw: Partial<SocketAttachment> | null | undefined,
 	sessionId: string,
@@ -128,10 +149,19 @@ function normalizeAttachment(
 		userId: '',
 		isHost,
 	}
+	const role: WhiteboardRole = isWhiteboardRole(raw?.role)
+		? raw.role
+		: isHost
+			? 'owner'
+			: raw?.canEdit === false
+				? 'viewer'
+				: 'editor'
 	return {
 		sessionId: raw?.sessionId ?? sessionId,
 		isHost,
-		canEdit: raw?.canEdit !== false,
+		canEdit: roleCanEdit(role),
+		role,
+		authToken: typeof raw?.authToken === 'string' ? raw.authToken : '',
 		meta: {
 			displayName: meta.displayName ?? '',
 			userId: meta.userId ?? '',
@@ -152,7 +182,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	/** Map sessionId → ws so HTTP handlers can reach a live socket. */
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
 	/** Cached force-follow flag (null until first storage read). */
-	private forceFollowCache: boolean | null = null
+	private forceFollowCache: StoredForceFollow | null = null
+	/** PHASE 3.3: followerSessionId → targetSessionId (in-memory; clients resubscribe). */
+	private readonly voluntaryFollow = new Map<string, string>()
 	private socketsHydrated = false
 	private sceneCache: LiveScene | null = null
 	private sceneLoaded = false
@@ -275,11 +307,18 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		const hostSecret = url.searchParams.get('hostSecret')
 		const isHost = await this.resolveHost(hostSecret)
-		// Phase 2: every connected session may edit. Phase 3.3 enforces roles.
-		const canEdit = true
+		const userId = sanitizeUserId(url.searchParams.get('userId'))
+		let displayName = sanitizeDisplayName(url.searchParams.get('displayName'))
+		if (!displayName) {
+			displayName = generateGuestDisplayName(userId || sessionId)
+		}
+		// PHASE 3.3: default Viewer; Owner from Google cloud owner or scratch host secret.
+		const role = await this.resolveConnectRole(userId, isHost)
+		const canEdit = roleCanEdit(role)
+		const authToken = crypto.randomUUID()
 		const meta: SessionMeta = {
-			displayName: sanitizeDisplayName(url.searchParams.get('displayName')),
-			userId: sanitizeUserId(url.searchParams.get('userId')),
+			displayName,
+			userId,
 			isHost,
 		}
 
@@ -300,6 +339,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			sessionId,
 			isHost,
 			canEdit,
+			role,
+			authToken,
 			meta,
 		}
 		serverWebSocket.serializeAttachment(attachment)
@@ -315,11 +356,15 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			canEdit,
 			savedToLibrary,
 			owner,
+			// PHASE 3.3
+			role,
+			authToken,
 		})
 		await this.sendFullScene(serverWebSocket)
 
 		this.broadcastParticipants()
 		void this.broadcastForceFollow()
+		void this.refreshFollowedFlags()
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
 	}
@@ -585,6 +630,119 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 	}
 
+	// PHASE 3.3 — roles + follow (do not replace the Phase 2 scene store above)
+	private async resolveConnectRole(
+		userId: string,
+		isHost: boolean,
+	): Promise<WhiteboardRole> {
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (userId && cloudOwnerKey === `google:${userId}`) return 'owner'
+		if (!cloudOwnerKey && isHost) return 'owner'
+		if (userId) {
+			const stored = await this.readStoredRoles()
+			const role = stored[userId]
+			if (role === 'manager' || role === 'editor' || role === 'viewer') {
+				return role
+			}
+		}
+		return 'viewer'
+	}
+
+	private async readStoredRoles(): Promise<StoredRoles> {
+		const stored = await this.ctx.storage.get<StoredRoles>(ROLES_KEY)
+		if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+			return {}
+		}
+		const out: StoredRoles = {}
+		for (const [userId, role] of Object.entries(stored)) {
+			if (isAssignableRole(role) && userId) out[userId] = role
+		}
+		return out
+	}
+
+	private emptyForceFollow(): StoredForceFollow {
+		return { enabled: false, targetUserId: '', subjects: {} }
+	}
+
+	private async getForceFollowState(): Promise<StoredForceFollow> {
+		if (this.forceFollowCache) return this.forceFollowCache
+		const stored = await this.ctx.storage.get<boolean | StoredForceFollow>(
+			FORCE_FOLLOW_KEY,
+		)
+		if (stored === true) {
+			this.forceFollowCache = {
+				enabled: true,
+				targetUserId: this.resolveOwnerUserId(),
+				subjects: {},
+			}
+			return this.forceFollowCache
+		}
+		if (stored && typeof stored === 'object') {
+			this.forceFollowCache = {
+				enabled: Boolean(stored.enabled),
+				targetUserId:
+					typeof stored.targetUserId === 'string' ? stored.targetUserId : '',
+				subjects:
+					stored.subjects && typeof stored.subjects === 'object'
+						? stored.subjects
+						: {},
+			}
+			return this.forceFollowCache
+		}
+		this.forceFollowCache = this.emptyForceFollow()
+		return this.forceFollowCache
+	}
+
+	private async setForceFollowState(state: StoredForceFollow): Promise<void> {
+		this.forceFollowCache = state
+		if (!state.enabled && Object.keys(state.subjects).length === 0) {
+			await this.ctx.storage.delete(FORCE_FOLLOW_KEY)
+			return
+		}
+		await this.ctx.storage.put(FORCE_FOLLOW_KEY, state)
+	}
+
+	private async resolveActor(
+		url: URL,
+	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
+		const actorSessionId = url.searchParams.get('actorSessionId')
+		const actorAuth = url.searchParams.get('actorAuth')
+		if (actorSessionId && actorAuth) {
+			const ws = this.sessionIdToWs.get(actorSessionId)
+			if (ws) {
+				const attachment = normalizeAttachment(
+					ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+					actorSessionId,
+				)
+				if (attachment.authToken && attachment.authToken === actorAuth) {
+					return {
+						role: attachment.role,
+						userId: attachment.meta.userId,
+						sessionId: attachment.sessionId,
+					}
+				}
+			}
+		}
+
+		const hostSecret = url.searchParams.get('hostSecret')
+		if (await this.assertHost(hostSecret)) {
+			const cloudOwnerKey =
+				(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+			if (!cloudOwnerKey) {
+				const owner = this.listParticipants().find(
+					(row) => row.role === 'owner' || row.isHost,
+				)
+				return {
+					role: 'owner',
+					userId: owner?.userId ?? '',
+					sessionId: owner?.sessionId ?? '',
+				}
+			}
+		}
+		return null
+	}
+
 	private async handleParticipantPatch(
 		request: Request,
 		url: URL,
@@ -594,13 +752,19 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(405, { error: 'Method not allowed' })
 		}
 
-		const hostSecret = url.searchParams.get('hostSecret')
-		if (!(await this.assertHost(hostSecret))) {
-			return json(403, { error: 'Host secret required' })
+		const actor = await this.resolveActor(url)
+		if (!actor || (actor.role !== 'owner' && actor.role !== 'manager')) {
+			return json(403, {
+				error: 'Only the Owner or a Manager can change roles.',
+			})
 		}
 
-		const canEditParam = url.searchParams.get('canEdit')
-		const canEdit = canEditParam === '1' || canEditParam === 'true'
+		const nextRoleRaw = url.searchParams.get('role')
+		if (!isAssignableRole(nextRoleRaw)) {
+			return json(400, {
+				error: 'Body must include role manager | editor | viewer',
+			})
+		}
 
 		this.hydrateSockets()
 		const ws = this.sessionIdToWs.get(sessionId)
@@ -613,20 +777,57 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			sessionId,
 		)
 
-		if (attachment.isHost || attachment.meta.isHost) {
-			if (!canEdit) {
-				return json(400, { error: 'Host edit permission cannot be turned off' })
-			}
-			const row = this.participantFromSession(sessionId)
-			return json(200, row ?? { sessionId, canEdit: true, isHost: true, userId: '', displayName: '' })
+		if (attachment.role === 'owner' || attachment.meta.isHost) {
+			return json(400, { error: 'Owner cannot be demoted.' })
 		}
 
-		this.applyCanEdit(sessionId, canEdit)
+		if (!canAssignRole(actor.role, attachment.role, nextRoleRaw)) {
+			return json(403, {
+				error:
+					actor.role === 'manager'
+						? 'Managers can only set Editor or Viewer, and cannot change the Owner or another Manager.'
+						: 'That role change is not allowed.',
+			})
+		}
+
+		await this.applyRoleToUser(attachment.meta.userId, nextRoleRaw)
 		const row = this.participantFromSession(sessionId)
 		if (!row) {
 			return json(404, { error: 'Session not connected' })
 		}
 		return json(200, row)
+	}
+
+	private async applyRoleToUser(
+		userId: string,
+		role: AssignableRole,
+	): Promise<void> {
+		if (userId) {
+			const stored = await this.readStoredRoles()
+			stored[userId] = role
+			await this.ctx.storage.put(ROLES_KEY, stored)
+		}
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const prev = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			if (prev.role === 'owner') continue
+			if (userId && prev.meta.userId === userId) {
+				const next: SocketAttachment = {
+					...prev,
+					role,
+					canEdit: roleCanEdit(role),
+				}
+				ws.serializeAttachment(next)
+				sendJson(ws, {
+					type: 'wb:role',
+					role,
+					canEdit: next.canEdit,
+				})
+			}
+		}
+		this.broadcastParticipants()
 	}
 
 	private async handleForceFollowPatch(
@@ -637,54 +838,90 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(405, { error: 'Method not allowed' })
 		}
 
-		const hostSecret = url.searchParams.get('hostSecret')
-		if (!(await this.assertHost(hostSecret))) {
-			return json(403, { error: 'Host secret required' })
+		const actor = await this.resolveActor(url)
+		if (!actor || (actor.role !== 'owner' && actor.role !== 'manager')) {
+			return json(403, {
+				error: 'Only the Owner or a Manager can force follow.',
+			})
 		}
 
 		const forceFollowParam = url.searchParams.get('forceFollow')
 		const forceFollow =
 			forceFollowParam === '1' || forceFollowParam === 'true'
+		const targetUserId =
+			(url.searchParams.get('targetUserId') || '').trim() || actor.userId
+		const subjectUserId = (url.searchParams.get('subjectUserId') || '').trim()
 
-		await this.setForceFollow(forceFollow)
-		const hostUserId = this.resolveHostUserId()
-		void this.broadcastForceFollow()
-		return json(200, { forceFollow, hostUserId })
-	}
-
-	private async getForceFollow(): Promise<boolean> {
-		if (this.forceFollowCache !== null) return this.forceFollowCache
-		const stored = await this.ctx.storage.get<boolean>(FORCE_FOLLOW_KEY)
-		this.forceFollowCache = Boolean(stored)
-		return this.forceFollowCache
-	}
-
-	private async setForceFollow(forceFollow: boolean): Promise<void> {
-		this.forceFollowCache = forceFollow
-		if (forceFollow) {
-			await this.ctx.storage.put(FORCE_FOLLOW_KEY, true)
+		const current = await this.getForceFollowState()
+		if (subjectUserId) {
+			if (forceFollow && targetUserId) {
+				current.subjects[subjectUserId] = targetUserId
+			} else {
+				delete current.subjects[subjectUserId]
+			}
 		} else {
-			await this.ctx.storage.delete(FORCE_FOLLOW_KEY)
+			current.enabled = forceFollow
+			current.targetUserId = forceFollow ? targetUserId : ''
 		}
+		await this.setForceFollowState(current)
+		void this.broadcastForceFollow()
+		void this.refreshFollowedFlags()
+		const targetSessionId = this.sessionIdForUserId(current.targetUserId)
+		return json(200, {
+			forceFollow: current.enabled,
+			targetUserId: current.targetUserId,
+			targetSessionId,
+			subjects: current.subjects,
+		})
 	}
 
-	private resolveHostUserId(): string {
+	private resolveOwnerUserId(): string {
 		for (const row of this.listParticipants()) {
-			if (row.isHost && row.userId) return row.userId
+			if (row.role === 'owner' && row.userId) return row.userId
+		}
+		return ''
+	}
+
+	private sessionIdForUserId(userId: string): string {
+		if (!userId) return ''
+		for (const row of this.listParticipants()) {
+			if (row.userId === userId) return row.sessionId
 		}
 		return ''
 	}
 
 	private async broadcastForceFollow(): Promise<void> {
-		const forceFollow = await this.getForceFollow()
-		const hostUserId = this.resolveHostUserId()
+		const state = await this.getForceFollowState()
+		if (state.enabled && !state.targetUserId) {
+			state.targetUserId = this.resolveOwnerUserId()
+		}
 		const payload = {
 			type: 'wb:forceFollow' as const,
-			forceFollow,
-			hostUserId,
+			forceFollow: state.enabled,
+			targetUserId: state.targetUserId,
+			targetSessionId: this.sessionIdForUserId(state.targetUserId),
+			subjects: state.subjects,
 		}
 		for (const ws of this.sessionIdToWs.values()) {
 			sendJson(ws, payload)
+		}
+	}
+
+	private async refreshFollowedFlags(): Promise<void> {
+		const force = await this.getForceFollowState()
+		const voluntaryTargets = new Set(this.voluntaryFollow.values())
+		const subjectTargets = new Set(Object.values(force.subjects))
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const row = this.participantFromSession(sessionId)
+			const isForceTarget =
+				force.enabled && Boolean(row?.userId) && row!.userId === force.targetUserId
+			const isSubjectTarget = Boolean(row?.userId && subjectTargets.has(row.userId))
+			sendJson(ws, {
+				type: 'wb:followedBy',
+				followed: Boolean(
+					isForceTarget || isSubjectTarget || voluntaryTargets.has(sessionId),
+				),
+			})
 		}
 	}
 
@@ -699,6 +936,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			sessionId,
 			userId: attachment.meta.userId,
 			displayName: attachment.meta.displayName,
+			role: attachment.role,
 			canEdit: attachment.canEdit,
 			isHost: attachment.isHost || attachment.meta.isHost,
 		}
@@ -715,6 +953,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				sessionId,
 				userId: attachment.meta.userId,
 				displayName: attachment.meta.displayName,
+				role: attachment.role,
 				canEdit: attachment.canEdit,
 				isHost: attachment.isHost || attachment.meta.isHost,
 			})
@@ -725,31 +964,56 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private broadcastParticipants(): void {
 		const participants = this.listParticipants()
 		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const self = participants.find((row) => row.sessionId === sessionId)
 			sendJson(ws, {
 				type: 'wb:participants',
 				yourSessionId: sessionId,
+				yourRole: self?.role ?? 'viewer',
 				participants,
 			})
 		}
 	}
 
-	private applyCanEdit(sessionId: string, canEdit: boolean): void {
-		const ws = this.sessionIdToWs.get(sessionId)
-		if (ws) {
-			const prev = normalizeAttachment(
-				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
-				sessionId,
-			)
-			ws.serializeAttachment({
-				...prev,
-				canEdit,
-			})
-			sendJson(ws, {
-				type: 'wb:canEdit',
-				canEdit,
-			})
+	private handleFollowSubscribe(
+		fromSessionId: string,
+		targetSessionId: string | null,
+	): void {
+		if (!targetSessionId) {
+			this.voluntaryFollow.delete(fromSessionId)
+		} else if (this.sessionIdToWs.has(targetSessionId)) {
+			this.voluntaryFollow.set(fromSessionId, targetSessionId)
 		}
-		this.broadcastParticipants()
+		void this.refreshFollowedFlags()
+	}
+
+	private relaySceneBounds(
+		fromSessionId: string,
+		bounds: [number, number, number, number],
+	): void {
+		const payload = {
+			type: 'wb:sceneBounds' as const,
+			socketId: fromSessionId,
+			bounds,
+		}
+		const force = this.forceFollowCache ?? this.emptyForceFollow()
+		const fromRow = this.participantFromSession(fromSessionId)
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			if (sessionId === fromSessionId) continue
+			const row = this.participantFromSession(sessionId)
+			const voluntary = this.voluntaryFollow.get(sessionId) === fromSessionId
+			const roomForce =
+				force.enabled &&
+				fromRow &&
+				force.targetUserId &&
+				fromRow.userId === force.targetUserId
+			const subjectForce =
+				row?.userId &&
+				fromRow?.userId &&
+				force.subjects[row.userId] === fromRow.userId
+			if (voluntary || roomForce || subjectForce) {
+				sendJson(ws, payload)
+			}
+		}
 	}
 
 	private async handleCodeHttp(
@@ -1004,7 +1268,37 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return
 		}
 
+		if (type === 'wb:follow') {
+			const targetSessionId =
+				typeof data.targetSessionId === 'string' && data.targetSessionId
+					? data.targetSessionId
+					: null
+			this.handleFollowSubscribe(sessionId, targetSessionId)
+			return
+		}
+
+		if (type === 'wb:sceneBounds') {
+			const bounds = data.bounds
+			if (
+				Array.isArray(bounds) &&
+				bounds.length === 4 &&
+				bounds.every((n) => typeof n === 'number' && Number.isFinite(n))
+			) {
+				this.relaySceneBounds(
+					sessionId,
+					bounds as [number, number, number, number],
+				)
+			}
+			return
+		}
+
 		if (type === 'scene:update') {
+			const attachment = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			// PHASE 3.3: Viewers cannot mutate the document (UI + server).
+			if (!roleCanEdit(attachment.role)) return
 			const elements = parseSceneElements(data.elements)
 			const databaseJson =
 				typeof data.databaseJson === 'string' &&
@@ -1043,6 +1337,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
 		if (!raw?.sessionId) return
 		this.sessionIdToWs.delete(raw.sessionId)
+		this.voluntaryFollow.delete(raw.sessionId)
+		for (const [follower, target] of [...this.voluntaryFollow]) {
+			if (target === raw.sessionId) this.voluntaryFollow.delete(follower)
+		}
 		this.broadcastParticipants()
+		void this.refreshFollowedFlags()
 	}
 }

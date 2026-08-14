@@ -183,10 +183,20 @@ const helpActive =
                         <span class="whiteboard-switch-label" data-wb-force-follow-state>Off</span>
                         <input
                           type="checkbox"
-                          aria-label="Force everyone to follow your screen"
+                          aria-label="Force everyone to follow a screen"
                           data-wb-force-follow-toggle
                         />
                         <span class="whiteboard-switch-track" aria-hidden="true"></span>
+                      </label>
+                      <label class="whiteboard-people-target">
+                        <span class="visually-hidden">Force follow target</span>
+                        <select
+                          class="whiteboard-people-target-select"
+                          aria-label="Who the class follows"
+                          data-wb-force-follow-target
+                        >
+                          <option value="">Me</option>
+                        </select>
                       </label>
                       <p class="whiteboard-join-hint" data-wb-force-follow-hint hidden></p>
                     </div>
@@ -194,7 +204,7 @@ const helpActive =
                   <div class="whiteboard-people-head" aria-hidden="true">
                     <span>Name</span>
                     <span>Follow</span>
-                    <span>Edit</span>
+                    <span>Role</span>
                   </div>
                   <ul class="whiteboard-people-list" data-wb-people-list hidden></ul>
                   <p class="whiteboard-join-hint whiteboard-people-empty" data-wb-people-empty>

@@ -50,6 +50,57 @@ export type OwnerHook = {
 	isHost: boolean
 }
 
+// PHASE 3.3
+export const WHITEBOARD_ROLES = [
+	'owner',
+	'manager',
+	'editor',
+	'viewer',
+] as const
+export type WhiteboardRole = (typeof WHITEBOARD_ROLES)[number]
+export type AssignableRole = Exclude<WhiteboardRole, 'owner'>
+
+export function isWhiteboardRole(value: unknown): value is WhiteboardRole {
+	return (
+		value === 'owner' ||
+		value === 'manager' ||
+		value === 'editor' ||
+		value === 'viewer'
+	)
+}
+
+export function isAssignableRole(value: unknown): value is AssignableRole {
+	return value === 'manager' || value === 'editor' || value === 'viewer'
+}
+
+export function roleCanEdit(role: WhiteboardRole): boolean {
+	return role === 'owner' || role === 'manager' || role === 'editor'
+}
+
+/** Who `actor` may assign to `target`'s current role. Null = no Roles UI. */
+export function assignableRolesFor(
+	actor: WhiteboardRole,
+	target: WhiteboardRole,
+): AssignableRole[] | null {
+	if (target === 'owner') return null
+	if (actor === 'owner') return ['manager', 'editor', 'viewer']
+	if (actor === 'manager') {
+		if (target === 'manager') return null
+		return ['editor', 'viewer']
+	}
+	return null
+}
+
+export function canAssignRole(
+	actor: WhiteboardRole,
+	targetCurrent: WhiteboardRole,
+	next: WhiteboardRole,
+): boolean {
+	if (next === 'owner') return false
+	const allowed = assignableRolesFor(actor, targetCurrent)
+	return Boolean(allowed && isAssignableRole(next) && allowed.includes(next))
+}
+
 export type HelloMessage = {
 	type: 'wb:hello'
 	sessionId: string
@@ -57,6 +108,21 @@ export type HelloMessage = {
 	canEdit: boolean
 	savedToLibrary: boolean
 	owner: OwnerHook
+	// PHASE 3.3
+	role: WhiteboardRole
+	authToken: string
+}
+
+export type FollowSubscribeMessage = {
+	type: 'wb:follow'
+	targetUserId: string | null
+	targetSessionId: string | null
+}
+
+export type SceneBoundsMessage = {
+	type: 'wb:sceneBounds'
+	socketId: string
+	bounds: [number, number, number, number]
 }
 
 export type SceneSyncMessage = {
