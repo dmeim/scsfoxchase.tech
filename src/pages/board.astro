@@ -36,7 +36,7 @@ import '../styles/whiteboard.css';
     if (!boardId) {
       window.location.replace('/whiteboard');
     } else {
-      // Wait for Clerk to settle so signed-in users don't upsert into local first.
+      // Wait for Clerk so signed-in users upsert the cloud library (join does not).
       // WhiteboardCanvas also calls touchBoardActive; duplicate is idempotent upsert.
       void whenAuthReady()
         .then(() => touchBoardActive(boardId))

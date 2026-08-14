@@ -47,10 +47,10 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 |----------|----------|
 | [whiteboard/README.md](./whiteboard/README.md) | Whiteboard overview and index |
 | [whiteboard/hub-and-board.md](./whiteboard/hub-and-board.md) | Hub UI and live `/board/{uuid}` canvas |
-| [whiteboard/sync-storage.md](./whiteboard/sync-storage.md) | Durable Objects, R2 assets, sync |
-| [whiteboard/auth-libraries.md](./whiteboard/auth-libraries.md) | Clerk auth, local vs cloud libraries |
+| [whiteboard/sync-storage.md](./whiteboard/sync-storage.md) | Durable Objects, R2 media, Excalidraw sync |
+| [whiteboard/auth-libraries.md](./whiteboard/auth-libraries.md) | Clerk auth, cloud-only library, scratch 24h TTL |
 | [whiteboard/share-codes.md](./whiteboard/share-codes.md) | Share codes (KV + DO) |
-| [whiteboard/people-permissions.md](./whiteboard/people-permissions.md) | Participants, edit permissions, force-follow |
+| [whiteboard/people-permissions.md](./whiteboard/people-permissions.md) | Owner / Manager / Editor / Viewer, Follow |
 
 ## Quick pointers
 
@@ -58,8 +58,8 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 
 - **Astro 7** with `@astrojs/cloudflare` (`output: 'server'`; every page sets `prerender = true`)
 - **Cloudflare Worker** `scsfoxchase-tech` — custom entry `src/worker.ts`
-- **React** islands (`@astrojs/react`) for Clerk header auth and tldraw board
-- **tldraw** + `@tldraw/sync` for multiplayer whiteboards
+- **React** islands (`@astrojs/react`) for Clerk header auth and the Whiteboard canvas
+- **Excalidraw 0.18.1** (MIT) on a Durable Object WebSocket — product name is Whiteboard; no tldraw license key
 - **Node.js 22+** (`package.json` `engines`)
 
 ### Domain and deploy
@@ -88,8 +88,8 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | `/form/*` | Individual forms |
 | `/guide/{slug}` | Guide articles |
 | `/inventory` | Staff device inventory lookup + QR |
-| `/whiteboard` | Whiteboard hub (create, join, Recents, Assets, Library) |
-| `/board/{uuid}` | Live multiplayer board (tldraw sync) |
+| `/whiteboard` | Whiteboard hub (create, join; Recents/Assets/Library when signed in) |
+| `/board/{uuid}` | Live multiplayer board (Excalidraw + DO WebSocket) |
 | `/offline` | Canonical offline fallback |
 | `/oldgames` | Legacy game catalog |
 
@@ -97,11 +97,12 @@ Whiteboard HTTP/WebSocket APIs (Worker, not prerendered pages):
 
 | Path | Role |
 |------|------|
-| `/api/whiteboard/connect/:uuid` | WebSocket upgrade → Durable Object |
+| `/api/whiteboard/connect/:uuid` | WebSocket upgrade → Durable Object (Excalidraw collab) |
 | `/api/whiteboard/join/:code` | Resolve share code → board UUID |
 | `/api/whiteboard/boards/:uuid/code` | Get / mint / revoke share code |
-| `/api/whiteboard/boards/:uuid/participants/:sessionId` | PATCH guest edit permission (host secret) |
-| `/api/whiteboard/boards/:uuid/force-follow` | PATCH Everyone follows me (host secret) |
+| `/api/whiteboard/boards/:uuid/meta` | Saved-to-library + Google Owner (lifts 24h TTL) |
+| `/api/whiteboard/boards/:uuid/participants/:sessionId` | PATCH role (Owner / Manager) |
+| `/api/whiteboard/boards/:uuid/force-follow` | PATCH Follow Me / force-follow (Owner / Manager) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | R2 media PUT/GET/DELETE |
 | `/api/whiteboard/library/boards` | Cloud board index (Clerk) |
 | `/api/whiteboard/library/assets` | Cloud asset index (Clerk) |

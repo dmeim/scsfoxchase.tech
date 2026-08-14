@@ -13,6 +13,8 @@ Runtime and build configuration for Worker `scsfoxchase-tech`. Bindings (DO / R2
 | `CLERK_SECRET_KEY` | **Secret** | Yes for cloud library / `google:*` writes | `npx wrangler secret put`; local `.dev.vars` only | Worker verifies Clerk sessions via `@clerk/backend` |
 | `PUBLIC_INVENTORY_WEBHOOK` | Public | No | Build env / `.env` if overriding default | Inventory form webhook URL; defaults in code to the n8n inventory endpoint |
 
+There is no whiteboard license key (`PUBLIC_TLDRAW_LICENSE_KEY` is gone). Excalidraw 0.18.1 is MIT.
+
 Worker `Env` also accepts legacy alias `CLERK_PUBLISHABLE_KEY` as a fallback for the publishable key at runtime (`src/worker/clerkAuth.ts`). Prefer `PUBLIC_CLERK_PUBLISHABLE_KEY` everywhere.
 
 ### `PUBLIC_CLERK_ALLOWED_DOMAINS`
@@ -23,9 +25,9 @@ Worker `Env` also accepts legacy alias `CLERK_PUBLISHABLE_KEY` as a fallback for
 
 ### Whiteboard storage
 
-No extra env vars for sync, assets, or share codes. Those use bindings:
+No extra env vars for sync, assets, share codes, or fonts. Those use bindings plus self-hosted files under `public/excalidraw/`:
 
-- `WHITEBOARDS` — Durable Objects
+- `WHITEBOARDS` — Durable Objects (Excalidraw scene JSON)
 - `WHITEBOARD_ASSETS` — R2 bucket `scsfoxchase-tech-whiteboards`
 - `WHITEBOARD_CODES` — KV share-code index
 
@@ -91,5 +93,5 @@ Authorized parties checked by the Worker include `https://scsfoxchase.tech`, `ht
 | `.env.example` | Documented public + secret names for Astro / build |
 | `.dev.vars.example` | Documented Worker local secrets/vars |
 | `wrangler.jsonc` | Bindings only; secrets are not stored here |
-| `public/_headers` | CSP allowlists for Clerk, Google, Turnstile, same-origin whiteboard |
+| `public/_headers` | CSP allowlists for Clerk, Google, Turnstile, same-origin Whiteboard (fonts, WebSocket, player, YouTube/Vimeo) |
 | `worker-configuration.d.ts` | TypeScript `Env` shape for the Worker |

@@ -4,9 +4,11 @@ How teachers and students create, join, and manage whiteboards in the browser.
 
 ## Overview
 
-- **Hub** (`/whiteboard`) — create a board, join by share code / link / UUID, browse Recents, Assets, and Library.
-- **Board** (`/board/{uuid}`) — full-page tldraw canvas under the site header; manage panel opens from the centered **Whiteboard** control.
-- Lists and titles follow **dual library mode**: signed out → this browser; signed in → Google cloud indexes. Sign-in/out swaps which list you see without wiping the other namespace. See [auth-libraries.md](./auth-libraries.md).
+- **Hub** (`/whiteboard`) — create a board, join by share code / link / UUID. Recents, Assets, and Library render only when signed in (cloud indexes).
+- **Board** (`/board/{uuid}`) — full-page Excalidraw canvas under the site header; manage panel opens from the centered **Whiteboard** control.
+- There is **no localStorage board library**. Signed-out create is a live scratch Durable Object (URL + DO). Save / reopen from Library requires Google sign-in. See [auth-libraries.md](./auth-libraries.md).
+
+Call the product **Whiteboard**, not Excalidraw.
 
 ## Hub (`/whiteboard`)
 
@@ -14,11 +16,14 @@ How teachers and students create, join, and manage whiteboards in the browser.
 **Script:** `src/scripts/whiteboard-hub.ts`  
 **Styles:** `src/styles/whiteboard.css`
 
+Chromebook vertical space: `@media (max-height: 800px)` tightens hub padding and section gaps so the page still fits 1366×768 without scrolling.
+
 ### Create
 
-- **Create a new whiteboard** mints a UUID, stores a **host secret** in `localStorage`, upserts the board into the active library (local or cloud), then navigates to `/board/{uuid}`.
+- **Create a new whiteboard** mints a UUID, stores a **host secret** in `localStorage` (ephemeral Owner proof for this browser), then navigates to `/board/{uuid}`.
 - Default title: `YYYY-MM-DD_HH-MM-SS` (local 24-hour time).
-- Create waits for Clerk auth to settle (`whenAuthReady`) so signed-in users do not create under `local:{deviceInstallId}`.
+- Create waits for Clerk auth to settle (`whenAuthReady`) so signed-in users autosave to the cloud library and become **Owner**.
+- Signed-out create does **not** write a library index. The board stays in the Durable Object across Chromebook refresh and is deleted after **24 hours** if it is never saved.
 
 ### Join
 
@@ -30,52 +35,57 @@ The join field accepts:
 | Full URL or `/board/{uuid}` path | Parse UUID from path |
 | Bare UUID | Open directly |
 
-On success the hub upserts the board into the active library (`touchBoardActive`) and navigates to `/board/{id}`. Invalid input or an unavailable code shows a hint under the field.
+Join does **not** add the board to Recents/Library. Invalid input or an unavailable code shows a hint under the field.
 
 Join parsing: `parseJoinInput` in `src/scripts/whiteboard-library.ts`.  
 Code lookup: `lookupShareCode` in `src/lib/whiteboard-codes.ts`. Details: [share-codes.md](./share-codes.md).
 
 ### Recents / Library / Assets
 
+Shown only while signed in (`[data-wb-cloud-lists]`). Signed-out hub copy explains scratch vs Save.
+
 | Section | Content |
 |---------|---------|
-| **Recents** | Up to 8 boards by `lastAccessedAt` (same source as Library) |
-| **Library** | Full sorted board list for the active mode |
-| **Assets** | Images/videos uploaded from boards under the active owner key |
+| **Recents** | Up to 8 boards by `lastAccessedAt` from the Google library |
+| **Library** | Full sorted cloud board list |
+| **Assets** | Images/videos from saved boards under `google:{accountId}` |
 
-Each card supports **Rename** and **Delete** (confirmation). Delete removes the index entry for the **active** mode only (local or cloud). Board delete does not delete Durable Object state or R2 media for classmates still on the board; asset delete also best-effort `DELETE`s the R2 object.
+Each card supports **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row only. Board delete does not delete Durable Object state or R2 media for classmates still on the board; asset delete also best-effort `DELETE`s the R2 object.
 
-While Clerk is loading, empty states show **Loading…** so local lists do not flash before cloud mode.
+While Clerk is loading, empty states show **Loading…** so cloud lists do not flash empty.
 
-Hub footer note switches copy for signed-in vs signed-out mode.
+Hub footer note switches copy for signed-in vs signed-out.
 
 ### Hub header link
 
-Off the board page, the header center control is a link to `/whiteboard` (`data-whiteboard-mode="hub"` in `Header.astro`).
+Off the board page, the header center control is a link to `/whiteboard` (`data-whiteboard-mode="hub"` in `Header.astro`). The Whiteboard chip is visible (not hidden).
 
 ## Board page (`/board/{uuid}`)
 
 **Page:** `src/pages/board.astro`  
-**Canvas:** `src/components/TldrawBoard.tsx` (`client:only="react"`)  
+**Canvas:** `src/components/WhiteboardCanvas.tsx` (`client:only="react"`)  
 **Rewrite:** `public/_redirects` — `/board/*` → `/board` (200); `src/middleware.ts` does the same in `astro dev`.
+
+Fonts: `board.astro` sets `window.EXCALIDRAW_ASSET_PATH = '/excalidraw/'` in `<head>` before the island mounts. The canvas module sets the same path as a fallback.
 
 ### Shell behavior
 
 - Invalid or missing UUID → redirect to `/whiteboard`.
-- On load (after auth ready), `touchBoardActive(boardId)` upserts the board into the active library and fills the manage-panel title + `document.title`.
+- On load (after auth ready), `touchBoardActive(boardId)` updates last-accessed for boards already in the signed-in library, or **claims** a scratch board this browser created (host secret present). Join without a secret does not upsert Recents.
 - Footer is hidden (`hideFooter`); `boardChrome={true}` enables the manage panel in the header.
 
 ### Canvas
 
-`TldrawBoard`:
+`WhiteboardCanvas`:
 
 1. Reads `boardId` from the path (or optional prop).
-2. Connects with `@tldraw/sync` `useSync` to `/api/whiteboard/connect/{uuid}` (plus `sessionId`, optional `hostSecret`, `displayName`, `userId`).
-3. Uses `r2AssetStore` for image/video uploads.
-4. Handles custom DO messages (`wb:participants`, `wb:canEdit`, `wb:forceFollow`) and bridges Follow / force-follow to the manage panel via `window` events.
+2. Opens a native WebSocket to `/api/whiteboard/connect/{uuid}` (plus `sessionId`, optional `hostSecret`, `displayName`, `userId`).
+3. Merges remote elements with `reconcileElements`; remote applies use `captureUpdate: NEVER`.
+4. Uploads image/GIF bytes to R2 by Excalidraw `fileId`; MP4/WebM become a same-origin `/whiteboard-player` embed. YouTube / Vimeo stay stock.
+5. Handles custom DO messages (`wb:hello`, `wb:participants`, `wb:role`, `wb:forceFollow`, `wb:sceneBounds`) and bridges Follow / roles to the manage panel via `window` events.
 
 Sync and asset details: [sync-storage.md](./sync-storage.md).  
-People / Edit / force-follow: [people-permissions.md](./people-permissions.md).
+People / roles / Follow: [people-permissions.md](./people-permissions.md).
 
 ## Header manage panel
 
@@ -86,8 +96,9 @@ Toggle: **Whiteboard** button opens a dialog panel. Escape / outside click close
 
 ### Name this whiteboard
 
-- Editable title (max 80 chars) → Save → `setBoardTitleActive` (localStorage or cloud library).
-- Hint: “Saved on this device.” vs “Saved to your Google library.”
+- Editable title (max 80 chars) → Save → `setBoardTitleActive`.
+- Signed in + already in library (or this browser created it): saved to the Google library.
+- Signed out: title is kept in `sessionStorage` for this scratch tab only — it is not a local library.
 
 ### Share
 
@@ -97,17 +108,17 @@ Anyone who can open the board URL can call the code API (UUID is the capability)
 
 ### Follow Me
 
-Host-only toggle beside the **People** heading in the share-on right column (hidden unless `getHostSecret(boardId)` is present). Same force-follow API as before (“Everyone follows me”). See [people-permissions.md](./people-permissions.md).
+Owner/Manager control beside the **People** heading (hidden unless this session can force-follow). Toggle plus a target select (self or another participant). Same camera-lock machinery as voluntary Follow, different authority. See [people-permissions.md](./people-permissions.md).
 
 ### People
 
-Shown only while Share is Open. Columns: **Name** | **Follow** | **Edit**. Live list from DO custom messages. See [people-permissions.md](./people-permissions.md).
+Shown only while Share is Open. Columns: **Name** | **Follow** | **Role**. Live list from DO custom messages. See [people-permissions.md](./people-permissions.md).
 
 ### Whiteboard Library
 
 Secondary link on the left column back to `/whiteboard`.
 
-## Host secret (manage privileges)
+## Ephemeral Owner (scratch boards)
 
 When a board is **created** on a device, a 32-byte hex secret is stored at:
 
@@ -115,26 +126,29 @@ When a board is **created** on a device, a 32-byte hex secret is stored at:
 
 On WebSocket connect, that secret is sent as `hostSecret`. The Durable Object hashes it (SHA-256) and:
 
-- First secret seen for the board → stored as host hash; that session is host.
-- Later connects with the same secret → host; without it → guest.
+- First secret seen for the board → stored as host hash; that session is **ephemeral Owner**.
+- Later connects with the same secret → Owner on an unsaved board; without it → guest (**Viewer** by default).
 
-**Host-only** manage actions: Edit switches, Follow Me.  
-**Not host-gated:** rename (library), share Open/Closed / click-code copy / New Code / Copy Link, voluntary Follow.
+On a **saved** board, Owner is the Google account (`google:{accountId}`), not whoever still holds the creating-browser secret.
+
+**Owner/Manager** manage actions: role changes, Follow Me / force-follow.  
+**Not Owner-gated:** rename (library, when allowed), share Open/Closed / click-code copy / New Code / Copy Link, voluntary Follow.
 
 Joining via link or code does **not** grant the host secret — only the creating browser (unless the secret is copied into another browser’s `localStorage`).
 
-Helpers: `createBoard` / `createBoardActive`, `getHostSecret` in `src/scripts/whiteboard-library.ts`.
+Helpers: `createBoardActive`, `getHostSecret`, `claimBoardToLibrary` in `src/scripts/whiteboard-library.ts`.
 
 ## Key files
 
 | Path | Role |
 |------|------|
 | `src/pages/whiteboard.astro` | Hub markup |
-| `src/pages/board.astro` | Board shell + touch/title script |
+| `src/pages/board.astro` | Board shell + font path + touch/title script |
+| `src/pages/whiteboard-player.astro` | Same-origin video player |
 | `src/scripts/whiteboard-hub.ts` | Create, join, render lists, card menus |
 | `src/scripts/whiteboard-menu.ts` | Manage panel |
-| `src/scripts/whiteboard-library.ts` | Library, host secret, join parsing |
-| `src/components/TldrawBoard.tsx` | Sync canvas island |
+| `src/scripts/whiteboard-library.ts` | Cloud library, host secret, join parsing |
+| `src/components/WhiteboardCanvas.tsx` | Excalidraw collab island |
 | `src/components/Header.astro` | Manage panel DOM + Clerk |
 | `public/_redirects` | `/board/*` → `/board` |
 | `src/middleware.ts` | Dev rewrite for `/board/{uuid}` |

@@ -129,7 +129,7 @@ Asset API (capability URLs; no public list):
 
 - `PUT|GET|DELETE /api/whiteboard/assets/{ownerKey}/{assetId}`
 - Object key: `assets/{ownerKey}/{assetId}`
-- Signed-out owner: `local:{deviceInstallId}` from `localStorage` (`scsfoxchase.whiteboard.deviceInstallId`)
+- Signed-out owner: scratch canvas files use `temp:{boardId}` (24h). Device id in `localStorage` is for guest names, not a board library.
 - Signed-in owner: `google:{accountId}` (Google OAuth `sub` when available, else Clerk `user.id`)
 - `google:*` PUT/DELETE require a Clerk session whose owner key matches
 
@@ -141,11 +141,12 @@ Share codes (Phase 5):
 - `GET|POST|DELETE /api/whiteboard/boards/{uuid}/code` — status / mint-or-keep (optional `?rotate=1`) / revoke
 - Auth: knowing the board UUID is enough (same capability model as opening the board); mint/rotate rate-limited per board
 
-Cloud library indexes (Phase 4b) reuse the same R2 bucket (no extra KV/D1):
+Cloud library indexes reuse the same R2 bucket (no extra KV/D1):
 
 - `library/{ownerKey}/boards.json`
 - `library/{ownerKey}/assets.json`
 - APIs: `GET|PUT /api/whiteboard/library/boards`, `DELETE .../boards/:id`, same for `assets` (Clerk Bearer token)
+- Recents / Library / Assets are signed-in cloud only. Signed-out create is a scratch Durable Object (24h TTL until Save).
 
 ### Clerk (Google sign-in)
 
@@ -163,14 +164,14 @@ Cloud library indexes (Phase 4b) reuse the same R2 bucket (no extra KV/D1):
   - Google connection enabled; application home URL `https://scsfoxchase.tech`
   - Native Google OAuth callback stays on Clerk FAPI (not the app)
 - **Local vs production:** `pk_live_` → `origin_invalid` on localhost. Test Sign in on production after deploy, or use a separate Clerk development instance locally.
-Local multiplayer + assets + auth test:
+Local Whiteboard smoke test:
 
 ```bash
 npm run build && npm run preview
 # or during iteration: npm run dev
-# 1. Signed out: /whiteboard → Create, paste image, confirm Assets strip (local)
-# 2. Sign in with Google → hub lists should switch to cloud (often empty at first)
-# 3. Create a board + paste media while signed in → cloud Recents/Assets; R2 key uses google:{id}
-# 4. Sign out → local lists return unchanged; cloud data remains for next sign-in
-# 5. Two windows on the same /board/{uuid}: sync still works; signed-in cursor shows display name
+# 1. Signed out: /whiteboard → Create (no Recents). Draw on two windows of /board/{uuid}; refresh keeps the scene.
+# 2. Sign in with Google on a scratch board this browser created → Save claims Owner; Recents/Library appear.
+# 3. Signed-in Create autosaves; paste an image (R2 google:{id}) and an MP4 (same-origin /whiteboard-player).
+# 4. Sign out → hub lists hide; scratch create still works; cloud data remains for next sign-in.
+# 5. Join by share code as a guest: Viewer (view-only banner); Owner can set Editor. Follow + Follow Me.
 ```

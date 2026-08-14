@@ -20,10 +20,10 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 
 - **Astro site** on Cloudflare Workers (`output: 'server'` + all pages prerendered + Cloudflare adapter).
 - **Custom Worker entry** `src/worker.ts` — serves prerendered assets via `@astrojs/cloudflare/handler` and handles `/api/whiteboard/*` (WebSocket sync + R2 asset upload/download).
-- **Whiteboard sync** — Durable Object class `WhiteboardBoard`, binding `WHITEBOARDS` (product family `scsfoxchase-tech_whiteboards`). Client uses `@tldraw/sync` `useSync` on `/board/{uuid}`.
-- **Whiteboard assets** — R2 binding `WHITEBOARD_ASSETS` → bucket `scsfoxchase-tech-whiteboards` (R2 names cannot use `_`; product family spelling keeps the underscore). Keys `assets/{ownerKey}/{assetId}`; signed-out owner `local:{deviceInstallId}`; signed-in owner `google:{accountId}` (Google `sub` preferred, else Clerk user id). Hub Assets index: localStorage when signed out; R2 JSON `library/{ownerKey}/assets.json` when signed in.
-- **Share codes (Phase 5)** — KV binding `WHITEBOARD_CODES` indexes `code:{A1B2}` → board UUID (TTL 12h). DO stores `activeCode` + alarm for Open/Closed; hub join + manage-panel Open/Closed/Copy/New code.
-- **Whiteboard auth (Phase 4b)** — Clerk Google sign-in via `@clerk/react` header island (Astro 7; `@clerk/astro` not yet peer-compatible). Custom Clerk Frontend API domain: `clerk.scsfoxchase.tech`. Dual library mode: sign-in/out swaps Recents/Library/Assets without wiping the other namespace. Worker verifies sessions with `@clerk/backend` for cloud library APIs and `google:*` asset writes.
+- **Whiteboard sync** — Durable Object class `WhiteboardBoard`, binding `WHITEBOARDS` (product family `scsfoxchase-tech_whiteboards`). Product name is **Whiteboard**; editor is stock **Excalidraw 0.18.1** (`src/components/WhiteboardCanvas.tsx`, `client:only="react"`). Native WebSocket to `/api/whiteboard/connect/{uuid}` (element diffs + `reconcileElements`; persist `serializeAsJSON(..., "database")`). Fonts are self-hosted: `window.EXCALIDRAW_ASSET_PATH = '/excalidraw/'` (copied in `predev` / `prebuild`). No tldraw license key.
+- **Whiteboard assets** — R2 binding `WHITEBOARD_ASSETS` → bucket `scsfoxchase-tech-whiteboards` (R2 names cannot use `_`; product family spelling keeps the underscore). Keys `assets/{ownerKey}/{assetId}`. Saved boards: `google:{accountId}` (Google `sub` preferred, else Clerk user id). Unsaved/signed-out canvas files: `temp:{boardId}` (24h). MP4/WebM play via same-origin `/whiteboard-player`. Hub Assets index is signed-in cloud only (`library/{ownerKey}/assets.json`).
+- **Share codes** — KV binding `WHITEBOARD_CODES` indexes `code:{A1B2}` → board UUID (TTL 12h). DO stores `activeCode` + alarm for Open/Closed; hub join + manage-panel Open/Closed/Copy/New code.
+- **Whiteboard auth** — Clerk Google sign-in via `@clerk/react` header island (Astro 7; `@clerk/astro` not yet peer-compatible). Custom Clerk Frontend API domain: `clerk.scsfoxchase.tech`. Recents / Library / Assets are **cloud-only** (no localStorage board library). Signed-out create is a live scratch board (ephemeral Owner via host secret) and expires in 24h if never saved. Worker verifies sessions with `@clerk/backend` for cloud library APIs and `google:*` asset writes. Roles: Owner, Manager, Editor, Viewer; Follow + Follow Me.
 - **PWA** with service worker (`public/sw.js`) for offline support. Network-first for navigations; `/offline` is the canonical offline page. `/api/*` is never intercepted (WebSocket).
 - **Game data** lives in `src/content/games/` as individual JSON files (Astro content collection). Trending IDs live in `src/data/trending.json`. To add a game: add its JSON under `src/content/games/` (collection picks it up at build time).
 - **Theming** uses CSS variables on `:root` with dark mode via `[data-theme="dark"]`. Theme state persists in localStorage (`src/scripts/theme-toggle.ts`).
@@ -43,9 +43,10 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 | `/oldgames` | `src/pages/oldgames.astro` | Legacy game catalog (kept until removed) |
 | `/offline` | `src/pages/offline.astro` | Offline fallback |
 | `/inventory` | `src/pages/inventory.astro` | Staff device inventory lookup + QR |
-| `/whiteboard` | `src/pages/whiteboard.astro` | Whiteboard hub — create, join, Recents, Assets, Library |
-| `/board/{uuid}` | `src/pages/board.astro` (+ `/board/*` rewrite) | Live board — site header + tldraw sync canvas |
-| `/api/whiteboard/connect/:uuid` | `src/worker.ts` → DO | WebSocket upgrade for tldraw sync |
+| `/whiteboard` | `src/pages/whiteboard.astro` | Whiteboard hub — create, join; Recents/Assets/Library when signed in |
+| `/board/{uuid}` | `src/pages/board.astro` (+ `/board/*` rewrite) | Live board — site header + Excalidraw canvas |
+| `/whiteboard-player` | `src/pages/whiteboard-player.astro` | Same-origin MP4/WebM player for canvas embeds |
+| `/api/whiteboard/connect/:uuid` | `src/worker.ts` → DO | WebSocket upgrade for Excalidraw collab |
 | `/api/whiteboard/join/:code` | `src/worker.ts` → KV | Resolve share code → board UUID |
 | `/api/whiteboard/boards/:uuid/code` | `src/worker.ts` → DO + KV | GET/POST/DELETE share code (Open/Closed/rotate) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | `src/worker.ts` → R2 | PUT/GET/DELETE whiteboard media |
@@ -66,9 +67,9 @@ The site runs on three device types:
 Responsive queries in `src/styles/global.css` / `home.css`:
 - `@media (max-width: 1100px)` — iPad scaling (narrower app tiles, smaller icons/gaps)
 - `@media (max-width: 768px)` — Mobile/phone layout (stacked elements)
-- `@media (max-height: 800px)` — Chromebook vertical compression
+- `@media (max-height: 800px)` — Chromebook vertical compression (whiteboard hub included)
 
-**When adding new sections or elements, ensure they fit on all three device types without scrolling.** The desktop layout is considered final.
+**When adding new sections or elements, ensure they fit on all three device types without scrolling.** The desktop layout is considered final. Whiteboard fonts stay self-hosted (`EXCALIDRAW_ASSET_PATH`); do not load them from a CDN.
 
 ## Deployment Config
 

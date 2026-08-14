@@ -92,11 +92,11 @@ Evidence from client/worker paths (no SW involvement for `/api/*`):
 
 | Concern | Offline behavior (from code) |
 |---------|------------------------------|
-| **Live sync** | `TldrawBoard` uses `@tldraw/sync` `useSync` with URI `/api/whiteboard/connect/{boardId}`. That path is under `/api/`, so the SW never handles it. Sync needs a live network connection to the Worker / Durable Object. |
+| **Live sync** | `WhiteboardCanvas` opens a native WebSocket to `/api/whiteboard/connect/{boardId}`. That path is under `/api/`, so the SW never handles it. Sync needs a live network connection to the Worker / Durable Object. |
 | **Share codes** | Join/lookup uses `fetch` to `/api/whiteboard/join/...` and board code routes (`whiteboard-codes.ts`). Requires network. |
-| **Cloud library / assets index** | Signed-in library APIs hit `/api/whiteboard/library/*` (`whiteboard-cloud.ts`) and need Clerk + network. |
-| **R2 media** | Asset store resolves URLs under `/api/whiteboard/assets/...` and `fetch`es them (`whiteboard-assets.ts`). Upload/download needs network; SW does not cache these. |
-| **Signed-out local indexes** | Device install id, local board library, and local assets index use `localStorage` (`whiteboard-library.ts`, `whiteboard-assets.ts`). Those reads/writes do not require the network. |
-| **Cloud upserts while opening a board** | Hub and board code call cloud “touch” / upsert helpers and **catch** failures with comments that cloud upsert can fail offline; when signed out, local create/open paths still proceed, and the hub still navigates to `/board/{uuid}` after a failed touch. Opening the board route itself is still a **navigation**; if the network is down, the SW serves `/offline` instead of the board HTML. |
+| **Cloud library / assets index** | Signed-in library APIs hit `/api/whiteboard/library/*` (`whiteboard-cloud.ts`) and need Clerk + network. Recents/Library/Assets are not stored in localStorage. |
+| **R2 media** | Canvas files resolve URLs under `/api/whiteboard/assets/...` (`whiteboard-excalidraw-files.ts`). Upload/download needs network; SW does not cache these. |
+| **Scratch identity** | Device install id, guest display name, and creating-browser host secret use `localStorage`. Those reads/writes do not require the network, but they are not a board library. |
+| **Cloud upserts while opening a board** | Hub and board code call cloud “touch” / claim helpers and **catch** failures. Signed-out create still navigates to `/board/{uuid}`. Opening the board route itself is still a **navigation**; if the network is down, the SW serves `/offline` instead of the board HTML. |
 
-**Summary:** localStorage-backed hub metadata for signed-out users can be read and updated without the network. Anything that depends on `/api/whiteboard/*` (sync WebSocket, share codes, cloud library, R2 assets) requires connectivity and is outside the service worker’s caching model. Navigating to hub or board pages while offline yields the `/offline` page, not a cached board UI.
+**Summary:** scratch-board identity (host secret, guest name) can be read without the network. Anything that depends on `/api/whiteboard/*` (sync WebSocket, share codes, cloud library, R2 assets) requires connectivity and is outside the service worker’s caching model. Navigating to hub or board pages while offline yields the `/offline` page, not a cached board UI. Fonts for the canvas are same-origin `/excalidraw/fonts` and may be served from the SW asset cache if they were fetched earlier.

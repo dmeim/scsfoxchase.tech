@@ -508,7 +508,7 @@ function initWhiteboardMenu() {
     }
 
     titleInput?.setCustomValidity('')
-    // Gate on auth-ready so a pre-AuthBridge Save does not write localStorage.
+    // Wait for Clerk so signed-in Save writes the cloud library.
     void (async () => {
       try {
         await whenAuthReady()
@@ -518,7 +518,7 @@ function initWhiteboardMenu() {
         setHint(
           isSignedIn()
             ? 'Saved to your Google library.'
-            : 'Saved on this device.',
+            : 'Name kept on this scratch board. Sign in to save it to your library.',
         )
       } catch {
         setHint('Could not save the name. Check your connection and try again.')

@@ -4,30 +4,29 @@ Live document sync, media uploads, and where whiteboard data lives.
 
 ## Overview
 
-Each board UUID maps to one **Durable Object** (`WhiteboardBoard`) that runs a `@tldraw/sync-core` `TLSocketRoom` with **SQLite** persistence. Clients connect with `@tldraw/sync` `useSync`. Images and videos go to **R2** under owner-scoped keys; signed-in library indexes are JSON objects in the same bucket.
+Each board UUID maps to one **Durable Object** (`WhiteboardBoard`). Clients open a **native WebSocket** (not `@tldraw/sync`). The DO persists plaintext Excalidraw `{ elements, appState }` from `serializeAsJSON(..., "database")` in SQLite table `excalidraw_scene`. Image/GIF bytes and MP4/WebM files go to **R2** keyed by Excalidraw `fileId`. Signed-in library indexes are JSON objects in the same bucket.
+
+Do not use `excalidraw-room`, Firebase, `oss-collab`, Liveblocks, or Yjs for this product.
 
 ## WebSocket sync
 
 ### Client
 
-`src/components/TldrawBoard.tsx`:
+`src/components/WhiteboardCanvas.tsx` + `src/lib/whiteboard-sync.ts`:
 
-```ts
-const store = useSync({
-  uri,           // builds /api/whiteboard/connect/{uuid}?...
-  assets: r2AssetStore,
-  onCustomMessageReceived,
-})
-```
+1. `buildWhiteboardConnectUrl` → `/api/whiteboard/connect/{uuid}?sessionId=…`
+2. On change, debounce ~1s (`SCENE_FLUSH_MS`), send `scene:update` with elements whose `version` increased; periodically send a full set.
+3. Incoming `scene:sync` / `scene:update`: `restoreElements` + `reconcileElements`, then `updateScene({ captureUpdate: NEVER })`.
+4. Client ping every 25s (`{"type":"ping"}`); DO auto-responds `pong` without waking JS.
 
 Connect URL query params:
 
 | Param | Purpose |
 |-------|---------|
-| `sessionId` | Required by the DO (tldraw session id) |
-| `hostSecret` | Present when this browser created the board → host |
-| `displayName` | Full Google name (or empty for guests) for People list |
-| `userId` | tldraw user id for Follow / force-follow camera target |
+| `sessionId` | Required; stored in `sessionStorage` per board so refresh keeps the same session |
+| `hostSecret` | Present when this browser created the board → ephemeral Owner on scratch boards |
+| `displayName` | Google full name, or a generated guest name |
+| `userId` | Google account id, or `deviceInstallId` for guests (Follow target) |
 
 ### Worker routing
 
@@ -37,24 +36,29 @@ Connect URL query params:
 env.WHITEBOARDS.idFromName(boardId) → stub.fetch(request)
 ```
 
+The PWA service worker (`public/sw.js`) **never intercepts `/api/*`**, so this upgrade is not cached.
+
 ### Durable Object room
 
 `src/worker/WhiteboardBoard.ts`:
 
-- Storage: `DurableObjectSqliteSyncWrapper` + `SQLiteSyncStorage` (table prefix `tldraw_`).
-- Schema: default tldraw shapes/bindings via `createTLSchema`.
-- Hibernation: WebSocket auto-response for `{"type":"ping"}` / `pong`; session snapshots on socket attachments; resume on wake.
-- `clientTimeout: Infinity` so Cloudflare-kept sockets are not pruned by the room.
+- Storage: SQLite `excalidraw_scene` (`database_json` + `live_json`).
+- Merge: last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
+- Hibernation: WebSocket auto-response for ping/pong; session snapshots on socket attachments; resume on wake.
+- Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `roleCanEdit` is false.
+- Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
 
 Custom messages the DO sends to connected clients:
 
 | Type | Payload | Purpose |
 |------|---------|---------|
-| `wb:participants` | `{ yourSessionId, participants[] }` | People list |
-| `wb:canEdit` | `{ canEdit }` | Guest readonly toggle |
-| `wb:forceFollow` | `{ forceFollow, hostUserId }` | Camera lock |
+| `wb:hello` | `{ sessionId, role, canEdit, authToken, owner, … }` | Session identity for the manage panel |
+| `wb:participants` | `{ yourSessionId, yourRole, participants[] }` | People list |
+| `wb:role` | `{ role, canEdit }` | Role change for this session |
+| `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Camera lock |
+| `wb:sceneBounds` | `{ socketId, bounds }` | Follow camera (Excalidraw follow breaks on pan/zoom) |
 
-Document persistence is the DO SQLite room — not the hub library indexes. Removing a board from Recents/Library only drops the **index entry**.
+Document persistence is the DO scene — not the hub library indexes. Removing a board from Recents/Library only drops the **index entry**.
 
 ## R2 assets
 
@@ -62,40 +66,46 @@ Document persistence is the DO SQLite room — not the hub library indexes. Remo
 **Bucket:** `scsfoxchase-tech-whiteboards`  
 **Object key:** `assets/{ownerKey}/{assetId}`
 
+Owner keys on canvas files:
+
+| Board state | Owner key |
+|-------------|-----------|
+| Signed-in **saved** board | `google:{accountId}` |
+| Unsaved / signed-out scratch | `temp:{boardId}` (24h) |
+
+`local:{deviceInstallId}` is still accepted by the asset API for leftover hub uploads; the live canvas path uses `temp:` / `google:`.
+
 ### HTTP API
 
 `src/worker/assetRoutes.ts` — `/api/whiteboard/assets/{ownerKey}/{assetId}`
 
 | Method | Auth | Behavior |
 |--------|------|----------|
-| `PUT` | `google:*` requires Clerk session whose `ownerKey` matches; `local:*` is capability-URL (unguessable UUIDs) | Upload body (max **8 MB**) |
-| `GET` / `HEAD` | Public if key known | Stream object; long cache |
+| `PUT` | `google:*` requires Clerk session whose `ownerKey` matches; `temp:*` / `local:*` are capability-URL (unguessable UUIDs) | Upload body (max **8 MB**) |
+| `GET` / `HEAD` | Public if key known | Stream object; long cache. Expired `temp:*` objects 404 |
 | `DELETE` | Same write rules as PUT | Delete object |
+| `POST /api/whiteboard/assets/claim` | Clerk | Move `temp:{boardId}` → `google:{id}` after Save |
 
 Allowed MIME: JPEG, PNG, GIF, WebP, SVG, MP4, WebM.
 
-### Client upload path
+### Canvas upload path
 
-`r2AssetStore` in `src/lib/whiteboard-assets.ts` (passed to `useSync`):
+`src/lib/whiteboard-excalidraw-files.ts` (not hub drag-drop onto the Assets strip):
 
-1. Wait for auth ready when Clerk is configured.
-2. `ownerKey = getOwnerKey()` → `local:{deviceInstallId}` or `google:{accountId}`.
-3. Mint asset UUID; `PUT` with `Content-Type` (+ Bearer for Google).
-4. Upsert Assets index (`upsertAssetActive` → localStorage or cloud).
-5. Return absolute `src` URL so peers resolve the same capability path.
+1. Image/GIF: `generateIdForFile` → PUT R2 → `addFiles` on peers by `fileId`. Persist only files referenced by elements.
+2. MP4/WebM: PUT R2 → insert an embeddable whose `link` is `/whiteboard-player?owner=…&id=…`. `validateEmbeddable` / `renderEmbeddable` allow that same-origin player.
+3. YouTube / Vimeo: stock Excalidraw embeds (`frame-src` in CSP).
+4. On Save/claim, temp objects move under the Google owner key; player links on the scene are rewritten.
 
-`resolve` returns `asset.props.src` as stored.
+Player page: `src/pages/whiteboard-player.astro`. Worker sets `X-Frame-Options: SAMEORIGIN` so the canvas iframe works (`public/_headers` has a matching exception). Global CSP is `X-Frame-Options: DENY` elsewhere.
 
 ### Hub Assets index (metadata)
 
-Separate from R2 binaries:
+Separate from R2 binaries. **Signed-in cloud only** — Recents/Assets/Library are hidden when signed out.
 
-| Mode | Storage |
-|------|---------|
-| Signed out | `localStorage` key `scsfoxchase.whiteboard.assets` |
-| Signed in | R2 JSON `library/{ownerKey}/assets.json` via `/api/whiteboard/library/assets` |
-
-Index entries include `id`, `title`, `mimeType`, `r2Key`, `ownerKey`, timestamps, optional `sourceBoardIds`. Deleting from the hub removes the index row and best-effort deletes the R2 object.
+- R2 JSON `library/{ownerKey}/assets.json` via `/api/whiteboard/library/assets`
+- Index entries include `id`, `title`, `mimeType`, `r2Key`, `ownerKey`, timestamps, optional `sourceBoardIds`
+- Deleting from the hub removes the index row and best-effort deletes the R2 object
 
 ## Cloud library board index
 
@@ -105,14 +115,7 @@ Signed-in Recents/Library boards:
 - API: `/api/whiteboard/library/boards` (GET list, PUT upsert) and `.../boards/:id` (DELETE)
 - Clerk required — see [auth-libraries.md](./auth-libraries.md)
 
-## Local board library (signed out)
-
-`localStorage` key `scsfoxchase.whiteboard.library` — array of `{ id, title, lastAccessedAt, previewDataUrl? }`.
-
-Host secrets: `scsfoxchase.whiteboard.host.{boardId}`.  
-Device install id: `scsfoxchase.whiteboard.deviceInstallId`.
-
-Removing a local board also best-effort deletes IndexedDB names used by older local tldraw persistence keys for that board id (sync path is DO-backed; cleanup is defensive).
+Join does not write this index. Signed-in **create** and **Save/claim** (creating browser + Google) do.
 
 ## Bindings reference
 
@@ -134,15 +137,30 @@ From `wrangler.jsonc`:
 
 Migration tag `whiteboard-v1` registers SQLite class `WhiteboardBoard`.
 
+## CSP (media / fonts)
+
+`public/_headers`:
+
+- `font-src 'self'` — Excalidraw fonts under `/excalidraw/fonts`
+- `connect-src 'self'` — same-origin WebSocket and asset PUT/GET
+- `img-src` / `media-src` `'self'` — resolved R2 URLs under `/api/whiteboard/assets/*`
+- `frame-src 'self'` plus YouTube / Vimeo hosts — player + stock embeds
+- `worker-src 'self' blob:` — Excalidraw subset workers
+
+No `cdn.tldraw.com`. No license-key env var.
+
 ## Key files
 
 | Path | Role |
 |------|------|
 | `src/worker.ts` | Connect upgrade + API dispatch |
-| `src/worker/WhiteboardBoard.ts` | Sync room, DO meta storage, custom messages |
-| `src/worker/assetRoutes.ts` | R2 PUT/GET/DELETE |
+| `src/worker/WhiteboardBoard.ts` | Scene store, DO meta, custom messages, 24h TTL |
+| `src/worker/assetRoutes.ts` | R2 PUT/GET/DELETE / claim |
 | `src/worker/libraryRoutes.ts` | Cloud boards/assets JSON indexes |
-| `src/components/TldrawBoard.tsx` | `useSync` client |
-| `src/lib/whiteboard-assets.ts` | `r2AssetStore` + local asset index |
-| `src/lib/whiteboard-cloud.ts` | Cloud index fetch/upsert/delete |
+| `src/components/WhiteboardCanvas.tsx` | WebSocket client + Excalidraw |
+| `src/lib/whiteboard-sync.ts` | Protocol types shared by Worker and island |
+| `src/lib/whiteboard-excalidraw-files.ts` | Image/GIF/video hooks |
+| `src/lib/whiteboard-assets.ts` | R2 helpers + temp owner keys |
+| `src/lib/whiteboard-cloud.ts` | Cloud index fetch/upsert/delete + meta claim |
+| `scripts/copy-excalidraw-fonts.mjs` | Font copy for Chromebooks / CSP `'self'` |
 | `wrangler.jsonc` | Bindings |

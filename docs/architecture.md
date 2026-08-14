@@ -1,6 +1,6 @@
 # Architecture
 
-St. Cecilia Technology is an **Astro 7** site deployed as a **Cloudflare Worker** with static assets. Pages are prerendered HTML; the same Worker hosts live `/api/whiteboard/*` endpoints (WebSocket sync, R2 media, KV share codes, Clerk-backed library APIs).
+St. Cecilia Technology is an **Astro 7** site deployed as a **Cloudflare Worker** with static assets. Pages are prerendered HTML; the same Worker hosts live `/api/whiteboard/*` endpoints (Excalidraw WebSocket sync, R2 media, KV share codes, Clerk-backed library APIs).
 
 **Live domain:** `scsfoxchase.tech`  
 **Worker name:** `scsfoxchase-tech`  
@@ -76,9 +76,10 @@ Board URLs use a path rewrite so one prerendered shell serves every UUID:
 |--------------|--------|----------|
 | `/api/whiteboard/library…` | `worker/libraryRoutes.ts` | Cloud board/asset indexes (Clerk session) |
 | `/api/whiteboard/join…` or `/api/whiteboard/boards/:uuid/code` | `worker/codeRoutes.ts` | Share-code resolve / mint / revoke (KV + DO) |
-| `/api/whiteboard/boards/:uuid/participants/…` | `worker/participantRoutes.ts` | Per-session edit permissions |
-| `/api/whiteboard/boards/:uuid/force-follow` | `worker/forceFollowRoutes.ts` | Host camera force-follow |
-| `/api/whiteboard/assets…` | `worker/assetRoutes.ts` | R2 PUT/GET/DELETE |
+| `/api/whiteboard/boards/:uuid/meta` | DO | Saved-to-library + Google Owner (24h TTL) |
+| `/api/whiteboard/boards/:uuid/participants/…` | `worker/participantRoutes.ts` | Per-session roles (Owner / Manager) |
+| `/api/whiteboard/boards/:uuid/force-follow` | `worker/forceFollowRoutes.ts` | Follow Me / force-follow |
+| `/api/whiteboard/assets…` | `worker/assetRoutes.ts` | R2 PUT/GET/DELETE / claim |
 | `/api/whiteboard/connect/:uuid` | DO (`idFromName` → `stub.fetch`) | WebSocket upgrade → `WhiteboardBoard` |
 
 Connect requires a valid UUID and `Upgrade: websocket`; otherwise the Worker returns `400` or `426`.
@@ -87,15 +88,16 @@ Everything else falls through to the Astro asset handler.
 
 ### Auth and ownership (whiteboard)
 
-- **Signed out:** asset owner key `local:{deviceInstallId}` (device id in localStorage); hub Recents/Assets indexes in localStorage.
-- **Signed in (Google via Clerk):** owner key `google:{accountId}` (Google OAuth `sub` preferred, else Clerk user id); cloud indexes at R2 `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json`.
-- Sign-in/out **swaps** which Recents/Library/Assets namespace the hub shows; it does not wipe the other namespace.
-- UI: `@clerk/react` header island (`ClerkAuth.tsx`). Worker auth helpers live in `worker/clerkAuth.ts`.
+- **Scratch (signed out create):** live Durable Object; ephemeral Owner via host secret; canvas files under `temp:{boardId}` (24h). Not in a library.
+- **Signed in (Google via Clerk):** owner key `google:{accountId}` (Google OAuth `sub` preferred, else Clerk user id); Recents / Library / Assets from R2 `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json`. Signed-in create autosaves; that account is Owner.
+- Join by code/link/UUID works without an account (default **Viewer**). Join does not write Recents.
+- UI: `@clerk/react` header island (`ClerkAuth.tsx`). Worker auth helpers live in `worker/clerkAuth.ts`. Canvas: `WhiteboardCanvas.tsx` (Excalidraw 0.18.1).
 
 ### Asset and share-code storage
 
-- R2 object keys for media: `assets/{ownerKey}/{assetId}`
+- R2 object keys for media: `assets/{ownerKey}/{assetId}` (`google:` when saved; `temp:{boardId}` when unsaved)
 - Share codes: KV `code:{A1B2}` → board id (12h TTL); DO stores `activeCode` and alarm-driven Open/Closed cleanup
+- Same-origin video player: `/whiteboard-player` (Worker sets `X-Frame-Options: SAMEORIGIN`)
 
 ## PWA service worker boundary
 
@@ -137,6 +139,7 @@ src/
 │   ├── inventory.astro    # /inventory
 │   ├── whiteboard.astro   # /whiteboard hub
 │   ├── board.astro        # /board shell (+ rewrite for /board/{uuid})
+│   ├── whiteboard-player.astro  # same-origin MP4/WebM player
 │   ├── offline.astro      # /offline
 │   ├── oldgames.astro     # legacy catalog
 │   └── 404.astro
@@ -145,7 +148,7 @@ src/
 ├── components/            # Astro UI + React islands
 │   ├── Header.astro, AppLauncher.astro, GamesCatalog.astro, …
 │   ├── ClerkAuth.tsx      # Clerk SignIn / UserButton
-│   └── TldrawBoard.tsx    # Live board + @tldraw/sync
+│   └── WhiteboardCanvas.tsx  # Live board + Excalidraw collab
 ├── content/
 │   └── games/*.json       # Games content collection
 ├── content.config.ts      # Collection schema (zod)
@@ -180,7 +183,7 @@ src/
 
 ## Security and headers
 
-`public/_headers` is the sole source of security and cache headers (CSP, HSTS, X-Frame-Options, and related). CSP allows Clerk and Google OAuth hosts used by sign-in. See deployment docs for production checklist items.
+`public/_headers` is the sole source of security and cache headers (CSP, HSTS, X-Frame-Options, and related). CSP allows Clerk and Google OAuth hosts used by sign-in, same-origin Whiteboard WebSocket/assets/fonts, and YouTube/Vimeo `frame-src` for canvas embeds. See deployment docs for production checklist items.
 
 ## Related docs
 
