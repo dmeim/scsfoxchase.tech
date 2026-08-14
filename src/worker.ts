@@ -10,7 +10,10 @@
  * - Auth: Clerk (CLERK_SECRET_KEY + PUBLIC_CLERK_PUBLISHABLE_KEY)
  */
 import { handle } from '@astrojs/cloudflare/handler'
-import { handleAssetRequest } from './worker/assetRoutes'
+import {
+	claimTempAssetsFromMetaResponse,
+	handleAssetRequest,
+} from './worker/assetRoutes'
 import { handleCodeRequest } from './worker/codeRoutes'
 import { handleLibraryRequest } from './worker/libraryRoutes'
 import { handleForceFollowRequest } from './worker/forceFollowRoutes'
@@ -67,9 +70,9 @@ export default {
 			if (forceFollowResponse) return forceFollowResponse
 		}
 
-		// R2 asset upload / download / delete
+		// PHASE 3.2 — R2 asset upload / download / delete / claim / expire-temp
 		if (url.pathname.startsWith('/api/whiteboard/assets')) {
-			const assetResponse = await handleAssetRequest(request, env)
+			const assetResponse = await handleAssetRequest(request, env, ctx)
 			if (assetResponse) return assetResponse
 		}
 
@@ -118,13 +121,36 @@ export default {
 				request.method === 'GET' || request.method === 'HEAD'
 					? undefined
 					: await request.text()
-			return stub.fetch(
+			const metaResponse = await stub.fetch(
 				new Request(forwardUrl.toString(), {
 					method: request.method,
 					headers: { 'Content-Type': 'application/json' },
 					body,
 				}),
 			)
+			// PHASE 3.2: Save/claim sets Google owner — move temp R2 objects.
+			if (request.method === 'PATCH' && metaResponse.ok) {
+				ctx.waitUntil(
+					claimTempAssetsFromMetaResponse(
+						env,
+						boardId,
+						metaResponse.clone(),
+					),
+				)
+			}
+			return metaResponse
+		}
+
+		// PHASE 3.2: same-origin video player must be frameable by the canvas.
+		if (url.pathname === '/whiteboard-player') {
+			const page = await handle(request, env, ctx)
+			const headers = new Headers(page.headers)
+			headers.set('X-Frame-Options', 'SAMEORIGIN')
+			return new Response(page.body, {
+				status: page.status,
+				statusText: page.statusText,
+				headers,
+			})
 		}
 
 		// Prerendered pages + static assets via Astro Cloudflare handler

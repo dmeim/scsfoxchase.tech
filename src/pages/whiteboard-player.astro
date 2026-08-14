@@ -1,0 +1,52 @@
+---
+export const prerender = true;
+---
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Video</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				width: 100%;
+				height: 100%;
+				background: #000;
+			}
+			video {
+				display: block;
+				width: 100%;
+				height: 100%;
+				object-fit: contain;
+				background: #000;
+			}
+		</style>
+	</head>
+	<body>
+		<video id="wb-player" controls playsinline></video>
+		<script is:inline>
+			(function () {
+				var params = new URLSearchParams(location.search);
+				var owner = params.get('owner') || '';
+				var id = params.get('id') || '';
+				var ownerOk = /^(temp|google|local):[A-Za-z0-9_.:@-]{1,128}$/.test(
+					owner,
+				);
+				var idOk =
+					/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+						id,
+					);
+				if (!ownerOk || !idOk) return;
+				var video = document.getElementById('wb-player');
+				if (!video) return;
+				video.src =
+					'/api/whiteboard/assets/' +
+					encodeURIComponent(owner) +
+					'/' +
+					encodeURIComponent(id);
+			})();
+		</script>
+	</body>
+</html>
