@@ -11,6 +11,7 @@ Runtime and build configuration for Worker `scsfoxchase-tech`. Bindings (DO / R2
 | `PUBLIC_CLERK_PUBLISHABLE_KEY` | Public | Yes for Clerk | Workers Builds build + runtime vars; local `.env` and `.dev.vars` | Client `ClerkProvider` / sign-in UI; Worker `authenticateRequest` |
 | `PUBLIC_CLERK_ALLOWED_DOMAINS` | Public | No | Workers Builds vars; local `.env` / `.dev.vars` | Optional allowlist: comma-separated email domains and/or full emails |
 | `CLERK_SECRET_KEY` | **Secret** | Yes for cloud library / `google:*` writes | `npx wrangler secret put`; local `.dev.vars` only | Worker verifies Clerk sessions via `@clerk/backend` |
+| `WHITEBOARD_ADMIN_SECRET` | **Secret** | Only for Durable Object storage wipe | `npx wrangler secret put WHITEBOARD_ADMIN_SECRET` | Bearer token for `POST /api/whiteboard/admin/wipe-storage` (`deleteAll` on listed object hex IDs). Omit locally unless testing wipe. |
 | `PUBLIC_INVENTORY_WEBHOOK` | Public | No | Build env / `.env` if overriding default | Inventory form webhook URL; defaults in code to the n8n inventory endpoint |
 
 There is no whiteboard license key (`PUBLIC_TLDRAW_LICENSE_KEY` is gone). Excalidraw 0.18.1 is MIT.
@@ -39,7 +40,7 @@ No extra env vars for sync, assets, share codes, or fonts. Those use bindings pl
 |------|-----|
 | Build vars | Cloudflare dashboard → Worker `scsfoxchase-tech` → Workers Builds / Variables: `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`, `NODE_VERSION=22` |
 | Runtime vars | Same dashboard variables so the Worker process can read Clerk public config |
-| Secrets | `npx wrangler secret put CLERK_SECRET_KEY` (never in git or plaintext dashboard dumps committed to the repo) |
+| Secrets | `npx wrangler secret put CLERK_SECRET_KEY` (never in git or plaintext dashboard dumps committed to the repo). Optional: `WHITEBOARD_ADMIN_SECRET` for the Durable Object wipe route. |
 
 `PUBLIC_*` values used by Astro must be present at **build** time so they are inlined into client bundles. The Worker also reads `PUBLIC_CLERK_*` and `CLERK_SECRET_KEY` at **runtime** for `/api/whiteboard/*` auth.
 

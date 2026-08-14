@@ -50,6 +50,39 @@ const ACTIVE_CODE_KEY = 'meta:activeCode'
 const CODE_EXPIRES_AT_KEY = 'meta:codeExpiresAt'
 const CODE_MINT_LOG_KEY = 'meta:codeMintLog'
 
+const SCENE_TABLE_SQL = `
+	CREATE TABLE IF NOT EXISTS excalidraw_scene (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		database_json TEXT NOT NULL,
+		live_json TEXT NOT NULL,
+		updated_at INTEGER NOT NULL
+	)
+`
+
+export type WipeStoredDataResult = {
+	objectId: string
+	tablesBefore: string[]
+	tablesAfter: string[]
+	hadTldrawTables: boolean
+}
+
+function listUserSqlTables(storage: DurableObjectStorage): string[] {
+	return storage.sql
+		.exec<{ name: string }>(
+			`SELECT name FROM sqlite_master
+			 WHERE type = 'table'
+			   AND name NOT LIKE 'sqlite_%'
+			   AND name NOT LIKE '__cf_%'
+			 ORDER BY name`,
+		)
+		.toArray()
+		.map((row) => row.name)
+}
+
+function hasTldrawSqlTables(names: string[]): boolean {
+	return names.some((name) => name.startsWith('tldraw_'))
+}
+
 /** Max mint/rotate attempts per board in a rolling window. */
 const MINT_RATE_LIMIT = 12
 const MINT_RATE_WINDOW_MS = 10 * 60 * 1000
@@ -197,14 +230,56 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'),
 		)
 		this.ctx.blockConcurrencyWhile(async () => {
-			this.ctx.storage.sql.exec(`
-				CREATE TABLE IF NOT EXISTS excalidraw_scene (
-					id INTEGER PRIMARY KEY CHECK (id = 1),
-					database_json TEXT NOT NULL,
-					live_json TEXT NOT NULL,
-					updated_at INTEGER NOT NULL
-				)
-			`)
+			const tables = listUserSqlTables(this.ctx.storage)
+			if (hasTldrawSqlTables(tables)) {
+				await this.clearAllStorage()
+			}
+			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
+		})
+	}
+
+	private resetLiveState(): void {
+		this.forceFollowCache = null
+		this.voluntaryFollow.clear()
+		this.sceneCache = { elements: [], appState: {} }
+		this.sceneLoaded = true
+		this.updatesSinceFullSync = 0
+	}
+
+	private async clearAllStorage(): Promise<void> {
+		try {
+			await this.ctx.storage.deleteAlarm()
+		} catch {
+			// no alarm set
+		}
+		await this.ctx.storage.deleteAll()
+		this.resetLiveState()
+	}
+
+	/**
+	 * Authenticated admin RPC: drop tldraw (and any other) SQLite/KV data, then
+	 * re-create an empty Excalidraw scene table. Does not wipe new boards on its
+	 * own — the Worker only calls this for listed object IDs.
+	 */
+	async wipeStoredData(): Promise<WipeStoredDataResult> {
+		return this.ctx.blockConcurrencyWhile(async () => {
+			const tablesBefore = listUserSqlTables(this.ctx.storage)
+			for (const ws of this.ctx.getWebSockets()) {
+				try {
+					ws.close(4000, 'storage wiped')
+				} catch {
+					// already closing
+				}
+			}
+			this.sessionIdToWs.clear()
+			await this.clearAllStorage()
+			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
+			return {
+				objectId: this.ctx.id.toString(),
+				tablesBefore,
+				tablesAfter: listUserSqlTables(this.ctx.storage),
+				hadTldrawTables: hasTldrawSqlTables(tablesBefore),
+			}
 		})
 	}
 

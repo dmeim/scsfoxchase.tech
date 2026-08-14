@@ -74,6 +74,7 @@ Board URLs use a path rewrite so one prerendered shell serves every UUID:
 
 | Path pattern | Module | Behavior |
 |--------------|--------|----------|
+| `/api/whiteboard/admin/wipe-storage` | `worker/adminRoutes.ts` | Bearer `WHITEBOARD_ADMIN_SECRET`; `deleteAll` on listed DO hex IDs |
 | `/api/whiteboard/library…` | `worker/libraryRoutes.ts` | Cloud board/asset indexes (Clerk session) |
 | `/api/whiteboard/join…` or `/api/whiteboard/boards/:uuid/code` | `worker/codeRoutes.ts` | Share-code resolve / mint / revoke (KV + DO) |
 | `/api/whiteboard/boards/:uuid/meta` | DO | Saved-to-library + Google Owner (24h TTL) |

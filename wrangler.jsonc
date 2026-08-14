@@ -24,6 +24,8 @@
   // Binding WHITEBOARD_CODES → KV share-code → boardId (TTL 12h, Phase 5)
   // Clerk secrets (not in this file):
   //   npx wrangler secret put CLERK_SECRET_KEY
+  // Admin wipe (not in this file):
+  //   npx wrangler secret put WHITEBOARD_ADMIN_SECRET
   //   Workers Builds / dashboard vars: PUBLIC_CLERK_PUBLISHABLE_KEY,
   //     PUBLIC_CLERK_ALLOWED_DOMAINS (optional)
   //   Local: .dev.vars (see .dev.vars.example)
