@@ -1,16 +1,25 @@
-/** Device-local whiteboard Recents / Library (Phase 1) + device install id (Phase 4a)
- *  + dual-mode active helpers (Phase 4b cloud indexes when signed in).
+/**
+ * Whiteboard identity helpers + signed-in cloud library (Phase 3.1).
+ *
+ * Recents / Library live in R2 via Clerk. There is no localStorage board
+ * index. Signed-out create is a scratch Durable Object (host secret only);
+ * Save / claim (signed in + creating-browser secret) writes the cloud index
+ * and PATCHes board meta to lift the 24h TTL.
  */
 import {
-	deleteCloudBoard,
-	fetchCloudBoards,
-	upsertCloudBoard,
-} from '../lib/whiteboard-cloud'
-import { getActiveIdentity, isSignedIn } from '../lib/whiteboard-identity'
+  deleteCloudBoard,
+  fetchCloudBoards,
+  markBoardSavedToLibrary,
+  upsertCloudBoard,
+} from '../lib/whiteboard-cloud';
+import { getActiveIdentity, isSignedIn, onAuthChange, whenAuthReady } from '../lib/whiteboard-identity';
 
+/** @deprecated Phase 3.1 — local board library removed; key is cleared on load. */
 export const LIBRARY_KEY = 'scsfoxchase.whiteboard.library';
 export const HOST_SECRET_PREFIX = 'scsfoxchase.whiteboard.host.';
 export const DEVICE_INSTALL_ID_KEY = 'scsfoxchase.whiteboard.deviceInstallId';
+
+const SCRATCH_TITLE_PREFIX = 'scsfoxchase.whiteboard.scratchTitle.';
 
 export type WhiteboardLibraryEntry = {
   id: string;
@@ -19,9 +28,18 @@ export type WhiteboardLibraryEntry = {
   previewDataUrl?: string;
 };
 
+if (typeof localStorage !== 'undefined') {
+  try {
+    localStorage.removeItem(LIBRARY_KEY);
+  } catch {
+    // private mode / blocked storage
+  }
+}
+
 /**
  * Stable per-browser UUID for signed-out owner keys (`local:{deviceInstallId}`).
  * Minted on first visit; clearing site data creates a new namespace.
+ * Phase 3.2 still uses this for temp R2 objects; it is not a board library.
  */
 export function getDeviceInstallId(): string {
   try {
@@ -41,8 +59,8 @@ export function getDeviceInstallId(): string {
 
 /**
  * Active owner key for R2 assets / library membership.
- * Signed out: `local:{deviceInstallId}`.
- * Signed in: `google:{accountId}` from Clerk identity bridge.
+ * Signed out: `local:{deviceInstallId}` (scratch media until 3.2 claim).
+ * Signed in: `google:{accountId}` from Clerk (Google `sub` preferred).
  */
 export function getOwnerKey(): string {
   const identity = getActiveIdentity();
@@ -66,83 +84,65 @@ export function hostSecretKey(boardId: string): string {
   return `${HOST_SECRET_PREFIX}${boardId}`;
 }
 
-export function readLibrary(): WhiteboardLibraryEntry[] {
+function rememberScratchTitle(boardId: string, title: string): void {
   try {
-    const raw = localStorage.getItem(LIBRARY_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isValidEntry);
+    sessionStorage.setItem(`${SCRATCH_TITLE_PREFIX}${boardId}`, title);
   } catch {
-    return [];
+    // private mode
   }
 }
 
-function isValidEntry(value: unknown): value is WhiteboardLibraryEntry {
-  if (!value || typeof value !== 'object') return false;
-  const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.id === 'string' &&
-    isBoardUuid(entry.id) &&
-    typeof entry.title === 'string' &&
-    typeof entry.lastAccessedAt === 'string'
-  );
+function readScratchTitle(boardId: string): string | null {
+  try {
+    return sessionStorage.getItem(`${SCRATCH_TITLE_PREFIX}${boardId}`);
+  } catch {
+    return null;
+  }
 }
 
-export function writeLibrary(entries: WhiteboardLibraryEntry[]): void {
-  localStorage.setItem(LIBRARY_KEY, JSON.stringify(entries));
+function untitledEntry(
+  boardId: string,
+  title?: string,
+): WhiteboardLibraryEntry {
+  return {
+    id: boardId,
+    title: title || readScratchTitle(boardId) || 'Untitled board',
+    lastAccessedAt: new Date().toISOString(),
+  };
 }
 
-export function getEntry(boardId: string): WhiteboardLibraryEntry | undefined {
-  return readLibrary().find((entry) => entry.id === boardId);
+/** Local board library is gone. Kept so older imports do not write localStorage. */
+export function readLibrary(): WhiteboardLibraryEntry[] {
+  return [];
+}
+
+export function writeLibrary(_entries: WhiteboardLibraryEntry[]): void {
+  try {
+    localStorage.removeItem(LIBRARY_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function getEntry(_boardId: string): WhiteboardLibraryEntry | undefined {
+  return undefined;
 }
 
 export function upsertEntry(
   patch: Pick<WhiteboardLibraryEntry, 'id'> &
     Partial<Omit<WhiteboardLibraryEntry, 'id'>>,
 ): WhiteboardLibraryEntry {
-  const entries = readLibrary();
-  const index = entries.findIndex((entry) => entry.id === patch.id);
-  const now = new Date().toISOString();
-  const next: WhiteboardLibraryEntry = {
-    id: patch.id,
-    title:
-      patch.title ??
-      (index >= 0 ? entries[index].title : 'Untitled board'),
-    lastAccessedAt: patch.lastAccessedAt ?? now,
-    previewDataUrl:
-      patch.previewDataUrl !== undefined
-        ? patch.previewDataUrl
-        : index >= 0
-          ? entries[index].previewDataUrl
-          : undefined,
-  };
-
-  if (index >= 0) {
-    entries[index] = next;
-  } else {
-    entries.unshift(next);
-  }
-
-  writeLibrary(entries);
-  return next;
+  return untitledEntry(patch.id, patch.title);
 }
 
 export function touchBoard(boardId: string, title?: string): WhiteboardLibraryEntry {
-  return upsertEntry({
-    id: boardId,
-    title,
-    lastAccessedAt: new Date().toISOString(),
-  });
+  return untitledEntry(boardId, title);
 }
 
 export function setBoardTitle(boardId: string, title: string): WhiteboardLibraryEntry {
   const cleaned = title.trim() || 'Untitled board';
-  return upsertEntry({
-    id: boardId,
-    title: cleaned,
-    lastAccessedAt: new Date().toISOString(),
-  });
+  rememberScratchTitle(boardId, cleaned);
+  return untitledEntry(boardId, cleaned);
 }
 
 /** Default create title: `YYYY-MM-DD_HH-MM-SS` (24-hour local time). */
@@ -156,6 +156,15 @@ export function defaultBoardTitle(date = new Date()): string {
   return `${y}-${m}-${d}_${hh}-${mm}-${ss}`;
 }
 
+function persistHostSecret(boardId: string, hostSecret: string): void {
+  try {
+    localStorage.setItem(hostSecretKey(boardId), hostSecret);
+  } catch {
+    // private mode — ephemeral Owner on this device may be unavailable
+  }
+}
+
+/** Scratch create: UUID + host secret only. Does not write a library index. */
 export function createBoard(title = defaultBoardTitle()): {
   id: string;
   hostSecret: string;
@@ -163,39 +172,17 @@ export function createBoard(title = defaultBoardTitle()): {
 } {
   const id = crypto.randomUUID();
   const hostSecret = createHostSecret();
-  localStorage.setItem(hostSecretKey(id), hostSecret);
-  const entry = upsertEntry({
-    id,
-    title,
-    lastAccessedAt: new Date().toISOString(),
-  });
-  return { id, hostSecret, entry };
+  persistHostSecret(id, hostSecret);
+  rememberScratchTitle(id, title);
+  return { id, hostSecret, entry: untitledEntry(id, title) };
 }
 
-/** Remove a board from this device’s library (no server/R2 delete). */
+/** Drop host secret for this board. Does not delete the Durable Object. */
 export function removeBoard(boardId: string): void {
-  writeLibrary(readLibrary().filter((entry) => entry.id !== boardId));
   try {
     localStorage.removeItem(hostSecretKey(boardId));
   } catch {
     // ignore quota / private-mode failures
-  }
-  clearLocalTldrawPersistence(boardId);
-}
-
-function clearLocalTldrawPersistence(boardId: string): void {
-  const persistenceKey = `scsfoxchase-tldraw-r-${boardId}`;
-  const dbNames = [
-    persistenceKey,
-    `TLDRAW_DOCUMENT_v2${persistenceKey}`,
-    `TLDRAW_DOCUMENT_v3${persistenceKey}`,
-  ];
-  for (const name of dbNames) {
-    try {
-      indexedDB.deleteDatabase(name);
-    } catch {
-      // best-effort only
-    }
   }
 }
 
@@ -213,13 +200,12 @@ export function getHostSecret(boardId: string): string | null {
   }
 }
 
-/** Recents = most recently accessed; Library = full list (same source for v1). */
-export function getRecents(limit = 8): WhiteboardLibraryEntry[] {
-  return sortByAccessed(readLibrary()).slice(0, limit);
+export function getRecents(_limit = 8): WhiteboardLibraryEntry[] {
+  return [];
 }
 
 export function getLibrarySorted(): WhiteboardLibraryEntry[] {
-  return sortByAccessed(readLibrary());
+  return [];
 }
 
 function sortByAccessed(entries: WhiteboardLibraryEntry[]): WhiteboardLibraryEntry[] {
@@ -229,15 +215,54 @@ function sortByAccessed(entries: WhiteboardLibraryEntry[]): WhiteboardLibraryEnt
   );
 }
 
-// ---------------------------------------------------------------------------
-// Dual-mode (Phase 4b) — active index follows sign-in state
-// ---------------------------------------------------------------------------
+function scheduleSavedToLibrary(
+  boardId: string,
+  hostSecret: string | null,
+): void {
+  if (!isSignedIn() || !hostSecret) return;
+  const ownerKey = getOwnerKey();
+  void markBoardSavedToLibrary(boardId, ownerKey, hostSecret).catch(() => {
+    // First WebSocket connect stores the host hash; later touch/Save retries.
+  });
+}
+
+/**
+ * Signed-in Save / claim: upsert cloud library (Owner = Google) and lift 24h TTL.
+ * Requires the creating-browser host secret for the Durable Object PATCH.
+ */
+export async function claimBoardToLibrary(
+  boardId: string,
+  title?: string,
+): Promise<WhiteboardLibraryEntry> {
+  if (!isSignedIn()) {
+    throw new Error('Sign in with Google to save this board to your library.');
+  }
+  const hostSecret = getHostSecret(boardId);
+  if (!hostSecret) {
+    throw new Error(
+      'Only the browser that created this scratch board can save it to your library.',
+    );
+  }
+  const existing = await getEntryActive(boardId);
+  const now = new Date().toISOString();
+  const next: WhiteboardLibraryEntry = {
+    id: boardId,
+    title: title ?? existing?.title ?? readScratchTitle(boardId) ?? 'Untitled board',
+    lastAccessedAt: now,
+    previewDataUrl: existing?.previewDataUrl,
+  };
+  const saved = await upsertCloudBoard(next, { hostSecret });
+  try {
+    await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
+  } catch {
+    scheduleSavedToLibrary(boardId, hostSecret);
+  }
+  return saved;
+}
 
 export async function listBoardsActive(): Promise<WhiteboardLibraryEntry[]> {
-  if (isSignedIn()) {
-    return sortByAccessed(await fetchCloudBoards());
-  }
-  return getLibrarySorted();
+  if (!isSignedIn()) return [];
+  return sortByAccessed(await fetchCloudBoards());
 }
 
 export async function getRecentsActive(limit = 8): Promise<WhiteboardLibraryEntry[]> {
@@ -247,43 +272,69 @@ export async function getRecentsActive(limit = 8): Promise<WhiteboardLibraryEntr
 export async function getEntryActive(
   boardId: string,
 ): Promise<WhiteboardLibraryEntry | undefined> {
-  if (isSignedIn()) {
-    const boards = await fetchCloudBoards();
-    return boards.find((entry) => entry.id === boardId);
-  }
-  return getEntry(boardId);
+  if (!isSignedIn()) return undefined;
+  const boards = await fetchCloudBoards();
+  return boards.find((entry) => entry.id === boardId);
 }
 
 export async function upsertEntryActive(
   patch: Pick<WhiteboardLibraryEntry, 'id'> &
     Partial<Omit<WhiteboardLibraryEntry, 'id'>>,
 ): Promise<WhiteboardLibraryEntry> {
-  if (isSignedIn()) {
-    const existing = await getEntryActive(patch.id);
-    const now = new Date().toISOString();
-    const next: WhiteboardLibraryEntry = {
-      id: patch.id,
-      title: patch.title ?? existing?.title ?? 'Untitled board',
-      lastAccessedAt: patch.lastAccessedAt ?? now,
-      previewDataUrl:
-        patch.previewDataUrl !== undefined
-          ? patch.previewDataUrl
-          : existing?.previewDataUrl,
-    };
-    return upsertCloudBoard(next);
+  if (!isSignedIn()) {
+    if (patch.title) rememberScratchTitle(patch.id, patch.title);
+    return untitledEntry(patch.id, patch.title);
   }
-  return upsertEntry(patch);
+  const existing = await getEntryActive(patch.id);
+  const hostSecret = getHostSecret(patch.id);
+  if (!existing && !hostSecret) {
+    throw new Error('Join does not add a board to your library. Save a board you created, or create a new one.');
+  }
+  const now = new Date().toISOString();
+  const next: WhiteboardLibraryEntry = {
+    id: patch.id,
+    title: patch.title ?? existing?.title ?? 'Untitled board',
+    lastAccessedAt: patch.lastAccessedAt ?? now,
+    previewDataUrl:
+      patch.previewDataUrl !== undefined
+        ? patch.previewDataUrl
+        : existing?.previewDataUrl,
+  };
+  const saved = await upsertCloudBoard(next, { hostSecret });
+  scheduleSavedToLibrary(patch.id, hostSecret);
+  return saved;
 }
 
+/**
+ * Update last-accessed for a board already in the signed-in library, or claim
+ * a scratch board this browser created. Join (no host secret, not in library)
+ * does not write Recents.
+ */
 export async function touchBoardActive(
   boardId: string,
   title?: string,
 ): Promise<WhiteboardLibraryEntry> {
-  return upsertEntryActive({
-    id: boardId,
-    title,
-    lastAccessedAt: new Date().toISOString(),
-  });
+  if (!isSignedIn()) {
+    return untitledEntry(boardId, title);
+  }
+  const existing = await getEntryActive(boardId);
+  const hostSecret = getHostSecret(boardId);
+  if (existing) {
+    const next = await upsertCloudBoard(
+      {
+        ...existing,
+        title: title ?? existing.title,
+        lastAccessedAt: new Date().toISOString(),
+      },
+      { hostSecret },
+    );
+    scheduleSavedToLibrary(boardId, hostSecret);
+    return next;
+  }
+  if (hostSecret) {
+    return claimBoardToLibrary(boardId, title);
+  }
+  return untitledEntry(boardId, title);
 }
 
 export async function setBoardTitleActive(
@@ -291,6 +342,18 @@ export async function setBoardTitleActive(
   title: string,
 ): Promise<WhiteboardLibraryEntry> {
   const cleaned = title.trim() || 'Untitled board';
+  if (!isSignedIn()) {
+    rememberScratchTitle(boardId, cleaned);
+    return untitledEntry(boardId, cleaned);
+  }
+  const existing = await getEntryActive(boardId);
+  const hostSecret = getHostSecret(boardId);
+  if (!existing && hostSecret) {
+    return claimBoardToLibrary(boardId, cleaned);
+  }
+  if (!existing) {
+    throw new Error('Sign in as the owner and Save to keep this board in your library.');
+  }
   return upsertEntryActive({
     id: boardId,
     title: cleaned,
@@ -305,20 +368,23 @@ export async function createBoardActive(title = defaultBoardTitle()): Promise<{
 }> {
   const id = crypto.randomUUID();
   const hostSecret = createHostSecret();
-  try {
-    localStorage.setItem(hostSecretKey(id), hostSecret);
-  } catch {
-    // private mode — host admin on this device may be unavailable
-  }
-  const entry = await upsertEntryActive({
+  persistHostSecret(id, hostSecret);
+  rememberScratchTitle(id, title);
+  const now = new Date().toISOString();
+  const draft: WhiteboardLibraryEntry = {
     id,
     title,
-    lastAccessedAt: new Date().toISOString(),
-  });
+    lastAccessedAt: now,
+  };
+  if (!isSignedIn()) {
+    return { id, hostSecret, entry: draft };
+  }
+  const entry = await upsertCloudBoard(draft, { hostSecret });
+  scheduleSavedToLibrary(id, hostSecret);
   return { id, hostSecret, entry };
 }
 
-/** Remove from the active library only (local or cloud). Does not wipe the other mode. */
+/** Remove from the signed-in cloud library. No-op when signed out. */
 export async function removeBoardActive(boardId: string): Promise<void> {
   if (isSignedIn()) {
     await deleteCloudBoard(boardId);
@@ -391,3 +457,23 @@ export function formatAccessedDate(iso: string): string {
     return '';
   }
 }
+
+/**
+ * Board-page hook: if this browser created a scratch board and the user signs
+ * in, claim Owner + cloud library without waiting on Phase 3.3 People UI.
+ */
+function bindBoardPageScratchClaim(): void {
+  if (typeof window === 'undefined') return;
+  const boardId = readBoardIdFromPath();
+  if (!boardId) return;
+  const tryClaim = () => {
+    if (!isSignedIn() || !getHostSecret(boardId)) return;
+    void claimBoardToLibrary(boardId).catch(() => {
+      // PATCH may 403 until the first WebSocket connect stores the host hash.
+    });
+  };
+  void whenAuthReady().then(tryClaim);
+  onAuthChange(tryClaim);
+}
+
+bindBoardPageScratchClaim();

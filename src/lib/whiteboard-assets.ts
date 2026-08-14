@@ -2,11 +2,13 @@
  * Whiteboard asset library (localStorage + cloud) + R2 upload helpers.
  *
  * Owner keys:
- * - Signed out: local:{deviceInstallId}
- * - Signed in: google:{accountId}
+ * - Signed-in saved boards: google:{accountId}
+ * - Unsaved / signed-out scratch: temp:{boardId} (24h TTL)
+ * - Legacy hub index: local:{deviceInstallId}
  *
  * R2 object keys: assets/{ownerKey}/{assetId}
  * Resolve URL: /api/whiteboard/assets/{encodeURIComponent(ownerKey)}/{assetId}
+ * Canvas images/GIF/video: see whiteboard-excalidraw-files.ts (not hub drag-drop).
  */
 import {
 	deleteCloudAsset,
@@ -16,6 +18,7 @@ import {
 import { getAuthHeaders, isClerkConfigured, isSignedIn, whenAuthReady } from './whiteboard-identity'
 import {
 	getDeviceInstallId,
+	getHostSecret,
 	getOwnerKey,
 	isBoardUuid,
 	readBoardIdFromPath,
@@ -257,7 +260,7 @@ function assertUploadAllowed(file: File): void {
 	const mime = (file.type || '').split(';')[0].trim().toLowerCase()
 	if (!mime || !ALLOWED_MIME.has(mime)) {
 		throw new Error(
-			'Unsupported file type. Use a common image (JPEG, PNG, GIF, WebP, SVG) or MP4/WebM video.',
+			'Unsupported file type. Use JPEG, PNG, GIF, WebP, SVG, or MP4/WebM.',
 		)
 	}
 	if (file.size > MAX_ASSET_BYTES) {
@@ -338,3 +341,179 @@ export const r2AssetStore: WhiteboardAssetStore = {
 
 /** @deprecated Phase 3 stub — use r2AssetStore */
 export const localBlobAssetStore = r2AssetStore
+
+// ---------------------------------------------------------------------------
+// Phase 3.2 — canvas files (Excalidraw fileId → R2). Hub index is not updated.
+// ---------------------------------------------------------------------------
+
+export type BoardAssetMeta = {
+	savedToLibrary: boolean
+	cloudOwnerKey: string | null
+}
+
+export function tempOwnerKey(boardId: string): string {
+	return `temp:${boardId}`
+}
+
+export function isTempOwnerKey(ownerKey: string): boolean {
+	return ownerKey.startsWith('temp:')
+}
+
+export function tempAssetPrefix(boardId: string): string {
+	return `assets/${tempOwnerKey(boardId)}/`
+}
+
+export function ownerKeyForBoardMeta(
+	boardId: string,
+	meta: BoardAssetMeta,
+): string {
+	if (
+		meta.savedToLibrary &&
+		typeof meta.cloudOwnerKey === 'string' &&
+		meta.cloudOwnerKey.startsWith('google:')
+	) {
+		return meta.cloudOwnerKey
+	}
+	return tempOwnerKey(boardId)
+}
+
+export function playerPath(ownerKey: string, fileId: string): string {
+	const params = new URLSearchParams({ owner: ownerKey, id: fileId })
+	return `/whiteboard-player?${params.toString()}`
+}
+
+export function parsePlayerPath(
+	link: string,
+): { ownerKey: string; fileId: string } | null {
+	if (!link) return null
+	let url: URL
+	try {
+		url = new URL(link, 'https://scsfoxchase.tech')
+	} catch {
+		return null
+	}
+	if (url.pathname !== '/whiteboard-player') return null
+	const ownerKey = url.searchParams.get('owner') || ''
+	const fileId = url.searchParams.get('id') || ''
+	if (!isOwnerKeyShape(ownerKey) || !isAssetUuid(fileId)) return null
+	return { ownerKey, fileId }
+}
+
+function isOwnerKeyShape(value: string): boolean {
+	return /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/.test(value)
+}
+
+export async function fetchBoardAssetMeta(
+	boardId: string,
+): Promise<BoardAssetMeta> {
+	const res = await fetch(
+		`/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+	)
+	if (!res.ok) {
+		return { savedToLibrary: false, cloudOwnerKey: null }
+	}
+	const body = (await res.json()) as {
+		savedToLibrary?: unknown
+		cloudOwnerKey?: unknown
+	}
+	return {
+		savedToLibrary: body.savedToLibrary === true,
+		cloudOwnerKey:
+			typeof body.cloudOwnerKey === 'string' ? body.cloudOwnerKey : null,
+	}
+}
+
+export async function registerTempAssetPrefix(boardId: string): Promise<void> {
+	const hostSecret = getHostSecret(boardId)
+	if (!hostSecret) return
+	await fetch(`/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`, {
+		method: 'PATCH',
+		headers: {
+			'Content-Type': 'application/json',
+			'X-Board-Host': hostSecret,
+		},
+		body: JSON.stringify({ tempAssetPrefix: tempAssetPrefix(boardId) }),
+	})
+}
+
+export async function uploadCanvasBytes(opts: {
+	ownerKey: string
+	fileId: string
+	bytes: Blob
+	mimeType: string
+}): Promise<void> {
+	assertUploadAllowed(
+		new File([opts.bytes], opts.fileId, { type: opts.mimeType }),
+	)
+	const url = assetResolveUrl(opts.ownerKey, opts.fileId)
+	const headers: Record<string, string> = {
+		'Content-Type': opts.mimeType,
+	}
+	if (opts.ownerKey.startsWith('google:')) {
+		Object.assign(headers, await getAuthHeaders())
+	}
+	const res = await fetch(url, {
+		method: 'PUT',
+		headers,
+		body: opts.bytes,
+	})
+	if (!res.ok) {
+		let message = `Upload failed (${res.status})`
+		try {
+			const body = (await res.json()) as { error?: string }
+			if (body.error) message = body.error
+		} catch {
+			// ignore
+		}
+		throw new Error(message)
+	}
+}
+
+export async function fetchCanvasBytes(
+	ownerKeys: string[],
+	fileId: string,
+): Promise<{ blob: Blob; mimeType: string; ownerKey: string } | null> {
+	for (const ownerKey of ownerKeys) {
+		if (!ownerKey) continue
+		try {
+			const res = await fetch(assetResolveUrl(ownerKey, fileId))
+			if (!res.ok) continue
+			const mimeType = (
+				res.headers.get('Content-Type') || 'application/octet-stream'
+			)
+				.split(';')[0]
+				.trim()
+				.toLowerCase()
+			return { blob: await res.blob(), mimeType, ownerKey }
+		} catch {
+			// try next owner
+		}
+	}
+	return null
+}
+
+export async function claimTempCanvasAssets(
+	boardId: string,
+): Promise<{ ownerKey: string; moved: string[] } | null> {
+	const headers = {
+		'Content-Type': 'application/json',
+		...(await getAuthHeaders()),
+	}
+	const res = await fetch('/api/whiteboard/assets/claim', {
+		method: 'POST',
+		headers,
+		body: JSON.stringify({ boardId }),
+	})
+	if (!res.ok) return null
+	const body = (await res.json()) as {
+		ownerKey?: unknown
+		moved?: unknown
+	}
+	if (typeof body.ownerKey !== 'string') return null
+	return {
+		ownerKey: body.ownerKey,
+		moved: Array.isArray(body.moved)
+			? body.moved.filter((id): id is string => typeof id === 'string')
+			: [],
+	}
+}

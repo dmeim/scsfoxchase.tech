@@ -564,6 +564,11 @@ body.whiteboard-hub-page {
   opacity: 0.8;
 }
 
+/* Recents / Library / Assets are signed-in cloud lists only (Phase 3.1). */
+.wb-hub [data-wb-cloud-lists][hidden] {
+  display: none;
+}
+
 /* Live board page — header + canvas, no scroll */
 body.board-page {
   height: 100dvh;
