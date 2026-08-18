@@ -82,6 +82,8 @@ function initWhiteboardMenu() {
   let expiryTimer: number | null = null
   let shareToastTimer: number | null = null
   let currentShare: ShareCodeState = { code: null, expiresAt: null, open: false }
+  let titleDirty = false
+  let titleSyncGen = 0
 
   let participants: ParticipantRow[] = []
   let yourSessionId = ''
@@ -96,16 +98,21 @@ function initWhiteboardMenu() {
 
   if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
 
+  const applyTitle = (title: string) => {
+    if (!titleInput) return
+    titleInput.value = title
+    document.title = `${title} - St. Cecilia Technology`
+  }
+
   const syncTitleFromLibrary = () => {
     if (!boardId || !titleInput) return
+    const gen = ++titleSyncGen
     // Wait for Clerk so signed-in users read cloud library, not localStorage.
     void whenAuthReady()
       .then(() => getEntryActive(boardId))
       .then((entry) => {
-        if (entry && titleInput) {
-          titleInput.value = entry.title
-          document.title = `${entry.title} - St. Cecilia Technology`
-        }
+        if (gen !== titleSyncGen || titleDirty) return
+        if (entry) applyTitle(entry.title)
       })
   }
 
@@ -439,6 +446,7 @@ function initWhiteboardMenu() {
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
     panel.setAttribute('aria-hidden', open ? 'false' : 'true')
     if (open) {
+      titleDirty = false
       syncTitleFromLibrary()
       setHint(null)
       titleInput?.setCustomValidity('')
@@ -484,6 +492,7 @@ function initWhiteboardMenu() {
   })
 
   titleInput?.addEventListener('input', () => {
+    titleDirty = true
     titleInput.setCustomValidity('')
     setHint(null)
   })
@@ -513,8 +522,9 @@ function initWhiteboardMenu() {
       try {
         await whenAuthReady()
         const next = await setBoardTitleActive(boardId, nextTitle)
-        if (titleInput) titleInput.value = next.title
-        document.title = `${next.title} - St. Cecilia Technology`
+        titleDirty = false
+        titleSyncGen += 1
+        applyTitle(next.title)
         setHint(
           isSignedIn()
             ? 'Saved to your Google library.'

@@ -244,6 +244,15 @@ export async function claimBoardToLibrary(
     );
   }
   const existing = await getEntryActive(boardId);
+  if (existing && title === undefined) {
+    scheduleSavedToLibrary(boardId, hostSecret);
+    try {
+      await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
+    } catch {
+      scheduleSavedToLibrary(boardId, hostSecret);
+    }
+    return existing;
+  }
   const now = new Date().toISOString();
   const next: WhiteboardLibraryEntry = {
     id: boardId,
