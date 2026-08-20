@@ -31,7 +31,7 @@ The join field accepts:
 
 | Input | Behavior |
 |-------|----------|
-| Share code `A1B2` | `GET /api/whiteboard/join/:code` → board UUID, then open |
+| Share code `A1B2C3D4` | `GET /api/whiteboard/join/:code` → board UUID, then open |
 | Full URL or `/board/{uuid}` path | Parse UUID from path |
 | Bare UUID | Open directly |
 
@@ -81,7 +81,7 @@ Fonts: `board.astro` sets `window.EXCALIDRAW_ASSET_PATH = '/excalidraw/'` in `<h
 `WhiteboardCanvas`:
 
 1. Reads `boardId` from the path (or optional prop).
-2. Opens a native WebSocket to `/api/whiteboard/connect/{uuid}` (plus `sessionId`, optional `hostSecret`, `displayName`, `userId`).
+2. Opens a native WebSocket to `/api/whiteboard/connect/{uuid}` (`sessionId` required; optional `displayName` and guest `userId` on the query). Scratch host proof and Clerk JWT are the first message (`wb:auth`), not the URL. `X-Board-Host` is also accepted on the upgrade if a client can set it.
 3. Merges remote elements with `reconcileElements`; remote applies use `captureUpdate: NEVER`.
 4. Uploads image/GIF bytes to R2 by Excalidraw `fileId`; MP4/WebM become a same-origin `/whiteboard-player` embed. YouTube / Vimeo stay stock.
 5. Handles custom DO messages (`wb:hello`, `wb:participants`, `wb:role`, `wb:forceFollow`, `wb:sceneBounds`) and bridges Follow / roles to the manage panel via `window` events.
@@ -130,7 +130,7 @@ When a board is **created** on a device, a 32-byte hex secret is stored at:
 
 `localStorage['scsfoxchase.whiteboard.host.' + boardId]`
 
-On WebSocket connect, that secret is sent as `hostSecret`. The Durable Object hashes it (SHA-256) and:
+On connect, that secret is sent in the first WebSocket message (`wb:auth` `hostSecret`) or as `X-Board-Host` — not on the connect query string (query strings hit access logs). The Durable Object hashes it (SHA-256) and:
 
 - First secret seen for the board → stored as host hash; that session is **ephemeral Owner**.
 - Later connects with the same secret → Owner on an unsaved board; without it → guest (**Viewer** by default).

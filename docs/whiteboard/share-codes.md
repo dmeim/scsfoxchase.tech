@@ -6,7 +6,9 @@ Treat live share codes as **secrets**. Anyone who can read an Open code can join
 
 ## Overview
 
-A share code is an eight-character token: **letter, digit** four times (`([A-Z][0-9]){4}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the KV mapping so `GET /api/whiteboard/join/:code` cannot start a new session. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
+A share code is an eight-character token: **letter, digit** four times (`A1B2C3D4` form, `([A-Z][0-9]){4}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the KV mapping so `GET /api/whiteboard/join/:code` cannot start a new session. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
+
+A code only **opens** the board. Join is **view-only**: joiners land as **Viewer** and cannot draw until an Owner or Manager sets **Editor** on **People** (manage panel, Share Open). There is no class-wide Editor setting yet.
 
 **Closed does not revoke the UUID.** `/board/{uuid}` still loads the canvas after Closed until connect-time auth exists (see the “Connect trusts client userId” launch item). Closed only stops *new* joins that still need the short code.
 
@@ -14,10 +16,10 @@ A share code is an eight-character token: **letter, digit** four times (`([A-Z][
 
 | Property | Value |
 |----------|--------|
-| Pattern | Eight characters — letter-digit four times |
+| Pattern | Eight characters — letter-digit four times (`A1B2C3D4` form) |
 | Normalization | Trim + uppercase |
 | TTL | **12 hours** (`SHARE_CODE_TTL_SECONDS` / `SHARE_CODE_TTL_MS` in `src/worker/shareCode.ts`) |
-| KV key | `code:{CODE}` |
+| KV key | `code:{A1B2C3D4}` |
 | KV value | JSON `{ boardId, exp }` with `expirationTtl` matching the TTL |
 
 Helpers: `normalizeShareCode`, `sampleShareCode`, `kvCodeKey` in `src/worker/shareCode.ts`.
@@ -114,7 +116,7 @@ Auth for these calls: none beyond knowing the board UUID. Keep the code off hall
 3. For codes: `GET /api/whiteboard/join/:code` → UUID.
 4. Navigate to `/board/{uuid}`. Join does **not** write Recents/Library.
 
-Joining does **not** make the user Owner. Scratch Owner stays with the creating browser (host secret). Saved boards use the Google Owner. Joiners are **Viewer** by default. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
+Joining does **not** make the user Owner. Scratch Owner stays with the creating browser (host secret). Saved boards use the Google Owner. Join is **view-only** until an Owner or Manager sets **Editor** on **People** — opening a code does not give the class draw access. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
 
 ## Key files
 

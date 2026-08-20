@@ -600,6 +600,14 @@ body.board-page > main {
   inset: 0;
 }
 
+/* Stock Excalidraw shape library fetches json.excalidraw.com (blocked by CSP).
+   Hide the trigger and panel; do not allowlist that CDN. */
+body.board-page .excalidraw .sidebar-trigger,
+body.board-page .excalidraw .layer-ui__library,
+body.board-page .excalidraw .sidebar {
+  display: none !important;
+}
+
 @media (max-height: 800px) {
   .wb-hub {
     padding-top: 8px;

@@ -138,7 +138,7 @@ Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page
 | Scratch canvas media | `temp:{boardId}` (24h TTL) |
 | Media key | `assets/{ownerKey}/{assetId}` |
 | Cloud indexes | `library/{ownerKey}/boards.json`, `library/{ownerKey}/assets.json` |
-| Share code KV | `code:{A1B2}` (TTL 12h) |
+| Share code KV | `code:{A1B2C3D4}` (TTL 12h; eight-character letter-digit) |
 | Guest / device id | `localStorage` `scsfoxchase.whiteboard.deviceInstallId` (names + Follow id; not a board library) |
 
 Do not invent alternate owner prefixes or put board sync state in R2 when the Durable Object owns the room. Do not restore a localStorage board library.

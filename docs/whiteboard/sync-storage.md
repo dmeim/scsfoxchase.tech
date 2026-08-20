@@ -24,9 +24,10 @@ Connect URL query params:
 | Param | Purpose |
 |-------|---------|
 | `sessionId` | Required; stored in `sessionStorage` per board so refresh keeps the same session |
-| `hostSecret` | Present when this browser created the board → ephemeral Owner on scratch boards |
 | `displayName` | Google full name, or a generated guest name |
-| `userId` | Google account id, or `deviceInstallId` for guests (Follow target) |
+| `userId` | Guest device-install UUID only (Follow target). Signed-in identity is not put on the query string |
+
+Scratch **host proof** (`hostSecret`) and Clerk JWT are the first WebSocket message (`wb:auth`). The Durable Object also accepts `X-Board-Host` on the upgrade request. Do not put `hostSecret` on the connect query string (access logs). HTTP privileged calls still send host proof as `X-Board-Host` / `Authorization: Bearer`, not as a WebSocket URL param.
 
 ### Worker routing
 

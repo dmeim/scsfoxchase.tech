@@ -70,14 +70,15 @@ export function getOwnerKey(): string {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SHARE_CODE_RE = /^[A-Za-z][0-9][A-Za-z][0-9]$/;
+/** Eight-character letter-digit code (server `SHARE_CODE_RE`). */
+const SHARE_CODE_RE = /^([A-Z][0-9]){4}$/;
 
 export function isBoardUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
 }
 
 export function isShareCode(value: string): boolean {
-  return SHARE_CODE_RE.test(value.trim());
+  return SHARE_CODE_RE.test(value.trim().toUpperCase());
 }
 
 export function hostSecretKey(boardId: string): string {

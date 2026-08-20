@@ -17,20 +17,13 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Board title is library-index-only — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`, `src/pages/board.astro`
 - Following overlay is glitchy — `worker` owns `src/lib/whiteboard-excalidraw-roles.ts`, `src/components/WhiteboardCanvas.tsx`
 - Student Editors cannot upload media on saved boards (+ leftover `local:*` accept path) — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
-- Excalidraw library sidebar blocked by CSP — `worker` owns `src/styles/whiteboard.css` (do not add `json.excalidraw.com` to `_headers`)
-- Eight-character `SHARE_CODE_RE` leftover — `worker` owns `src/scripts/whiteboard-library.ts`
-- Leftover `A1B2` / query-`hostSecret` docs — `doc-smith`
 
 **Just closed (code-verified; classroom manuals still open):**
 
-- Claim moves temp assets to any Clerk account
-- Host secret still rewrites Owner after Save (leftover host can still write temp/local until cleared)
-- Recents Saved vs TTL (server) + Library JSON etag (menu 200 now implies DO flag)
-- Dead r2AssetStore exports + Hub Assets hidden (not upsert; `local:*` still accepted on Worker)
-- Shared Chromebooks guest `userId` (visit UUID)
-- Recents/Library unused preview slot removed; hub join is view-only
-- Honest Save copy in the manage panel
-- Maintainer docs for join = Viewer; in-board / `share-codes.md` still thin
+- Excalidraw library sidebar hidden via CSS; Chromebook visual still manual (canvas search is hidden too).
+- Client `isShareCode` matches eight-character server codes.
+- Docs: `A1B2C3D4` + host proof off the WS URL. Historical spec left as history. In-board People copy still leftover.
+- Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
 
 **Sentinel on `1d63c52`:** WARN — claim and leftover host were the remaining launch blockers in that area; both now have code landings in this wave.
 
@@ -830,11 +823,11 @@ Disable or hide the Excalidraw library UI, or self-host a school-safe library JS
 
 ### Tasks
 
-- [ ] Disable or hide the stock Excalidraw library sidebar, or self-host a school-safe library JSON on `'self'`.
-- [ ] Do not add `json.excalidraw.com` to `connect-src` in `public/_headers` unless that CDN is an accepted dependency.
-- [ ] Leave self-hosted fonts (`EXCALIDRAW_ASSET_PATH = '/excalidraw/'`) as they are.
-- [ ] Grep for `json.excalidraw.com` and `connect-src`. Confirm the sidebar does not look broken because of a blocked fetch.
-- [ ] Run `npm run build`.
+- [x] Disable or hide the stock Excalidraw library sidebar, or self-host a school-safe library JSON on `'self'`.
+- [x] Do not add `json.excalidraw.com` to `connect-src` in `public/_headers` unless that CDN is an accepted dependency.
+- [x] Leave self-hosted fonts (`EXCALIDRAW_ASSET_PATH = '/excalidraw/'`) as they are.
+- [x] Grep for `json.excalidraw.com` and `connect-src`. Confirm the sidebar does not look broken because of a blocked fetch.
+- [x] Run `npm run build`.
 - [ ] Manual: open the board on a Chromebook; library UI is hidden, self-hosted, or otherwise not a failed request.
 
 ---

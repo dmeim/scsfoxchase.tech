@@ -47,7 +47,7 @@ Product resource family for whiteboards: **`scsfoxchase-tech_whiteboards`**.
 | `ASSETS` | Workers Assets | `./dist/client` | Prerendered pages and static files |
 | `WHITEBOARDS` | Durable Object | Class `WhiteboardBoard` (SQLite) | Per-board sync room; `idFromName(uuid)` |
 | `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` | Media blobs + cloud library JSON indexes |
-| `WHITEBOARD_CODES` | KV | Share-code namespace | `code:{A1B2}` → board UUID (TTL 12h) |
+| `WHITEBOARD_CODES` | KV | Share-code namespace | `code:{A1B2C3D4}` → board UUID (TTL 12h) |
 
 **R2 naming:** Bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling keeps the underscore.
 
@@ -83,7 +83,7 @@ Board URLs use a path rewrite so one prerendered shell serves every UUID:
 | `/api/whiteboard/assets…` | `worker/assetRoutes.ts` | R2 PUT/GET/DELETE / claim |
 | `/api/whiteboard/connect/:uuid` | DO (`idFromName` → `stub.fetch`) | WebSocket upgrade → `WhiteboardBoard` |
 
-Connect requires a valid UUID and `Upgrade: websocket`; otherwise the Worker returns `400` or `426`.
+Connect requires a valid UUID and `Upgrade: websocket`; otherwise the Worker returns `400` or `426`. The connect query string is `sessionId` plus optional `displayName` / guest `userId`. Scratch host proof and Clerk JWT are first-message `wb:auth` (or `X-Board-Host` / Cookie), not the WebSocket URL.
 
 Everything else falls through to the Astro asset handler.
 
@@ -97,7 +97,7 @@ Everything else falls through to the Astro asset handler.
 ### Asset and share-code storage
 
 - R2 object keys for media: `assets/{ownerKey}/{assetId}` (`google:` when saved; `temp:{boardId}` when unsaved)
-- Share codes: KV `code:{A1B2}` → board id (12h TTL); DO stores `activeCode` and alarm-driven Open/Closed cleanup
+- Share codes: KV `code:{A1B2C3D4}` → board id (12h TTL, eight-character letter-digit); DO stores `activeCode` and alarm-driven Open/Closed cleanup. Join is view-only until Editor on People.
 - Same-origin video player: `/whiteboard-player` (Worker sets `X-Frame-Options: SAMEORIGIN`)
 
 ## PWA service worker boundary
