@@ -7,6 +7,7 @@ import {
 	useCallback,
 	useEffect,
 	useRef,
+	useState,
 	type RefObject,
 } from 'react'
 import {
@@ -24,6 +25,7 @@ import type {
 	FileId,
 } from '@excalidraw/excalidraw/types'
 import {
+	assetResolveUrl,
 	claimTempCanvasAssets,
 	fetchBoardAssetMeta,
 	fetchCanvasBytes,
@@ -81,6 +83,36 @@ function referencedImageFileIds(
 	return ids
 }
 
+function referencedPlayerFiles(
+	elements: readonly { type?: string; isDeleted?: boolean; link?: string | null }[],
+): { fileId: string; ownerKey: string }[] {
+	const out: { fileId: string; ownerKey: string }[] = []
+	for (const el of elements) {
+		if (el.isDeleted || el.type !== 'embeddable') continue
+		const parsed = parsePlayerPath(el.link || '')
+		if (parsed) out.push(parsed)
+	}
+	return out
+}
+
+async function probeCanvasOwner(
+	ownerKeys: string[],
+	fileId: string,
+): Promise<string | null> {
+	for (const ownerKey of ownerKeys) {
+		if (!ownerKey) continue
+		try {
+			const res = await fetch(assetResolveUrl(ownerKey, fileId), {
+				method: 'HEAD',
+			})
+			if (res.ok) return ownerKey
+		} catch {
+			// try next owner
+		}
+	}
+	return null
+}
+
 function isSelfPlayerLink(link: string): boolean {
 	return parsePlayerPath(link) !== null
 }
@@ -95,11 +127,20 @@ export function validateWhiteboardEmbeddable(
 
 export function renderWhiteboardEmbeddable(
 	element: ExcalidrawEmbeddableElement,
+	options?: { boardId?: string; ownerKey?: string },
 ): ReturnType<typeof createElement> | null {
 	const link = element.link
 	if (!link || !isSelfPlayerLink(link)) return null
+	const parsed = parsePlayerPath(link)
+	if (!parsed) return null
+	const ownerKey = options?.ownerKey || parsed.ownerKey
+	const params = new URLSearchParams({
+		owner: ownerKey,
+		id: parsed.fileId,
+	})
+	if (options?.boardId) params.set('board', options.boardId)
 	return createElement('iframe', {
-		src: link,
+		src: `/whiteboard-player?${params.toString()}`,
 		title: 'Video',
 		allow: 'fullscreen',
 		referrerPolicy: 'no-referrer',
@@ -193,15 +234,24 @@ function ownerKeysToTry(
 	boardId: string,
 	meta: BoardAssetMeta,
 	extraGoogle?: string | null,
+	bakedOwner?: string | null,
 ): string[] {
-	const primary = ownerKeyForBoardMeta(boardId, meta)
 	const temp = tempOwnerKey(boardId)
 	const google = isGoogleOwnerKey(meta.cloudOwnerKey)
 		? meta.cloudOwnerKey
 		: isGoogleOwnerKey(extraGoogle)
 			? extraGoogle
+			: isGoogleOwnerKey(bakedOwner)
+				? bakedOwner
+				: null
+	const baked =
+		typeof bakedOwner === 'string' &&
+		bakedOwner &&
+		bakedOwner !== google &&
+		bakedOwner !== temp
+			? bakedOwner
 			: null
-	return [...new Set([primary, temp, google].filter(Boolean) as string[])]
+	return [...new Set([google, temp, baked].filter(Boolean) as string[])]
 }
 
 export function useWhiteboardExcalidrawFiles(
@@ -233,6 +283,9 @@ export function useWhiteboardExcalidrawFiles(
 	const prefixRegisteredRef = useRef(false)
 	const claimedOwnerRef = useRef<string | null>(null)
 	const toastedUploadRef = useRef(new Set<string>())
+	const resolvedVideoOwnerRef = useRef(new Map<string, string>())
+	const metaEpochRef = useRef('')
+	const [videoEpoch, setVideoEpoch] = useState(0)
 
 	const rememberGoogleOwner = (key: string | null | undefined) => {
 		if (isGoogleOwnerKey(key)) googleOwnerRef.current = key
@@ -287,38 +340,24 @@ export function useWhiteboardExcalidrawFiles(
 				identity?.ownerKey === meta.cloudOwnerKey &&
 				claimedOwnerRef.current !== meta.cloudOwnerKey
 			) {
-				void claimAndRewrite(meta.cloudOwnerKey)
+				void claimTempAssets(meta.cloudOwnerKey)
+			}
+			const token = `${meta.savedToLibrary}:${googleOwnerRef.current ?? ''}`
+			if (token !== metaEpochRef.current) {
+				metaEpochRef.current = token
+				setVideoEpoch((n) => n + 1)
 			}
 		}
 
-		const claimAndRewrite = async (googleOwner: string) => {
+		const claimTempAssets = async (googleOwner: string) => {
 			if (getActiveIdentity()?.ownerKey !== googleOwner) return
 			await claimTempCanvasAssets(boardId).catch(() => null)
-			const api = apiRef.current
-			if (!api) return
-			const elements = api.getSceneElementsIncludingDeleted()
-			if (elements.length === 0) return
-			const from = tempOwnerKey(boardId)
-			let changed = false
-			const next = elements.map((el) => {
-				if (el.type !== 'embeddable') return el
-				const parsed = parsePlayerPath(el.link || '')
-				if (!parsed || parsed.ownerKey !== from) return el
-				changed = true
-				return {
-					...el,
-					link: playerPath(googleOwner, parsed.fileId),
-					version: el.version + 1,
-					versionNonce: Math.floor(Math.random() * 2147483647),
-				}
-			})
-			if (changed) {
-				api.updateScene({
-					elements: next,
-					captureUpdate: CaptureUpdateAction.NEVER,
-				})
-			}
 			claimedOwnerRef.current = googleOwner
+			rememberGoogleOwner(googleOwner)
+			for (const key of [...readyRef.current]) {
+				if (key.startsWith('video:')) readyRef.current.delete(key)
+			}
+			setVideoEpoch((n) => n + 1)
 		}
 
 		void refreshMeta()
@@ -382,6 +421,28 @@ export function useWhiteboardExcalidrawFiles(
 		[apiRef, boardId],
 	)
 
+	const hydrateVideo = useCallback(
+		async (fileId: string, bakedOwner: string) => {
+			const foundOwner = await probeCanvasOwner(
+				ownerKeysToTry(
+					boardId,
+					metaRef.current,
+					googleOwnerRef.current,
+					bakedOwner,
+				),
+				fileId,
+			)
+			if (!foundOwner) return false
+			rememberGoogleOwner(foundOwner)
+			if (resolvedVideoOwnerRef.current.get(fileId) !== foundOwner) {
+				resolvedVideoOwnerRef.current.set(fileId, foundOwner)
+				setVideoEpoch((n) => n + 1)
+			}
+			return true
+		},
+		[boardId],
+	)
+
 	const syncFiles = useCallback(
 		(
 			elements: readonly OrderedExcalidrawElement[],
@@ -428,8 +489,34 @@ export function useWhiteboardExcalidrawFiles(
 					}
 				})()
 			}
+
+			for (const parsed of referencedPlayerFiles(elements)) {
+				const readyKey = `video:${parsed.fileId}`
+				if (
+					readyRef.current.has(readyKey) ||
+					inflightRef.current.has(readyKey)
+				) {
+					continue
+				}
+				const failedAt = failedAtRef.current.get(readyKey) ?? 0
+				if (now - failedAt < 1000) continue
+				inflightRef.current.add(readyKey)
+				void (async () => {
+					try {
+						const ok = await hydrateVideo(parsed.fileId, parsed.ownerKey)
+						if (!ok) throw new Error('video asset not in R2 yet')
+						readyRef.current.add(readyKey)
+						failedAtRef.current.delete(readyKey)
+					} catch {
+						failedAtRef.current.set(readyKey, Date.now())
+						readyRef.current.delete(readyKey)
+					} finally {
+						inflightRef.current.delete(readyKey)
+					}
+				})()
+			}
 		},
-		[apiRef, boardId, hydrateImage, putImageFile],
+		[apiRef, boardId, hydrateImage, hydrateVideo, putImageFile],
 	)
 
 	const insertVideos = useCallback(
@@ -459,6 +546,7 @@ export function useWhiteboardExcalidrawFiles(
 					api.setToast?.({ message: 'Video upload failed', duration: 4000 })
 					continue
 				}
+				resolvedVideoOwnerRef.current.set(fileId, ownerKey)
 				const origin = viewportCenter(appState, 640, 360)
 				const link = playerPath(ownerKey, fileId)
 				added.push(
@@ -525,9 +613,20 @@ export function useWhiteboardExcalidrawFiles(
 
 	const renderEmbeddable = useCallback(
 		(element: ExcalidrawEmbeddableElement, _appState: AppState) => {
-			return renderWhiteboardEmbeddable(element)
+			const parsed = parsePlayerPath(element.link || '')
+			if (!parsed) return renderWhiteboardEmbeddable(element)
+			const resolved =
+				resolvedVideoOwnerRef.current.get(parsed.fileId) ||
+				(isGoogleOwnerKey(googleOwnerRef.current)
+					? googleOwnerRef.current
+					: null) ||
+				parsed.ownerKey
+			return renderWhiteboardEmbeddable(element, {
+				boardId,
+				ownerKey: resolved,
+			})
 		},
-		[],
+		[boardId, videoEpoch],
 	)
 
 	return {

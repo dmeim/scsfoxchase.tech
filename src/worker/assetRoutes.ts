@@ -2,7 +2,7 @@
  * R2 asset upload / download / delete for whiteboard media.
  * Keys: assets/{ownerKey}/{assetId}
  *   google:{accountId} — signed-in saved boards
- *   temp:{boardId}     — unsaved / signed-out scratch (24h TTL)
+ *   temp:{boardId}     — unsaved / signed-out scratch (24h TTL unless savedToLibrary)
  *   local:{deviceId}   — leftover hub objects (GET only; no new writes)
  * Routes: PUT|GET|DELETE /api/whiteboard/assets/{ownerKey}/{assetId}
  *         POST /api/whiteboard/assets/claim
@@ -64,6 +64,40 @@ export function r2TempPrefix(boardId: string): string {
 
 export function r2ObjectKey(ownerKey: string, assetId: string): string {
 	return `assets/${ownerKey}/${assetId}`
+}
+
+function boardIdFromTempR2Key(key: string): string | null {
+	const prefix = 'assets/temp:'
+	if (!key.startsWith(prefix)) return null
+	const rest = key.slice(prefix.length)
+	const slash = rest.indexOf('/')
+	const boardId = slash === -1 ? rest : rest.slice(0, slash)
+	return UUID_RE.test(boardId) ? boardId : null
+}
+
+/** google then temp, then the requested prefix (covers leftover `local:`). */
+function assetOwnerKeysToTry(
+	requestedOwnerKey: string,
+	boardHint: string | null,
+): string[] {
+	const fromTemp = isTempOwnerKey(requestedOwnerKey)
+		? requestedOwnerKey.slice('temp:'.length)
+		: null
+	const boardId =
+		fromTemp && UUID_RE.test(fromTemp)
+			? fromTemp
+			: boardHint && UUID_RE.test(boardHint)
+				? boardHint
+				: null
+	const temp = boardId ? tempOwnerKey(boardId) : null
+	const google = requestedOwnerKey.startsWith('google:')
+		? requestedOwnerKey
+		: null
+	return [
+		...new Set(
+			[google, temp, requestedOwnerKey].filter(Boolean) as string[],
+		),
+	]
 }
 
 /**
@@ -379,7 +413,32 @@ function isExpiredUpload(uploaded: Date, now = Date.now()): boolean {
 	return now - uploaded.getTime() >= UNSAVED_BOARD_TTL_MS
 }
 
-/** Copy temp:{boardId}/* → google:{id}/* and delete the temp objects. */
+/**
+ * Public GET meta includes `savedToLibrary` without revealing `cloudOwnerKey`.
+ * `null` means the flag could not be read — callers must not expire temp media.
+ */
+async function readSavedToLibraryFlag(
+	env: Env,
+	boardId: string,
+): Promise<boolean | null> {
+	if (!UUID_RE.test(boardId)) return null
+	try {
+		const stub = boardStub(env, boardId)
+		const res = await stub.fetch(
+			new Request(
+				`https://scsfoxchase.tech/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta?boardId=${encodeURIComponent(boardId)}`,
+				{ method: 'GET' },
+			),
+		)
+		if (!res.ok) return null
+		const meta = (await res.json()) as { savedToLibrary?: unknown }
+		return meta.savedToLibrary === true
+	} catch {
+		return null
+	}
+}
+
+/** Copy temp:{boardId}/* → google:{id}/*. Keep temp so leftover player URLs still resolve. */
 export async function moveTempPrefixToOwner(
 	env: Env,
 	boardId: string,
@@ -412,7 +471,6 @@ export async function moveTempPrefixToOwner(
 					kind: 'persistent',
 				},
 			})
-			await env.WHITEBOARD_ASSETS.delete(obj.key)
 			moved.push(fileId)
 		}
 		cursor = listed.truncated ? listed.cursor : undefined
@@ -421,8 +479,10 @@ export async function moveTempPrefixToOwner(
 }
 
 /**
- * Delete temp:* objects older than 24h. Called from expire-temp, temp PUT,
- * and (via DO alarm) prefix wipe when the unsaved board expires.
+ * Delete temp:* objects older than 24h on unsaved boards only.
+ * Saved boards keep temp until google-then-temp resolution can replace it.
+ * Called from expire-temp, temp PUT, and (via DO alarm) prefix wipe when
+ * an unsaved board expires.
  */
 export async function expireTempR2Objects(
 	env: Env,
@@ -430,15 +490,29 @@ export async function expireTempR2Objects(
 ): Promise<number> {
 	let deleted = 0
 	let cursor: string | undefined
+	const savedByBoard = new Map<string, boolean | null>()
 	do {
 		const listed = await env.WHITEBOARD_ASSETS.list({
 			prefix: 'assets/temp:',
 			cursor,
 			limit: 100,
 		})
-		const stale = listed.objects
-			.filter((obj) => isExpiredUpload(obj.uploaded, now))
-			.map((obj) => obj.key)
+		const stale: string[] = []
+		for (const obj of listed.objects) {
+			if (!isExpiredUpload(obj.uploaded, now)) continue
+			const boardId = boardIdFromTempR2Key(obj.key)
+			if (!boardId) {
+				stale.push(obj.key)
+				continue
+			}
+			let saved = savedByBoard.get(boardId)
+			if (saved === undefined) {
+				saved = await readSavedToLibraryFlag(env, boardId)
+				savedByBoard.set(boardId, saved)
+			}
+			if (saved !== false) continue
+			stale.push(obj.key)
+		}
 		if (stale.length > 0) {
 			await env.WHITEBOARD_ASSETS.delete(stale)
 			deleted += stale.length
@@ -822,17 +896,44 @@ export async function handleAssetRequest(
 	}
 
 	if (request.method === 'GET' || request.method === 'HEAD') {
-		const object = await env.WHITEBOARD_ASSETS.get(key, {
-			range: request.headers,
-			onlyIf: request.headers,
-		})
+		const boardHint =
+			url.searchParams.get('board')?.trim() ||
+			url.searchParams.get('boardId')?.trim() ||
+			request.headers.get('X-Board-Id')?.trim() ||
+			null
+		const owners = assetOwnerKeysToTry(ownerKey, boardHint)
+		let servedOwnerKey = ownerKey
+		let servedKey = key
+		let object = null as Awaited<ReturnType<R2Bucket['get']>>
+		for (const tryOwner of owners) {
+			const tryKey = r2ObjectKey(tryOwner, assetId)
+			const found = await env.WHITEBOARD_ASSETS.get(tryKey, {
+				range: request.headers,
+				onlyIf: request.headers,
+			})
+			if (found !== null) {
+				servedOwnerKey = tryOwner
+				servedKey = tryKey
+				object = found
+				break
+			}
+		}
 		if (object === null) {
 			return jsonError(404, 'Asset not found', request)
 		}
 
-		if (isTempOwnerKey(ownerKey) && isExpiredUpload(object.uploaded)) {
-			await env.WHITEBOARD_ASSETS.delete(key)
-			return jsonError(404, 'Asset expired', request)
+		if (
+			isTempOwnerKey(servedOwnerKey) &&
+			isExpiredUpload(object.uploaded)
+		) {
+			const boardId = servedOwnerKey.slice('temp:'.length)
+			const saved = UUID_RE.test(boardId)
+				? await readSavedToLibraryFlag(env, boardId)
+				: false
+			if (saved === false) {
+				await env.WHITEBOARD_ASSETS.delete(servedKey)
+				return jsonError(404, 'Asset expired', request)
+			}
 		}
 
 		const headers = new Headers()
@@ -851,7 +952,7 @@ export async function handleAssetRequest(
 			)
 			headers.set('Content-Security-Policy', "default-src 'none'; sandbox")
 		}
-		if (isTempOwnerKey(ownerKey)) {
+		if (isTempOwnerKey(servedOwnerKey)) {
 			headers.set('Cache-Control', 'private, max-age=3600')
 		} else {
 			headers.set('Cache-Control', 'public, max-age=31536000, immutable')

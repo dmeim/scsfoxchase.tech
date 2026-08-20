@@ -19,7 +19,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Last strokes vanish on tab close (flush only) — **done**. Classroom close-within-1s manual open.
 - Share Open Closed rotate not role-gated — **done** (`handleCodeHttp` Owner/Manager 403; share tools hidden). Classroom Viewer-cannot-mint Manual open.
 - Manager rename leftover (no Manager Recents as class title) — **done**. Manual Manager vs Owner Recents still open.
-- Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
+- Video player URLs after claim + temp media expiry — **done** (google-then-temp hydrate; keep temp; skip expiry while `savedToLibrary`). Manuals open. DO scene rewrite still leftover (wait for scene-persist to free `WhiteboardBoard.ts`).
 - Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible).
 - Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
 - Scene persist can drop work — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-sync.ts`, `src/components/WhiteboardCanvas.tsx` (toast). Do not edit assetRoutes / files.ts.
@@ -478,12 +478,13 @@ Rewrite player URLs in the **persisted scene** on the DO (or always resolve play
 
 ### Tasks
 
-- [ ] Rewrite embeddable `/whiteboard-player` URLs in the persisted scene on the Durable Object when claim moves `temp:` → `google:`, or resolve player GET through board meta so the prefix is not baked into the URL.
-- [ ] Do not delete `temp:` objects until references are rewritten (coordinate with Claim moves temp assets to any Clerk account and Temp media expiry not tied to savedToLibrary).
-- [ ] In `src/lib/whiteboard-excalidraw-files.ts`, hydrate video like images (`fileId` + `ownerKeysToTry`: google then temp). Stop relying on `claimAndRewrite` on a single signed-in tab.
-- [ ] Grep for `whiteboard-player`, `claimAndRewrite`, and `tempOwnerKey`. Confirm other tabs do not keep `owner=temp:` after claim.
-- [ ] Run `npm run build`.
+- [x] Rewrite embeddable `/whiteboard-player` URLs in the persisted scene on the Durable Object when claim moves `temp:` → `google:`, or resolve player GET through board meta so the prefix is not baked into the URL.
+- [x] Do not delete `temp:` objects until references are rewritten (coordinate with Claim moves temp assets to any Clerk account and Temp media expiry not tied to savedToLibrary).
+- [x] In `src/lib/whiteboard-excalidraw-files.ts`, hydrate video like images (`fileId` + `ownerKeysToTry`: google then temp). Stop relying on `claimAndRewrite` on a single signed-in tab.
+- [x] Grep for `whiteboard-player`, `claimAndRewrite`, and `tempOwnerKey`. Confirm other tabs do not keep `owner=temp:` after claim.
+- [x] Run `npm run build`.
 - [ ] Manual: insert video on scratch, Save/claim, reload a second tab; playback must not 404.
+- [ ] Leftover: rewrite persisted `owner=temp:` player URLs on the Durable Object after claim so temp objects can be deleted later.
 
 ---
 
@@ -507,11 +508,11 @@ Do not expire `temp:{boardId}` while the board is `savedToLibrary` and still ref
 
 ### Tasks
 
-- [ ] In `src/worker/assetRoutes.ts`, stop expiring `temp:{boardId}` from `isExpiredUpload` / `expireTempR2Objects` while the board is `savedToLibrary` and objects are still referenced.
-- [ ] Expire temp objects only after a successful move to `google:`, or tie prefix cleanup to the same `savedToLibrary` flag as `expireUnsavedBoard` in `WhiteboardBoard.ts`.
-- [ ] Do not leave two independent 24h clocks (object `uploaded` vs board unsaved alarm) that can delete media on a saved board.
-- [ ] Grep for `UNSAVED_BOARD_TTL_MS`, `isExpiredUpload`, and `expireTempR2Objects`. Confirm a saved board’s temp media is not deleted on upload age alone.
-- [ ] Run `npm run build`.
+- [x] In `src/worker/assetRoutes.ts`, stop expiring `temp:{boardId}` from `isExpiredUpload` / `expireTempR2Objects` while the board is `savedToLibrary` and objects are still referenced.
+- [x] Expire temp objects only after a successful move to `google:`, or tie prefix cleanup to the same `savedToLibrary` flag as `expireUnsavedBoard` in `WhiteboardBoard.ts`.
+- [x] Do not leave two independent 24h clocks (object `uploaded` vs board unsaved alarm) that can delete media on a saved board.
+- [x] Grep for `UNSAVED_BOARD_TTL_MS`, `isExpiredUpload`, and `expireTempR2Objects`. Confirm a saved board’s temp media is not deleted on upload age alone.
+- [x] Run `npm run build`.
 - [ ] Manual: save a board without claim completing; images/video that still point at temp survive the 24h upload clock.
 
 ---
