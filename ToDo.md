@@ -20,7 +20,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Share Open Closed rotate not role-gated — **done** (`handleCodeHttp` Owner/Manager 403; share tools hidden). Classroom Viewer-cannot-mint Manual open.
 - Manager rename leftover (no Manager Recents as class title) — **done**. Manual Manager vs Owner Recents still open.
 - Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
-- Follow Me client resubscribe after socket gap — `worker` owns `src/components/WhiteboardCanvas.tsx`, `src/lib/whiteboard-excalidraw-roles.ts` (do not edit WhiteboardBoard.ts)
+- Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible). DO persist still in flight.
 - Follow Me hibernation (Durable Object) — `worker` owns `src/worker/WhiteboardBoard.ts` only (do not edit Canvas or roles)
 - Share / join-code docs vs Owner-Manager gate — `doc-smith` owns `docs/whiteboard/share-codes.md`, `docs/whiteboard/people-permissions.md`, `docs/whiteboard/hub-and-board.md`
 
@@ -244,7 +244,7 @@ In `relaySceneBounds`, load follow state with `getForceFollowState()`. Persist v
 - [ ] In `src/worker/WhiteboardBoard.ts` `relaySceneBounds`, load force-follow with `getForceFollowState()` instead of `this.forceFollowCache ?? this.emptyForceFollow()`.
 - [ ] Persist voluntary follow on the socket attachment or in storage so a hibernation wake does not empty `voluntaryFollow`.
 - [ ] After `hydrateSockets` / on `webSocketMessage` following a wake, restore follow from attachments and rebroadcast `wb:forceFollow` to already-open tabs, not only to a newly connected socket.
-- [ ] In `src/components/WhiteboardCanvas.tsx` / `src/lib/whiteboard-excalidraw-roles.ts`, resubscribe `wb:follow` whenever the socket is open after a gap, even if the tab never disconnected.
+- [x] In `src/components/WhiteboardCanvas.tsx` / `src/lib/whiteboard-excalidraw-roles.ts`, resubscribe `wb:follow` whenever the socket is open after a gap, even if the tab never disconnected.
 - [ ] Do not treat this as the Following overlay bug (stock FollowMode chrome). That is Following overlay is glitchy.
 - [ ] Grep for `relaySceneBounds`, `forceFollowCache`, `voluntaryFollow`, and `setWebSocketAutoResponse`. Confirm a wake cannot treat Follow Me as off while sockets stayed open.
 - [ ] Run `npm run build`.
