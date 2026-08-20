@@ -24,6 +24,25 @@ import {
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
 
+/** Eight-character letter-digit code (server `SHARE_CODE_RE`). Not a 4-char token. */
+const HUB_SHARE_CODE_RE = /^([A-Za-z][0-9]){4}$/;
+
+/**
+ * Board URL / UUID via `parseJoinInput`; share codes must be eight characters.
+ * `whiteboard-library` still classifies four-character tokens as codes — ignore those.
+ */
+function parseHubJoinInput(
+  raw: string,
+): { kind: 'board'; id: string } | { kind: 'code'; code: string } | null {
+  const parsed = parseJoinInput(raw);
+  if (parsed?.kind === 'board') return parsed;
+  const trimmed = raw.trim();
+  if (HUB_SHARE_CODE_RE.test(trimmed)) {
+    return { kind: 'code', code: trimmed.toUpperCase() };
+  }
+  return null;
+}
+
 function cardHtml(entry: WhiteboardLibraryEntry): string {
   const title = escapeHtml(entry.title || 'Untitled board');
   const titleAttr = escapeAttr(entry.title || 'Untitled board');
@@ -528,11 +547,11 @@ function initWhiteboardHub() {
 
   joinForm?.addEventListener('submit', (event) => {
     event.preventDefault();
-    const parsed = parseJoinInput(joinInput?.value ?? '');
+    const parsed = parseHubJoinInput(joinInput?.value ?? '');
 
     if (!parsed) {
       showActionHint(
-        'Enter a share code (like A1B2), paste a board link (/board/…), or a UUID.',
+        'Enter a share code, paste a board link (/board/…), or a UUID. Treat share codes like passwords — do not project them where a hallway can see.',
       );
       joinInput?.focus();
       return;

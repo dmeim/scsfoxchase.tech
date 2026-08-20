@@ -2,21 +2,27 @@
 
 Short join codes for classroom boards: Open / Closed, Copy, New, hub join, and KV + Durable Object expiry.
 
+Treat live share codes as **secrets**. Anyone who can read an Open code can join the board. Do not write a code on a hallway-facing board or otherwise project it where passers-by can photograph it. Prefer the board link (`/board/{uuid}`) for anything that stays on screen.
+
 ## Overview
 
-A share code is a four-character token **`[A-Z][0-9][A-Z][0-9]`** (e.g. `A1B2`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the mapping. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
+A share code is an eight-character token: **letter, digit** four times (`([A-Z][0-9]){4}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the KV mapping so `GET /api/whiteboard/join/:code` cannot start a new session. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
+
+**Closed does not revoke the UUID.** `/board/{uuid}` still loads the canvas after Closed until connect-time auth exists (see the “Connect trusts client userId” launch item). Closed only stops *new* joins that still need the short code.
 
 ## Format and TTL
 
 | Property | Value |
 |----------|--------|
-| Pattern | `A1B2` — letter, digit, letter, digit |
+| Pattern | Eight characters — letter-digit four times |
 | Normalization | Trim + uppercase |
 | TTL | **12 hours** (`SHARE_CODE_TTL_SECONDS` / `SHARE_CODE_TTL_MS` in `src/worker/shareCode.ts`) |
 | KV key | `code:{CODE}` |
 | KV value | JSON `{ boardId, exp }` with `expirationTtl` matching the TTL |
 
 Helpers: `normalizeShareCode`, `sampleShareCode`, `kvCodeKey` in `src/worker/shareCode.ts`.
+
+Existing four-character codes in KV (from before this format change) no longer parse. Teachers need **Open** / **New code** after deploy so students get an eight-character code.
 
 ## Storage model
 
@@ -27,7 +33,7 @@ Two layers stay in sync:
 
 The DO has **one** alarm slot: the sooner of share-code expiry (12h) and unsaved-board TTL (24h). The alarm handler reschedules whatever is still pending.
 
-On mint/rotate the DO writes KV and schedules an alarm. On revoke or alarm, it deletes the KV key and clears DO code meta. `GET` that finds an expired DO code revokes it and returns closed.
+On mint/rotate the DO writes KV and schedules an alarm. On revoke or alarm, it deletes the KV key and clears DO code meta. `GET` that finds an expired DO code revokes it and returns closed. That KV delete is what keeps Closed from minting new joins; join never writes a new mapping.
 
 ## HTTP API
 
@@ -40,9 +46,10 @@ GET /api/whiteboard/join/:code
 ```
 
 **Response 200:** `{ "id": "<board-uuid>" }`  
-**404:** code missing, expired, malformed, or bad board id — message: *That code isn't available…*
+**404:** code missing, expired, malformed, or bad board id — message: *That code isn't available…*  
+**429:** join rate limit (see below) — *Too many join attempts. Wait a moment and try again.*
 
-Used by the hub when the join field looks like a share code (`lookupShareCode` in `src/lib/whiteboard-codes.ts`).
+Used by the hub when the join field looks like a share code (`lookupShareCode` in `src/lib/whiteboard-codes.ts`). The hub treats codes as eight-character letter-digit tokens (`src/scripts/whiteboard-hub.ts`).
 
 ### Board code state
 
@@ -56,7 +63,7 @@ DELETE /api/whiteboard/boards/:uuid/code          # closed
 **GET / POST success shape:**
 
 ```json
-{ "code": "A1B2", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
+{ "code": "<eight-character-code>", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
 ```
 
 **Closed / after DELETE:**
@@ -69,11 +76,19 @@ DELETE /api/whiteboard/boards/:uuid/code          # closed
 |--------|----------|
 | Open (`POST`, no rotate) | If a valid code exists, keep it; otherwise mint |
 | New code (`POST?rotate=1`) | Delete old KV entry, mint a new code, reset 12h TTL |
-| Closed (`DELETE`) | Revoke KV + DO meta + alarm |
+| Closed (`DELETE`) | Revoke KV + DO meta + alarm. Join by that code 404s. `/board/{uuid}` still works until connect auth exists. |
 
 ### Rate limit
 
-Mint/rotate is limited inside the DO: **12** attempts per board per **10-minute** rolling window (`meta:codeMintLog`). Exceeding returns **429**.
+Two separate limits:
+
+| Limit | Where | Window |
+|-------|--------|--------|
+| **Join per IP** | `handleJoin` in `codeRoutes.ts` | **60** attempts per **60 seconds** (all joins: success and fail). Sized for a class behind one school NAT. |
+| **Join per-code failed lookups** | `handleJoin` after a miss/expiry | **10** failed lookups per code per **60 seconds**. Successful joins of an Open code do not count. |
+| **Mint/rotate** | Durable Object `assertMintAllowed` | **12** attempts per board per **10-minute** rolling window (`meta:codeMintLog`). Exceeding returns **429**. Unrelated to join. |
+
+Join counters are **isolate-local** (in-memory on the Worker isolate). KV is not used for these counters: a class burst would collide with KV’s ~1 write/sec per key. Limits reset if the isolate recycles; they still stop unmetered four-character-style enumeration on a live isolate.
 
 Allocation retries random samples (up to 24) until a free KV key is found.
 
@@ -90,12 +105,12 @@ On `/board/{uuid}`, header manage panel (`Header.astro` + `whiteboard-menu.ts`):
   - Static hint: bookmark the board page to return later
   - **People** (roles + Follow) — see [people-permissions.md](./people-permissions.md)
 
-Auth for these calls: none beyond knowing the board UUID.
+Auth for these calls: none beyond knowing the board UUID. Keep the code off hallway-facing displays; use **Copy Link** when the URL can stay on screen.
 
 ## Hub join flow
 
 1. User enters code (or link/UUID) on `/whiteboard`.
-2. `parseJoinInput` classifies as `code` or `board`.
+2. Hub classifies as `code` (eight-character letter-digit) or `board`.
 3. For codes: `GET /api/whiteboard/join/:code` → UUID.
 4. Navigate to `/board/{uuid}`. Join does **not** write Recents/Library.
 
@@ -106,8 +121,8 @@ Joining does **not** make the user Owner. Scratch Owner stays with the creating 
 | Path | Role |
 |------|------|
 | `src/worker/shareCode.ts` | Format, TTL, KV key helpers |
-| `src/worker/codeRoutes.ts` | Join + forward board code routes |
-| `src/worker/WhiteboardBoard.ts` | Mint / revoke / alarm / rate limit |
+| `src/worker/codeRoutes.ts` | Join + join rate limits + forward board code routes |
+| `src/worker/WhiteboardBoard.ts` | Mint / revoke / alarm / mint rate limit |
 | `src/lib/whiteboard-codes.ts` | Client fetch helpers + expiry label |
 | `src/scripts/whiteboard-menu.ts` | Manage panel share UI |
 | `src/scripts/whiteboard-hub.ts` | Hub join by code |

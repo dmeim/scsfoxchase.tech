@@ -1,6 +1,7 @@
 /**
  * Share-code helpers shared by Worker join lookup and WhiteboardBoard DO.
- * Format: A1B2 ([A-Z][0-9][A-Z][0-9]), TTL 12h.
+ * Format: eight characters, letter-digit four times, TTL 12h.
+ * Treat live codes as secrets (do not project them where a hallway can see).
  */
 
 export const SHARE_CODE_TTL_SECONDS = 12 * 60 * 60
@@ -8,8 +9,10 @@ export const SHARE_CODE_TTL_MS = SHARE_CODE_TTL_SECONDS * 1000
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const DIGITS = '0123456789'
+const SHARE_CODE_PAIRS = 4
 
-export const SHARE_CODE_RE = /^[A-Z][0-9][A-Z][0-9]$/
+/** Letter-digit repeated four times (eight characters). */
+export const SHARE_CODE_RE = /^([A-Z][0-9]){4}$/
 
 export type ShareCodeRecord = {
 	boardId: string
@@ -25,15 +28,15 @@ export function kvCodeKey(code: string): string {
 	return `code:${code}`
 }
 
-/** Sample unused A1B2; caller retries on collision. */
+/** Sample an unused eight-character code; caller retries on collision. */
 export function sampleShareCode(): string {
-	const bytes = crypto.getRandomValues(new Uint8Array(4))
-	return (
-		LETTERS[bytes[0]! % 26]! +
-		DIGITS[bytes[1]! % 10]! +
-		LETTERS[bytes[2]! % 26]! +
-		DIGITS[bytes[3]! % 10]!
-	)
+	const bytes = crypto.getRandomValues(new Uint8Array(SHARE_CODE_PAIRS * 2))
+	let code = ''
+	for (let i = 0; i < SHARE_CODE_PAIRS; i++) {
+		code += LETTERS[bytes[i * 2]! % 26]!
+		code += DIGITS[bytes[i * 2 + 1]! % 10]!
+	}
+	return code
 }
 
 export function parseShareCodeRecord(raw: string | null): ShareCodeRecord | null {

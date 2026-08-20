@@ -95,8 +95,21 @@ function initWhiteboardMenu() {
   let forceFollowOn = false
   let forceFollowTargetUserId = ''
   const canForceFollow = () => yourRole === 'owner' || yourRole === 'manager'
+  const canRenameBoard = () => canForceFollow()
+  const nameDivider =
+    nameForm?.nextElementSibling instanceof HTMLElement &&
+    nameForm.nextElementSibling.classList.contains('whiteboard-menu-divider')
+      ? nameForm.nextElementSibling
+      : null
+
+  const renderNameFormUi = () => {
+    const allowed = canRenameBoard()
+    if (nameForm) nameForm.hidden = !allowed
+    if (nameDivider) nameDivider.hidden = !allowed
+  }
 
   if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
+  renderNameFormUi()
 
   const applyTitle = (title: string) => {
     if (!titleInput) return
@@ -293,6 +306,7 @@ function initWhiteboardMenu() {
       peopleList.hidden = true
       peopleEmpty.hidden = false
       renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
+      renderNameFormUi()
       return
     }
 
@@ -401,6 +415,7 @@ function initWhiteboardMenu() {
       peopleList.append(li)
     }
     renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
+    renderNameFormUi()
   }
 
   window.addEventListener(PARTICIPANTS_EVENT, ((event: CustomEvent) => {
@@ -413,6 +428,7 @@ function initWhiteboardMenu() {
     yourSessionId =
       typeof detail.yourSessionId === 'string' ? detail.yourSessionId : ''
     if (detail.yourRole) yourRole = detail.yourRole
+    renderNameFormUi()
     renderPeople()
   }) as EventListener)
 
@@ -421,6 +437,7 @@ function initWhiteboardMenu() {
     if (detail.role) yourRole = detail.role
     if (typeof detail.sessionId === 'string') yourSessionId = detail.sessionId
     if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
+    renderNameFormUi()
   }) as EventListener)
 
   window.addEventListener(FOLLOWING_EVENT, ((event: CustomEvent) => {
@@ -452,10 +469,12 @@ function initWhiteboardMenu() {
       titleInput?.setCustomValidity('')
       void refreshShareState()
       renderPeople()
-      window.requestAnimationFrame(() => {
-        titleInput?.focus()
-        titleInput?.select()
-      })
+      if (canRenameBoard()) {
+        window.requestAnimationFrame(() => {
+          titleInput?.focus()
+          titleInput?.select()
+        })
+      }
     } else {
       stopExpiryTimer()
       setShareHint(null)
@@ -500,6 +519,12 @@ function initWhiteboardMenu() {
   nameForm?.addEventListener('submit', (event) => {
     event.preventDefault()
 
+    if (!canRenameBoard()) {
+      renderNameFormUi()
+      setHint(null)
+      return
+    }
+
     if (!boardId) {
       setHint('Open a board from the library to rename it.')
       return
@@ -521,6 +546,11 @@ function initWhiteboardMenu() {
     void (async () => {
       try {
         await whenAuthReady()
+        if (!canRenameBoard()) {
+          renderNameFormUi()
+          setHint(null)
+          return
+        }
         const next = await setBoardTitleActive(boardId, nextTitle)
         titleDirty = false
         titleSyncGen += 1

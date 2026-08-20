@@ -10,16 +10,25 @@ This list is for teachers and students launch hardening after the tldraw → Exc
 
 Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/whiteboard-header-rename` (commit and push this branch at milestones; never push `main`).
 
-**Wave 1 in progress** (one writer per file set):
+**Wave cap:** 10 concurrent specialists. Fill every unblocked file partition; do not overlap writers.
 
-- Connect trusts client userId — **done** (Clerk header / `wb:auth`; guest UUID only; GET meta hides `cloudOwnerKey`). Host secret still on the connect query string — next item.
-- Unauthenticated asset GET and SVG XSS + Temp and local asset writes have no auth — **done**. `assertAssetWriteAccess` is present on `WhiteboardBoard.ts`.
-- Share codes are short and unmetered — `worker` owns `src/worker/shareCode.ts`, `src/worker/codeRoutes.ts`, `src/scripts/whiteboard-hub.ts`, `docs/whiteboard/share-codes.md`
-- Unused tldraw.png — **done** (`public/images/tldraw.png` deleted; `tldraw-colors.png` left in place, unused)
-- tldraw constructor wipe needs no code change — **done** (no product edit; do not bulk-run admin wipe)
-- Name this whiteboard and Save shown to everyone — `worker` owns `src/scripts/whiteboard-menu.ts` (and Header.astro only if hide-by-default is required)
+**In flight:**
+
 - Claim moves temp assets to any Clerk account — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
 - Host secret still rewrites Owner after Save — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/components/WhiteboardCanvas.tsx`, `src/scripts/whiteboard-library.ts`
+- Recents Saved vs TTL (server) + Library JSON etag — `worker` owns `src/worker/libraryRoutes.ts`
+- Dead r2AssetStore + Hub Assets empty copy — `worker` owns `src/lib/whiteboard-assets.ts`, `src/pages/whiteboard.astro`
+- Shared Chromebooks reuse guest userId — `worker` owns `src/lib/whiteboard-excalidraw-roles.ts`, `docs/whiteboard/people-permissions.md`
+- Guests default Viewer training copy — `doc-smith` owns remaining whiteboard docs except `share-codes.md` / `people-permissions.md`
+- Connect+asset security review — `sentinel` (read-only, commit `1d63c52`)
+- Remaining ToDo file map — `scout` (read-only)
+- Recents/Library thumbnails + hub join-code view-only copy — `worker` owns `src/scripts/whiteboard-hub.ts`
+- Honest Save copy (index vs scene) — `worker` owns `src/scripts/whiteboard-menu.ts`
+
+**Just closed:**
+
+- Share codes are short and unmetered — eight-character codes + join rate limits. Leftover: `whiteboard-library.ts` still has a 4-char `SHARE_CODE_RE`; other docs still mention `A1B2`. Classroom Closed/UUID manual not run.
+- Name this whiteboard UI — Owner/Manager only. PATCH 403 waits on Board title. Viewer classroom manual not run.
 
 **AFK decisions (do not reopen unless blocked):**
 
@@ -109,12 +118,12 @@ Use longer codes. Rate-limit join (per IP and per code). Treat codes as secrets 
 
 ### Tasks
 
-- [ ] Lengthen the generator in `src/worker/shareCode.ts` (`sampleShareCode` / `normalizeShareCode`) and update KV key handling. Keep TTL 12h unless this issue also changes TTL.
-- [ ] Rate-limit `handleJoin` in `src/worker/codeRoutes.ts` per IP and per code. Leave `assertMintAllowed` on mint/rotate as a separate limit.
-- [ ] Update hub copy in `src/scripts/whiteboard-hub.ts` (and `docs/whiteboard/share-codes.md`) so codes are treated as secrets, not an `A1B2` example to project in the hallway.
-- [ ] Keep Closed from minting new joins. Document that `/board/{uuid}` still works after Closed until connect auth exists.
-- [ ] Grep for `A1B2` and `sampleShareCode`. Confirm join is no longer a four-character unmetered lookup.
-- [ ] Run `npm run build`.
+- [x] Lengthen the generator in `src/worker/shareCode.ts` (`sampleShareCode` / `normalizeShareCode`) and update KV key handling. Keep TTL 12h unless this issue also changes TTL.
+- [x] Rate-limit `handleJoin` in `src/worker/codeRoutes.ts` per IP and per code. Leave `assertMintAllowed` on mint/rotate as a separate limit.
+- [x] Update hub copy in `src/scripts/whiteboard-hub.ts` (and `docs/whiteboard/share-codes.md`) so codes are treated as secrets, not an `A1B2` example to project in the hallway.
+- [x] Keep Closed from minting new joins. Document that `/board/{uuid}` still works after Closed until connect auth exists.
+- [x] Grep for `A1B2` and `sampleShareCode`. Confirm join is no longer a four-character unmetered lookup.
+- [x] Run `npm run build`.
 - [ ] Manual: Closed code cannot be joined; an existing UUID still opens the board.
 
 ---
@@ -290,11 +299,11 @@ Gate the name field and Save to **Owner** and **Manager**. When title is on the 
 
 ### Tasks
 
-- [ ] In `src/scripts/whiteboard-menu.ts`, hide `[data-wb-manage-name]` (the Header.astro form) unless the live role is Owner or Manager, matching `canForceFollow`.
-- [ ] Do not let Viewer or Editor submit Save or see a success state. Unsigned scratch rename may stay on `rememberScratchTitle` for the creating host only.
+- [x] In `src/scripts/whiteboard-menu.ts`, hide `[data-wb-manage-name]` (the Header.astro form) unless the live role is Owner or Manager, matching `canForceFollow`.
+- [x] Do not let Viewer or Editor submit Save or see a success state. Unsigned scratch rename may stay on `rememberScratchTitle` for the creating host only.
 - [ ] When a DO title PATCH exists (Board title is library-index-only), reject Viewer and Editor with 403.
-- [ ] Grep for `data-wb-manage-name` and `setBoardTitleActive`. Confirm Viewer markup does not include a working Save.
-- [ ] Run `npm run build`.
+- [x] Grep for `data-wb-manage-name` and `setBoardTitleActive`. Confirm Viewer markup does not include a working Save.
+- [x] Run `npm run build`.
 - [ ] Manual: as a Viewer, **Name this whiteboard** and **Save** are not available.
 
 ---
