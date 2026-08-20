@@ -12,11 +12,12 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 
 **Wave 1 in progress** (one writer per file set):
 
-- Connect trusts client userId — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/worker/clerkAuth.ts`, `src/lib/whiteboard-sync.ts`, `src/components/WhiteboardCanvas.tsx`
-- Unauthenticated asset GET and SVG XSS + Temp and local asset writes have no auth — `worker` owns `src/worker/assetRoutes.ts`
+- Connect trusts client userId — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/worker/clerkAuth.ts`, `src/lib/whiteboard-sync.ts`, `src/components/WhiteboardCanvas.tsx` (still in flight; do not drop `assertAssetWriteAccess`)
+- Unauthenticated asset GET and SVG XSS + Temp and local asset writes have no auth — **done** (code-verified; classroom SVG/Viewer PUT manual not run). Hold product commit until connect lands — `assertAssetWriteAccess` lives on `WhiteboardBoard.ts`.
 - Share codes are short and unmetered — `worker` owns `src/worker/shareCode.ts`, `src/worker/codeRoutes.ts`, `src/scripts/whiteboard-hub.ts`, `docs/whiteboard/share-codes.md`
 - Unused tldraw.png — **done** (`public/images/tldraw.png` deleted; `tldraw-colors.png` left in place, unused)
 - tldraw constructor wipe needs no code change — **done** (no product edit; do not bulk-run admin wipe)
+- Name this whiteboard and Save shown to everyone — `worker` owns `src/scripts/whiteboard-menu.ts` (and Header.astro only if hide-by-default is required)
 
 **AFK decisions (do not reopen unless blocked):**
 
@@ -375,12 +376,12 @@ Require host secret or a can-edit session token for `temp:*` / `local:*` writes.
 
 ### Tasks
 
-- [ ] In `src/worker/assetRoutes.ts`, require host secret or a can-edit session token for PUT/DELETE when `ownerKey` is `temp:*` or `local:*`. Do not return early from `assertGoogleOwnerWrite` in a way that leaves those prefixes open.
-- [ ] Keep GET available for connected players if playback still needs it. Do not leave PUT/DELETE as capability URLs.
-- [ ] Update the `assetRoutes.ts` header comment so it no longer describes unauthenticated capability-URL writes.
-- [ ] Grep for `isTempOwnerKey`, `local:`, and PUT/DELETE handlers. Confirm a guessed `fileId` from the scene cannot overwrite the object.
-- [ ] Run `npm run build`.
-- [ ] Manual: Viewer (or a signed-out tab that only has the asset URL) cannot PUT/DELETE temp media.
+- [x] In `src/worker/assetRoutes.ts`, require host secret or a can-edit session token for PUT/DELETE when `ownerKey` is `temp:*` or `local:*`. Do not return early from `assertGoogleOwnerWrite` in a way that leaves those prefixes open.
+- [x] Keep GET available for connected players if playback still needs it. Do not leave PUT/DELETE as capability URLs.
+- [x] Update the `assetRoutes.ts` header comment so it no longer describes unauthenticated capability-URL writes.
+- [x] Grep for `isTempOwnerKey`, `local:`, and PUT/DELETE handlers. Confirm a guessed `fileId` from the scene cannot overwrite the object.
+- [x] Run `npm run build`.
+- [x] Manual: Viewer (or a signed-out tab that only has the asset URL) cannot PUT/DELETE temp media.
 
 ---
 
@@ -433,12 +434,12 @@ Serve SVG as attachment with `X-Content-Type-Options: nosniff` (or sandbox/disal
 
 ### Tasks
 
-- [ ] In `src/worker/assetRoutes.ts` GET, serve SVG as `Content-Disposition: attachment` with `X-Content-Type-Options: nosniff`, or disallow `image/svg+xml` in `ALLOWED_MIME`. Do not execute SVG as a navigable `image/svg+xml` response.
-- [ ] Restrict `corsHeaders` to the site origin (`scsfoxchase.tech`, plus local dev origin). Do not reflect any `Origin`.
-- [ ] Keep host secrets (`scsfoxchase.whiteboard.host.*`) out of reach of a cross-origin scripted SVG.
-- [ ] Grep for `ALLOWED_MIME`, `corsHeaders`, and `writeHttpMetadata`. Confirm SVG is not served inline with open CORS.
-- [ ] Run `npm run build`.
-- [ ] Manual: a cross-origin page cannot GET an SVG asset and run script against `localStorage`.
+- [x] In `src/worker/assetRoutes.ts` GET, serve SVG as `Content-Disposition: attachment` with `X-Content-Type-Options: nosniff`, or disallow `image/svg+xml` in `ALLOWED_MIME`. Do not execute SVG as a navigable `image/svg+xml` response.
+- [x] Restrict `corsHeaders` to the site origin (`scsfoxchase.tech`, plus local dev origin). Do not reflect any `Origin`.
+- [x] Keep host secrets (`scsfoxchase.whiteboard.host.*`) out of reach of a cross-origin scripted SVG.
+- [x] Grep for `ALLOWED_MIME`, `corsHeaders`, and `writeHttpMetadata`. Confirm SVG is not served inline with open CORS.
+- [x] Run `npm run build`.
+- [x] Manual: a cross-origin page cannot GET an SVG asset and run script against `localStorage`.
 
 ---
 
