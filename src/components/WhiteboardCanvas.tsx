@@ -34,6 +34,7 @@ import {
 import { useWhiteboardExcalidrawFiles } from '../lib/whiteboard-excalidraw-files'
 // PHASE 3.3
 import {
+  FOLLOW_SOCKET_GAP_MS,
   getBoardConnectIdentity,
   useWhiteboardExcalidrawRoles,
 } from '../lib/whiteboard-excalidraw-roles'
@@ -105,6 +106,8 @@ export default function WhiteboardCanvas({
   onUserFollowRef.current = roles.onUserFollow
   const reassertFollowRef = useRef(roles.reassertFollow)
   reassertFollowRef.current = roles.reassertFollow
+  const resubscribeFollowRef = useRef(roles.resubscribeFollow)
+  resubscribeFollowRef.current = roles.resubscribeFollow
   const unsubUserFollowRef = useRef<(() => void) | null>(null)
   const canEditRef = useRef(roles.canEdit)
   canEditRef.current = roles.canEdit
@@ -351,6 +354,7 @@ export default function WhiteboardCanvas({
     let resyncTimer: number | null = null
     let reconnectTimer: number | null = null
     let attempt = 0
+    let lastSocketJsAt = 0
 
     const clearTimers = () => {
       if (pingTimer != null) {
@@ -393,10 +397,16 @@ export default function WhiteboardCanvas({
               ...(hostSecret ? { hostSecret } : {}),
             }),
           )
+          // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
+          resubscribeFollowRef.current()
         }
         pingTimer = window.setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('{"type":"ping"}')
+          if (ws.readyState !== WebSocket.OPEN) return
+          ws.send('{"type":"ping"}')
+          // Auto-pong does not wake DO JS. After a gap, replay wb:follow even
+          // if the tab never disconnected.
+          if (Date.now() - lastSocketJsAt >= FOLLOW_SOCKET_GAP_MS) {
+            resubscribeFollowRef.current()
           }
         }, CLIENT_PING_MS)
         resyncTimer = window.setInterval(() => {
@@ -425,7 +435,14 @@ export default function WhiteboardCanvas({
         if (!parsed || typeof parsed !== 'object') return
         const data = parsed as Record<string, unknown>
 
-        if (data.type === 'pong') return
+        if (data.type === 'pong') {
+          // Socket stayed OPEN across a hibernation gap; resubscribe wb:follow.
+          if (Date.now() - lastSocketJsAt >= FOLLOW_SOCKET_GAP_MS) {
+            resubscribeFollowRef.current()
+          }
+          return
+        }
+        lastSocketJsAt = Date.now()
 
         // PHASE 3.3
         if (handleRoleMessageRef.current(data)) return
@@ -472,10 +489,21 @@ export default function WhiteboardCanvas({
       })
     }
 
+    const onVisibleAfterGap = () => {
+      if (document.visibilityState !== 'visible') return
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (Date.now() - lastSocketJsAt < FOLLOW_SOCKET_GAP_MS) return
+      // Tab stayed connected; still resubscribe wb:follow after a gap.
+      resubscribeFollowRef.current()
+    }
+    document.addEventListener('visibilitychange', onVisibleAfterGap)
+
     void connect()
 
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', onVisibleAfterGap)
       clearTimers()
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
       flushNowRef.current(true)

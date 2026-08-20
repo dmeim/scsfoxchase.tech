@@ -38,6 +38,8 @@ const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
 const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
 const BOUNDS_THROTTLE_MS = 120
+/** Auto-pong keeps the socket OPEN without waking DO JS; resubscribe after this silence. */
+export const FOLLOW_SOCKET_GAP_MS = 10_000
 
 type UserToFollow = { socketId: string; username: string }
 
@@ -409,6 +411,15 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		[findPerson, sendJson],
 	)
 
+	/** Replay wb:follow while the socket is OPEN after a gap (open/reconnect or hibernation). */
+	const resubscribeFollow = useCallback(() => {
+		const ws = wsRef.current
+		if (!ws || ws.readyState !== WebSocket.OPEN) return
+		const target = effectiveFollow()
+		if (!target) return
+		subscribeFollow(target)
+	}, [effectiveFollow, subscribeFollow, wsRef])
+
 	const setVoluntaryFollow = useCallback(
 		(target: UserToFollow | null) => {
 			if (forcedTarget()) return
@@ -501,6 +512,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					authToken,
 					title: typeof data.title === 'string' ? data.title : undefined,
 				})
+				resubscribeFollow()
 				return true
 			}
 
@@ -624,6 +636,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			effectiveFollow,
 			forcedTarget,
 			refreshFollowedBy,
+			resubscribeFollow,
 			scheduleReassertAfterPaint,
 			sendSceneBounds,
 			subscribeFollow,
@@ -681,5 +694,6 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		onScrollChange,
 		handleSocketMessage,
 		reassertFollow,
+		resubscribeFollow,
 	}
 }
