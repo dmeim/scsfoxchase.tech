@@ -438,7 +438,7 @@ async function readSavedToLibraryFlag(
 	}
 }
 
-/** Copy temp:{boardId}/* → google:{id}/*. Keep temp so leftover player URLs still resolve. */
+/** Copy temp:{boardId}/* → google:{id}/*. Keep temp; the DO rewrites persisted player URLs. */
 export async function moveTempPrefixToOwner(
 	env: Env,
 	boardId: string,
@@ -749,11 +749,27 @@ async function handleClaim(
 
 	const destOwnerKey = resolved.destOwnerKey
 	const { moved } = await moveTempPrefixToOwner(env, boardId, destOwnerKey)
+	const stub = boardStub(env, boardId)
+	let rewrite: Awaited<
+		ReturnType<WhiteboardBoard['rewriteTempPlayerUrlsAfterClaim']>
+	>
+	try {
+		rewrite = await stub.rewriteTempPlayerUrlsAfterClaim({
+			boardId,
+			googleOwnerKey: destOwnerKey,
+		})
+	} catch {
+		return jsonError(503, 'Could not update board player URLs', request)
+	}
+	if (!rewrite.ok) {
+		return jsonError(rewrite.status, rewrite.error, request)
+	}
 	return jsonOk(request, {
 		ok: true,
 		boardId,
 		ownerKey: destOwnerKey,
 		moved,
+		rewritten: rewrite.rewritten,
 	})
 }
 

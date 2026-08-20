@@ -308,6 +308,56 @@ function sanitizeAssetPrefix(raw: string | null | undefined): string | null {
 	return value
 }
 
+const BOARD_UUID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PLAYER_OWNER_KEY_RE = /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/
+
+function parsePersistedPlayerLink(
+	link: unknown,
+): { ownerKey: string; fileId: string } | null {
+	if (typeof link !== 'string' || !link) return null
+	let url: URL
+	try {
+		url = new URL(link, 'https://scsfoxchase.tech')
+	} catch {
+		return null
+	}
+	if (url.pathname !== '/whiteboard-player') return null
+	const ownerKey = url.searchParams.get('owner') || ''
+	const fileId = url.searchParams.get('id') || ''
+	if (!PLAYER_OWNER_KEY_RE.test(ownerKey) || !BOARD_UUID_RE.test(fileId)) {
+		return null
+	}
+	return { ownerKey, fileId }
+}
+
+function rewritePlayerLinkOwner(link: string, nextOwner: string): string {
+	const url = new URL(link, 'https://scsfoxchase.tech')
+	url.searchParams.set('owner', nextOwner)
+	return `/whiteboard-player?${url.searchParams.toString()}`
+}
+
+/** Persist `owner=temp:{boardId}` embeddable player URLs as `google:` (keep `id=`). */
+function rewriteTempPlayerUrlsInElements(
+	elements: SceneElement[],
+	tempOwner: string,
+	googleOwner: string,
+): { elements: SceneElement[]; rewritten: number } {
+	let rewritten = 0
+	const next = elements.map((el) => {
+		if (el.type !== 'embeddable') return el
+		const parsed = parsePersistedPlayerLink(el.link)
+		if (!parsed || parsed.ownerKey !== tempOwner) return el
+		rewritten += 1
+		return {
+			...el,
+			link: rewritePlayerLinkOwner(String(el.link), googleOwner),
+			version: el.version + 1,
+		}
+	})
+	return { elements: next, rewritten }
+}
+
 function isClerkWhiteboardAuth(value: unknown): value is ClerkWhiteboardAuth {
 	if (!value || typeof value !== 'object') return false
 	const row = value as Partial<ClerkWhiteboardAuth>
@@ -513,6 +563,51 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			error: presented
 				? "Not allowed to write this board's assets"
 				: 'Host secret or editor session required',
+		}
+	}
+
+	/**
+	 * After claim copies temp→google, rewrite persisted `/whiteboard-player`
+	 * URLs in `scene_json`. Persist uses the same fail-closed path as live
+	 * edits (throw, `wb:error`, no broadcast). Does not delete R2 objects.
+	 */
+	async rewriteTempPlayerUrlsAfterClaim(opts: {
+		boardId: string
+		googleOwnerKey: string
+	}): Promise<
+		| { ok: true; rewritten: number }
+		| { ok: false; status: number; error: string; code?: string }
+	> {
+		this.hydrateSockets()
+		const boardId = typeof opts.boardId === 'string' ? opts.boardId.trim() : ''
+		if (!BOARD_UUID_RE.test(boardId)) {
+			return { ok: false, status: 400, error: 'Invalid boardId' }
+		}
+		const key = sanitizeOwnerKey(opts.googleOwnerKey)
+		if (!key || !key.startsWith('google:')) {
+			return { ok: false, status: 400, error: 'Invalid google owner' }
+		}
+		const stored =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (stored && stored.startsWith('google:') && stored !== key) {
+			return {
+				ok: false,
+				status: 403,
+				error: 'Owner does not match this board',
+			}
+		}
+		try {
+			const rewritten = await this.applyTempPlayerUrlRewrite(boardId, key)
+			return { ok: true, rewritten }
+		} catch (err) {
+			const persistErr = asScenePersistError(err)
+			this.notifyScenePersistError('', persistErr)
+			return {
+				ok: false,
+				status: 500,
+				error: persistErr.message,
+				code: persistErr.code,
+			}
 		}
 	}
 
@@ -966,6 +1061,23 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		await this.scheduleNextAlarm()
+
+		const savedNow = await this.isSavedToLibrary()
+		const googleNow =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (savedNow && googleNow && googleNow.startsWith('google:')) {
+			try {
+				await this.applyTempPlayerUrlRewrite(boardId, googleNow)
+			} catch (err) {
+				const persistErr = asScenePersistError(err)
+				this.notifyScenePersistError('', persistErr)
+				return json(500, {
+					error: persistErr.message,
+					code: persistErr.code,
+				})
+			}
+		}
+
 		return json(200, await this.readPublicMeta(true))
 	}
 
@@ -1230,6 +1342,37 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 		this.sceneCache = scene
 		this.sceneLoaded = true
+	}
+
+	/**
+	 * Rewrite persisted embeddable player URLs from this board's temp prefix
+	 * to `google:`. No-op when none match. persistScene throws on failure;
+	 * callers must not broadcast until this returns.
+	 */
+	private async applyTempPlayerUrlRewrite(
+		boardId: string,
+		googleOwnerKey: string,
+	): Promise<number> {
+		this.hydrateSockets()
+		const scene = await this.loadScene()
+		const { elements, rewritten } = rewriteTempPlayerUrlsInElements(
+			scene.elements,
+			`temp:${boardId}`,
+			googleOwnerKey,
+		)
+		if (rewritten === 0) return 0
+		const nextScene: LiveScene = { elements, appState: scene.appState }
+		this.persistScene(nextScene)
+		this.updatesSinceFullSync = 0
+		this.broadcastScene(
+			{
+				type: 'scene:sync',
+				elements: nextScene.elements,
+				appState: nextScene.appState,
+			},
+			null,
+		)
+		return rewritten
 	}
 
 	private async sendFullScene(ws: WebSocket): Promise<void> {
