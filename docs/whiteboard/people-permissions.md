@@ -8,6 +8,8 @@ Live presence, four roles, Follow, and Follow Me / force-follow. Live **cursors 
 
 Connected sessions appear in the board manage panel under **People**. Anyone may follow another person’s camera. **Owner** and **Manager** can change roles (with the rules below) and force the room — or one person — to follow a target. Viewers cannot mutate the document: Excalidraw `viewModeEnabled` **and** the Durable Object drops their `scene:update` writes.
 
+A share code (or board UUID) only **opens** the board. Role is decided on connect. Share-code joiners land as **Viewer** unless **Class can edit** is On (`meta:classCanEdit`; manage-panel switch) — then they land as **Editor**. UUID-only stays **Viewer**. Owner or Manager can still set **Editor** on **People**. A join code alone does not mean students can draw.
+
 ## Roles
 
 | Role | Canvas | Roles UI | Follow force |
@@ -24,7 +26,9 @@ How Owner is chosen:
 - **Saved board:** Google account in `meta:cloudOwnerKey` (`google:{accountId}`).
 - **Scratch board:** creating browser that presents the host secret (ephemeral Owner). Guests without that secret default to **Viewer**.
 
-Guest identity sticks on that browser (`deviceInstallId` + generated display name). New browser = new guest. Owner/Manager can promote/demote that person on this board.
+Guest **Editor** from **People** is not sticky on a shared Chromebook. Signed-out connect `userId` is minted for this board visit (this page load) in `getBoardConnectIdentity()` — not the durable `deviceInstallId` in `localStorage`. Refresh, a new tab, or joining again from the hub is a new guest and defaults to **Viewer**, unless they join with the active share code while **Class can edit** is On. Owner/Manager can still promote that guest for this visit only.
+
+**Google sign-in** is how a person stays Editor (or Manager) across visits and class periods. On shared Chromebooks, sign out of Google when the period ends so the next student does not keep a signed-in role. Signed-out guests do not need a site-data clear.
 
 Helpers: `WHITEBOARD_ROLES`, `roleCanEdit`, `assignableRolesFor` in `src/lib/whiteboard-sync.ts`.
 
@@ -41,7 +45,7 @@ Participant row shape (`ParticipantRow`):
 | Field | Meaning |
 |-------|---------|
 | `sessionId` | WebSocket session id |
-| `userId` | Google account id or guest `deviceInstallId` (Follow target) |
+| `userId` | Google account id, or a per-visit guest UUID (Follow target). Not `deviceInstallId`. |
 | `displayName` | Full Google name or generated guest name |
 | `role` | `owner` \| `manager` \| `editor` \| `viewer` |
 | `canEdit` | Derived from role (`roleCanEdit`) |
@@ -96,7 +100,7 @@ Legacy `{ "canEdit": true | false }` maps to Editor / Viewer.
 - Proof required: host secret **or** live Owner/Manager session token (**401** / **403** otherwise).
 - Owner session cannot be demoted (**400**).
 - Manager cannot assign Manager or change Owner / another Manager.
-- Default for new guest connects: **Viewer**.
+- Default for new guest connects: **Viewer** (UUID-only always). Share-code joiners land as **Editor** when **Class can edit** is On.
 - DO updates socket attachment, sends `wb:role` to that session, then rebroadcasts People.
 
 ### Client readonly
@@ -147,14 +151,15 @@ Manage panel listens for `scsfoxchase:whiteboard-force-follow` to keep the On/Of
 
 | Action | Who |
 |--------|-----|
-| Open board by UUID / code | Anyone with link or open code |
+| Open board by UUID / Open code | Anyone with the link, or `GET /api/whiteboard/join/:code` (unauthenticated, rate-limited) |
 | Edit canvas | Owner, Manager, Editor |
-| View only | Viewer (default for guests) |
+| View only | Viewer (default for guests and UUID-only links; code join unless Class can edit is On) |
 | Grant/revoke Manager | Owner only |
-| Set Editor / Viewer | Owner or Manager |
+| Set Editor / Viewer | Owner or Manager (per person on People) |
+| Class can edit | Owner or Manager. When On, share-code joiners land as Editor. UUID-only stays Viewer. Default Off. |
 | Follow Me / force-follow | Owner or Manager |
 | Voluntary Follow | Any session (subject to force-follow) |
-| Open/Close share code | Anyone with board UUID |
+| Open / Closed / rotate / copy share code | Owner or Manager. Viewer **403**. Leftover host on a Google-owned board is not enough. Closed drops the KV mapping; UUID access remains a separate capability. |
 
 ## Key files
 

@@ -171,3 +171,43 @@ export async function requireClerkWhiteboardAuth(
 		},
 	}
 }
+
+/**
+ * Optional Clerk check for WebSocket connect / public meta.
+ * Returns null when unsigned, misconfigured, or not allowed — never throws.
+ */
+export async function tryClerkWhiteboardAuth(
+	request: Request,
+	env: Env,
+): Promise<ClerkWhiteboardAuth | null> {
+	const authorization = request.headers.get('Authorization')?.trim()
+	const cookie = request.headers.get('Cookie') || ''
+	if (!authorization && !/__session/i.test(cookie)) return null
+	try {
+		const result = await requireClerkWhiteboardAuth(request, env)
+		return result.ok ? result.auth : null
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Verify a Clerk session JWT from a WebSocket first-message or forwarded Bearer.
+ * Do not put this token on a query string (access logs).
+ */
+export async function verifyClerkWhiteboardToken(
+	token: string,
+	env: Env,
+	origin?: string | null,
+): Promise<ClerkWhiteboardAuth | null> {
+	const value = token.trim()
+	if (!value) return null
+	const headers = new Headers()
+	headers.set('Authorization', `Bearer ${value}`)
+	if (origin) headers.set('Origin', origin)
+	const request = new Request('https://scsfoxchase.tech/api/whiteboard/connect', {
+		method: 'GET',
+		headers,
+	})
+	return tryClerkWhiteboardAuth(request, env)
+}

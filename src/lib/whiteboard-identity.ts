@@ -21,11 +21,43 @@ export type WhiteboardIdentity = {
 
 const AUTH_EVENT = 'scsfoxchase:whiteboard-auth'
 const AUTH_READY_EVENT = 'scsfoxchase:whiteboard-auth-ready'
+const AUTH_STORE_KEY = '__scsfoxchaseWhiteboardAuth'
 
-let activeIdentity: WhiteboardIdentity | null = null
-let sessionTokenGetter: (() => Promise<string | null>) | null = null
-/** True after AuthBridge has applied the first known Clerk state (in or out). */
-let authResolved = false
+type WhiteboardAuthStore = {
+	identity: WhiteboardIdentity | null
+	sessionTokenGetter: (() => Promise<string | null>) | null
+	authResolved: boolean
+}
+
+/**
+ * Shared by every Vite client entry (Clerk island, Excalidraw island, hub/menu
+ * scripts). Module-local `let` state is duplicated when those entries bundle
+ * this file separately, which made the board-page manage panel think the user
+ * was signed out while the hub library used the Clerk island's copy.
+ */
+function getAuthStore(): WhiteboardAuthStore {
+	if (typeof window === 'undefined') {
+		return {
+			identity: null,
+			sessionTokenGetter: null,
+			authResolved: false,
+		}
+	}
+	const root = window as Window & { [AUTH_STORE_KEY]?: WhiteboardAuthStore }
+	if (!root[AUTH_STORE_KEY]) {
+		root[AUTH_STORE_KEY] = {
+			identity: null,
+			sessionTokenGetter: null,
+			authResolved: false,
+		}
+	}
+	return root[AUTH_STORE_KEY]
+}
+
+function identityKey(identity: WhiteboardIdentity | null): string {
+	if (!identity) return ''
+	return `${identity.accountId}\0${identity.clerkUserId}\0${identity.ownerKey}`
+}
 
 export function isClerkConfigured(): boolean {
 	const key = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY as string | undefined
@@ -33,11 +65,11 @@ export function isClerkConfigured(): boolean {
 }
 
 export function getActiveIdentity(): WhiteboardIdentity | null {
-	return activeIdentity
+	return getAuthStore().identity
 }
 
 export function isSignedIn(): boolean {
-	return activeIdentity !== null
+	return getAuthStore().identity !== null
 }
 
 /**
@@ -46,7 +78,7 @@ export function isSignedIn(): boolean {
  */
 export function isAuthResolved(): boolean {
 	if (!isClerkConfigured()) return true
-	return authResolved
+	return getAuthStore().authResolved
 }
 
 /**
@@ -54,8 +86,9 @@ export function isAuthResolved(): boolean {
  * Idempotent — only the first call fires AUTH_READY listeners.
  */
 export function markAuthResolved(): void {
-	if (authResolved) return
-	authResolved = true
+	const store = getAuthStore()
+	if (store.authResolved) return
+	store.authResolved = true
 	if (typeof window !== 'undefined') {
 		window.dispatchEvent(new Event(AUTH_READY_EVENT))
 	}
@@ -82,12 +115,13 @@ export function whenAuthReady(): Promise<void> {
 }
 
 export function setActiveIdentity(identity: WhiteboardIdentity | null): void {
-	activeIdentity = identity
-	if (typeof window !== 'undefined') {
-		window.dispatchEvent(
-			new CustomEvent(AUTH_EVENT, { detail: identity }),
-		)
-	}
+	const store = getAuthStore()
+	const changed = identityKey(store.identity) !== identityKey(identity)
+	store.identity = identity
+	if (!changed || typeof window === 'undefined') return
+	window.dispatchEvent(
+		new CustomEvent(AUTH_EVENT, { detail: identity }),
+	)
 }
 
 export function onAuthChange(
@@ -96,7 +130,9 @@ export function onAuthChange(
 	if (typeof window === 'undefined') return () => {}
 	const handler = (event: Event) => {
 		const detail = (event as CustomEvent<WhiteboardIdentity | null>).detail
-		listener(detail ?? null)
+		const identity = detail ?? null
+		getAuthStore().identity = identity
+		listener(identity)
 	}
 	window.addEventListener(AUTH_EVENT, handler)
 	return () => window.removeEventListener(AUTH_EVENT, handler)
@@ -105,13 +141,14 @@ export function onAuthChange(
 export function setSessionTokenGetter(
 	getter: (() => Promise<string | null>) | null,
 ): void {
-	sessionTokenGetter = getter
+	getAuthStore().sessionTokenGetter = getter
 }
 
 export async function getSessionToken(): Promise<string | null> {
-	if (!sessionTokenGetter) return null
+	const getter = getAuthStore().sessionTokenGetter
+	if (!getter) return null
 	try {
-		return await sessionTokenGetter()
+		return await getter()
 	} catch {
 		return null
 	}

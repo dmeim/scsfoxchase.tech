@@ -14,7 +14,7 @@ import type {
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
-import { whenAuthReady } from '../lib/whiteboard-identity'
+import { getSessionToken, whenAuthReady } from '../lib/whiteboard-identity'
 import {
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
@@ -34,6 +34,7 @@ import {
 import { useWhiteboardExcalidrawFiles } from '../lib/whiteboard-excalidraw-files'
 // PHASE 3.3
 import {
+  FOLLOW_SOCKET_GAP_MS,
   getBoardConnectIdentity,
   useWhiteboardExcalidrawRoles,
 } from '../lib/whiteboard-excalidraw-roles'
@@ -94,6 +95,7 @@ export default function WhiteboardCanvas({
     elements: SceneElement[]
     appState: SceneAppState | null
   } | null>(null)
+  const persistErrorToastAtRef = useRef(0)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
 
@@ -101,6 +103,13 @@ export default function WhiteboardCanvas({
   const roles = useWhiteboardExcalidrawRoles({ boardId, apiRef, wsRef })
   const handleRoleMessageRef = useRef(roles.handleSocketMessage)
   handleRoleMessageRef.current = roles.handleSocketMessage
+  const onUserFollowRef = useRef(roles.onUserFollow)
+  onUserFollowRef.current = roles.onUserFollow
+  const reassertFollowRef = useRef(roles.reassertFollow)
+  reassertFollowRef.current = roles.reassertFollow
+  const resubscribeFollowRef = useRef(roles.resubscribeFollow)
+  resubscribeFollowRef.current = roles.resubscribeFollow
+  const unsubUserFollowRef = useRef<(() => void) | null>(null)
   const canEditRef = useRef(roles.canEdit)
   canEditRef.current = roles.canEdit
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -131,6 +140,13 @@ export default function WhiteboardCanvas({
       }
     }
   }, [roles.forceFollowLocked])
+
+  useEffect(() => {
+    return () => {
+      unsubUserFollowRef.current?.()
+      unsubUserFollowRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     ensureExcalidrawAssetPath()
@@ -218,14 +234,14 @@ export default function WhiteboardCanvas({
       elements: readonly OrderedExcalidrawElement[],
       appState: AppState,
       forceFull: boolean,
-    ) => {
+    ): boolean => {
       const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      if (applyingRemoteRef.current) return
-      if (!canEditRef.current) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false
+      if (applyingRemoteRef.current) return false
+      if (!canEditRef.current) return false
 
       const version = getSceneVersion(elements)
-      if (!forceFull && version === lastSceneVersionRef.current) return
+      if (!forceFull && version === lastSceneVersionRef.current) return true
 
       const asScene = elements as unknown as SceneElement[]
       const dirty = elementsWithIncreasedVersion(
@@ -234,14 +250,12 @@ export default function WhiteboardCanvas({
       )
       if (!forceFull && dirty.length === 0) {
         lastSceneVersionRef.current = version
-        return
+        return true
       }
 
       fullSyncCounterRef.current += 1
       const full = forceFull || fullSyncCounterRef.current % 15 === 0
       const payload = full ? asScene : dirty
-      rememberElementVersions(payload, lastElementVersionsRef.current)
-      lastSceneVersionRef.current = version
 
       let databaseJson: string | undefined
       try {
@@ -250,24 +264,52 @@ export default function WhiteboardCanvas({
         databaseJson = undefined
       }
 
-      ws.send(
-        JSON.stringify({
-          type: 'scene:update',
-          elements: payload,
-          full,
-          databaseJson,
-        }),
-      )
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'scene:update',
+            elements: payload,
+            full,
+            databaseJson,
+          }),
+        )
+      } catch {
+        return false
+      }
+
+      rememberElementVersions(payload, lastElementVersionsRef.current)
+      lastSceneVersionRef.current = version
+      return true
     },
     [],
   )
 
-  const flushPending = useCallback(() => {
-    const pending = pendingFlushRef.current
-    pendingFlushRef.current = null
-    if (!pending) return
-    sendSceneUpdate(pending.elements, pending.appState, false)
-  }, [sendSceneUpdate])
+  const flushPending = useCallback(
+    (forceFull = false) => {
+      const pending = pendingFlushRef.current
+      if (!pending) return
+      const sent = sendSceneUpdate(
+        pending.elements,
+        pending.appState,
+        forceFull,
+      )
+      if (sent) pendingFlushRef.current = null
+    },
+    [sendSceneUpdate],
+  )
+
+  const flushNow = useCallback(
+    (forceFull = false) => {
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+      }
+      flushPending(forceFull)
+    },
+    [flushPending],
+  )
+  const flushNowRef = useRef(flushNow)
+  flushNowRef.current = flushNow
 
   const handleChange = useCallback(
     (
@@ -292,12 +334,28 @@ export default function WhiteboardCanvas({
   )
 
   useEffect(() => {
+    const persist = () => {
+      flushNowRef.current(true)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') persist()
+    }
+    window.addEventListener('pagehide', persist)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', persist)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!boardId) return
     let cancelled = false
     let pingTimer: number | null = null
     let resyncTimer: number | null = null
     let reconnectTimer: number | null = null
     let attempt = 0
+    let lastSocketJsAt = 0
 
     const clearTimers = () => {
       if (pingTimer != null) {
@@ -317,12 +375,13 @@ export default function WhiteboardCanvas({
 
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
+      const sessionToken = (await getSessionToken()) ?? ''
+      const hostSecret = getHostSecret(boardId)
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
         sessionId,
-        hostSecret: getHostSecret(boardId),
         displayName: identity.displayName,
-        userId: identity.userId,
+        userId: sessionToken ? '' : identity.userId,
       })
 
       const ws = new WebSocket(uri)
@@ -331,9 +390,24 @@ export default function WhiteboardCanvas({
       ws.addEventListener('open', () => {
         attempt = 0
         clearTimers()
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: 'wb:auth',
+              token: sessionToken,
+              ...(hostSecret ? { hostSecret } : {}),
+            }),
+          )
+          // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
+          resubscribeFollowRef.current()
+        }
         pingTimer = window.setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('{"type":"ping"}')
+          if (ws.readyState !== WebSocket.OPEN) return
+          ws.send('{"type":"ping"}')
+          // Auto-pong does not wake DO JS. After a gap, replay wb:follow even
+          // if the tab never disconnected.
+          if (Date.now() - lastSocketJsAt >= FOLLOW_SOCKET_GAP_MS) {
+            resubscribeFollowRef.current()
           }
         }, CLIENT_PING_MS)
         resyncTimer = window.setInterval(() => {
@@ -345,6 +419,7 @@ export default function WhiteboardCanvas({
             true,
           )
         }, 30_000)
+        flushNowRef.current(true)
         if (apiRef.current) {
           ws.send(JSON.stringify({ type: 'scene:request' }))
         }
@@ -361,7 +436,31 @@ export default function WhiteboardCanvas({
         if (!parsed || typeof parsed !== 'object') return
         const data = parsed as Record<string, unknown>
 
-        if (data.type === 'pong') return
+        if (data.type === 'pong') {
+          // Socket stayed OPEN across a hibernation gap; resubscribe wb:follow.
+          if (Date.now() - lastSocketJsAt >= FOLLOW_SOCKET_GAP_MS) {
+            resubscribeFollowRef.current()
+          }
+          return
+        }
+        lastSocketJsAt = Date.now()
+
+        if (data.type === 'wb:error') {
+          const message =
+            typeof data.message === 'string' && data.message.trim()
+              ? data.message
+              : 'This board is too large to save. The last change was not stored.'
+          const now = Date.now()
+          if (now - persistErrorToastAtRef.current >= 5000) {
+            persistErrorToastAtRef.current = now
+            apiRef.current?.setToast?.({
+              message,
+              duration: 8000,
+              closable: true,
+            })
+          }
+          return
+        }
 
         // PHASE 3.3
         if (handleRoleMessageRef.current(data)) return
@@ -381,7 +480,24 @@ export default function WhiteboardCanvas({
 
       ws.addEventListener('close', () => {
         clearTimers()
-        if (wsRef.current === ws) wsRef.current = null
+        if (wsRef.current === ws) {
+          const api = apiRef.current
+          if (
+            api &&
+            canEditRef.current &&
+            !pendingFlushRef.current &&
+            !applyingRemoteRef.current
+          ) {
+            const elements = api.getSceneElementsIncludingDeleted()
+            if (getSceneVersion(elements) !== lastSceneVersionRef.current) {
+              pendingFlushRef.current = {
+                elements,
+                appState: api.getAppState(),
+              }
+            }
+          }
+          wsRef.current = null
+        }
         if (cancelled) return
         const delay = Math.min(10_000, 500 * 2 ** attempt)
         attempt += 1
@@ -391,16 +507,24 @@ export default function WhiteboardCanvas({
       })
     }
 
+    const onVisibleAfterGap = () => {
+      if (document.visibilityState !== 'visible') return
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (Date.now() - lastSocketJsAt < FOLLOW_SOCKET_GAP_MS) return
+      // Tab stayed connected; still resubscribe wb:follow after a gap.
+      resubscribeFollowRef.current()
+    }
+    document.addEventListener('visibilitychange', onVisibleAfterGap)
+
     void connect()
 
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', onVisibleAfterGap)
       clearTimers()
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
-      if (flushTimerRef.current != null) {
-        window.clearTimeout(flushTimerRef.current)
-        flushTimerRef.current = null
-      }
+      flushNowRef.current(true)
       const ws = wsRef.current
       wsRef.current = null
       try {
@@ -414,6 +538,13 @@ export default function WhiteboardCanvas({
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       apiRef.current = api
+      unsubUserFollowRef.current?.()
+      unsubUserFollowRef.current = api.onUserFollow((payload) => {
+        onUserFollowRef.current(payload)
+      })
+      requestAnimationFrame(() => {
+        reassertFollowRef.current()
+      })
       const pending = pendingRemoteRef.current
       if (pending) {
         pendingRemoteRef.current = null
@@ -442,7 +573,14 @@ export default function WhiteboardCanvas({
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0 }}>
+    <div
+      ref={wrapRef}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        touchAction: roles.forceFollowLocked ? 'none' : undefined,
+      }}
+    >
       <Excalidraw
         excalidrawAPI={handleApi}
         theme={theme}
@@ -456,7 +594,6 @@ export default function WhiteboardCanvas({
         // PHASE 3.3
         viewModeEnabled={roles.viewModeEnabled}
         collaborators={roles.collaborators}
-        onUserFollow={roles.onUserFollow}
         onScrollChange={roles.onScrollChange}
       />
       {roles.forceFollowLocked ? (
@@ -465,9 +602,10 @@ export default function WhiteboardCanvas({
           style={{
             position: 'absolute',
             inset: 0,
-            zIndex: 6,
+            zIndex: 1,
             background: 'transparent',
             touchAction: 'none',
+            pointerEvents: 'none',
           }}
         />
       ) : null}

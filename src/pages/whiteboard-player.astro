@@ -31,21 +31,91 @@ export const prerender = true;
 				var params = new URLSearchParams(location.search);
 				var owner = params.get('owner') || '';
 				var id = params.get('id') || '';
+				var board = params.get('board') || '';
 				var ownerOk = /^(temp|google|local):[A-Za-z0-9_.:@-]{1,128}$/.test(
 					owner,
 				);
-				var idOk =
-					/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-						id,
-					);
-				if (!ownerOk || !idOk) return;
+				var uuidRe =
+					/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+				if (!uuidRe.test(id)) return;
+				if (owner && !ownerOk) return;
+				if (!owner && !board) return;
 				var video = document.getElementById('wb-player');
 				if (!video) return;
-				video.src =
-					'/api/whiteboard/assets/' +
-					encodeURIComponent(owner) +
-					'/' +
-					encodeURIComponent(id);
+
+				if (!board && owner.indexOf('temp:') === 0) {
+					var fromTemp = owner.slice(5);
+					if (uuidRe.test(fromTemp)) board = fromTemp;
+				}
+
+				function assetUrl(ownerKey) {
+					var url =
+						'/api/whiteboard/assets/' +
+						encodeURIComponent(ownerKey) +
+						'/' +
+						encodeURIComponent(id);
+					if (board && uuidRe.test(board)) {
+						url += '?board=' + encodeURIComponent(board);
+					}
+					return url;
+				}
+
+				function unique(list) {
+					var out = [];
+					var seen = {};
+					for (var i = 0; i < list.length; i++) {
+						var key = list[i];
+						if (!key || seen[key]) continue;
+						seen[key] = true;
+						out.push(key);
+					}
+					return out;
+				}
+
+				async function ownersToTry() {
+					var google = owner.indexOf('google:') === 0 ? owner : '';
+					var temp = board && uuidRe.test(board) ? 'temp:' + board : '';
+					if (!google && board && uuidRe.test(board)) {
+						try {
+							var res = await fetch(
+								'/api/whiteboard/boards/' +
+									encodeURIComponent(board) +
+									'/meta',
+								{ credentials: 'same-origin' },
+							);
+							if (res.ok) {
+								var body = await res.json();
+								if (
+									typeof body.cloudOwnerKey === 'string' &&
+									body.cloudOwnerKey.indexOf('google:') === 0
+								) {
+									google = body.cloudOwnerKey;
+								}
+							}
+						} catch (e) {}
+					}
+					return unique([google, temp, owner]);
+				}
+
+				async function resolve() {
+					var keys = await ownersToTry();
+					for (var i = 0; i < keys.length; i++) {
+						var url = assetUrl(keys[i]);
+						try {
+							var head = await fetch(url, {
+								method: 'HEAD',
+								credentials: 'same-origin',
+							});
+							if (head.ok) {
+								video.src = url;
+								return;
+							}
+						} catch (e) {}
+					}
+					if (keys.length) video.src = assetUrl(keys[0]);
+				}
+
+				resolve();
 			})();
 		</script>
 	</body>

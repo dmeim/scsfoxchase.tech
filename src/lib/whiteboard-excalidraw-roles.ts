@@ -12,7 +12,7 @@ import {
 import type { Collaborator, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { getActiveIdentity } from './whiteboard-identity'
 import {
-	getOrCreateGuestDisplayName,
+	generateGuestDisplayName,
 	peopleListLabel,
 } from './whiteboard-display-name'
 import {
@@ -26,8 +26,11 @@ import {
 	type ParticipantRow,
 	type WhiteboardRole,
 } from './whiteboard-participants'
-import { isWhiteboardRole, roleCanEdit } from './whiteboard-sync'
-import { getDeviceInstallId } from '../scripts/whiteboard-library'
+import {
+	isGuestConnectUserId,
+	isWhiteboardRole,
+	roleCanEdit,
+} from './whiteboard-sync'
 
 const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
@@ -35,21 +38,39 @@ const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
 const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
 const BOUNDS_THROTTLE_MS = 120
+/** Auto-pong keeps the socket OPEN without waking DO JS; resubscribe after this silence. */
+export const FOLLOW_SOCKET_GAP_MS = 10_000
 
 type UserToFollow = { socketId: string; username: string }
 
+/**
+ * Signed-out connect `userId` for this board page load. Module-local so
+ * WebSocket reconnects keep the same guest; a new visit mints a new UUID.
+ * Must not use localStorage `deviceInstallId` — that is Chromebook-lifetime
+ * and would let period 2 inherit period 1's stored Editor role.
+ */
+let guestVisitUserId = ''
+
+function getGuestVisitUserId(): string {
+	if (guestVisitUserId && isGuestConnectUserId(guestVisitUserId)) {
+		return guestVisitUserId
+	}
+	guestVisitUserId = crypto.randomUUID()
+	return guestVisitUserId
+}
+
 export function getBoardConnectIdentity(): { displayName: string; userId: string } {
 	const identity = getActiveIdentity()
-	const deviceId = getDeviceInstallId()
 	if (identity) {
 		return {
 			displayName: identity.displayName.slice(0, 48),
 			userId: identity.accountId,
 		}
 	}
+	const userId = getGuestVisitUserId()
 	return {
-		displayName: getOrCreateGuestDisplayName(deviceId),
-		userId: deviceId,
+		displayName: generateGuestDisplayName(userId),
+		userId,
 	}
 }
 
@@ -89,6 +110,7 @@ function publishHello(detail: {
 	role: WhiteboardRole
 	canEdit: boolean
 	authToken: string
+	title?: string
 }) {
 	if (typeof window === 'undefined') return
 	window.dispatchEvent(new CustomEvent(HELLO_EVENT, { detail }))
@@ -116,6 +138,16 @@ function collaboratorsFromPeople(
 		})
 	}
 	return map
+}
+
+function sceneCollaborators(
+	people: ParticipantRow[],
+	yourSessionId: string,
+): Map<NonNullable<Collaborator['socketId']>, Collaborator> {
+	return collaboratorsFromPeople(people, yourSessionId) as Map<
+		NonNullable<Collaborator['socketId']>,
+		Collaborator
+	>
 }
 
 export function useWhiteboardExcalidrawRoles(opts: {
@@ -152,6 +184,8 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		new Map<string, [number, number, number, number]>(),
 	)
 	const forceCameraRafRef = useRef<number | null>(null)
+	const followPaintRafRef = useRef<number | null>(null)
+	const pendingFollowApplyRef = useRef(false)
 	const [forceFollowLocked, setForceFollowLocked] = useState(false)
 
 	const beginApplyingFollow = () => {
@@ -220,9 +254,21 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	const applyUserToFollow = useCallback(
 		(target: UserToFollow | null) => {
 			const api = apiRef.current
-			if (!api) return
+			if (!api) {
+				pendingFollowApplyRef.current = true
+				const person = target
+					? findPerson((row) => row.sessionId === target.socketId)
+					: undefined
+				publishFollowing(person?.userId ?? (target ? target.socketId : null))
+				return
+			}
+			pendingFollowApplyRef.current = false
 			beginApplyingFollow()
 			api.updateScene({
+				collaborators: sceneCollaborators(
+					peopleRef.current,
+					sessionIdRef.current,
+				),
 				appState: {
 					userToFollow: target
 						? {
@@ -246,7 +292,10 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			const target = effectiveFollow()
 			if (!target || target.socketId !== socketId) return
 			const api = apiRef.current
-			if (!api) return
+			if (!api) {
+				pendingFollowApplyRef.current = true
+				return
+			}
 			const current = api.getAppState()
 			const next = zoomToFitBounds({
 				bounds,
@@ -254,20 +303,18 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				fitToViewport: true,
 				viewportZoomFactor: 1,
 			})
-			const alreadyFitted =
+			const cameraFitted =
 				current.scrollX === next.appState.scrollX &&
 				current.scrollY === next.appState.scrollY &&
-				current.zoom.value === next.appState.zoom.value &&
-				current.userToFollow?.socketId === target.socketId
-			if (alreadyFitted) {
-				const person = findPerson((row) => row.sessionId === target.socketId)
-				publishFollowing(person?.userId ?? target.socketId)
-				return
-			}
+				current.zoom.value === next.appState.zoom.value
 			beginApplyingFollow()
 			api.updateScene({
+				collaborators: sceneCollaborators(
+					peopleRef.current,
+					sessionIdRef.current,
+				),
 				appState: {
-					...next.appState,
+					...(cameraFitted ? {} : next.appState),
 					userToFollow: {
 						socketId: target.socketId as Collaborator['socketId'],
 						username: target.username,
@@ -293,6 +340,16 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		}
 		applyUserToFollow(target)
 	}, [applyRemoteBounds, applyUserToFollow, forcedTarget])
+
+	const scheduleReassertAfterPaint = useCallback(() => {
+		if (followPaintRafRef.current != null) {
+			window.cancelAnimationFrame(followPaintRafRef.current)
+		}
+		followPaintRafRef.current = window.requestAnimationFrame(() => {
+			followPaintRafRef.current = null
+			reassertFollow()
+		})
+	}, [reassertFollow])
 
 	const scheduleForceCameraLock = useCallback(() => {
 		if (forceCameraRafRef.current != null) return
@@ -353,6 +410,15 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		},
 		[findPerson, sendJson],
 	)
+
+	/** Replay wb:follow while the socket is OPEN after a gap (open/reconnect or hibernation). */
+	const resubscribeFollow = useCallback(() => {
+		const ws = wsRef.current
+		if (!ws || ws.readyState !== WebSocket.OPEN) return
+		const target = effectiveFollow()
+		if (!target) return
+		subscribeFollow(target)
+	}, [effectiveFollow, subscribeFollow, wsRef])
 
 	const setVoluntaryFollow = useCallback(
 		(target: UserToFollow | null) => {
@@ -444,6 +510,19 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					role: nextRole,
 					canEdit: canEditNext,
 					authToken,
+					title: typeof data.title === 'string' ? data.title : undefined,
+				})
+				resubscribeFollow()
+				return true
+			}
+
+			if (data.type === 'wb:title' && typeof data.title === 'string') {
+				publishHello({
+					sessionId: sessionIdRef.current,
+					role: roleRef.current,
+					canEdit: roleCanEdit(roleRef.current),
+					authToken: '',
+					title: data.title,
 				})
 				return true
 			}
@@ -495,7 +574,17 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					setRole(self.role)
 					setCanEdit(self.canEdit)
 				}
-				setCollaborators(collaboratorsFromPeople(rows, yourSessionId))
+				const map = collaboratorsFromPeople(rows, yourSessionId)
+				setCollaborators(map)
+				const api = apiRef.current
+				if (api) {
+					api.updateScene({
+						collaborators: sceneCollaborators(rows, yourSessionId),
+						captureUpdate: CaptureUpdateAction.NEVER,
+					})
+				} else {
+					pendingFollowApplyRef.current = true
+				}
 				publishParticipants(
 					rows,
 					yourSessionId,
@@ -503,7 +592,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				)
 				setForceFollowLocked(Boolean(forcedTarget()))
 				refreshFollowedBy()
-				reassertFollow()
+				scheduleReassertAfterPaint()
 				return true
 			}
 
@@ -516,7 +605,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				}
 				setForceFollowLocked(Boolean(forcedTarget()))
 				refreshFollowedBy()
-				reassertFollow()
+				scheduleReassertAfterPaint()
 				subscribeFollow(effectiveFollow())
 				return true
 			}
@@ -542,11 +631,13 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		},
 		[
 			applyRemoteBounds,
+			apiRef,
 			boardId,
 			effectiveFollow,
 			forcedTarget,
-			reassertFollow,
 			refreshFollowedBy,
+			resubscribeFollow,
+			scheduleReassertAfterPaint,
 			sendSceneBounds,
 			subscribeFollow,
 		],
@@ -577,11 +668,18 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	}, [effectiveFollow, findPerson, setVoluntaryFollow])
 
 	useEffect(() => {
+		scheduleReassertAfterPaint()
+	}, [collaborators, role, canEdit, forceFollowLocked, scheduleReassertAfterPaint])
+
+	useEffect(() => {
 		return () => {
 			if (boundsTimerRef.current != null) {
 				window.clearTimeout(boundsTimerRef.current)
 			}
 			cancelForceCameraRaf()
+			if (followPaintRafRef.current != null) {
+				window.cancelAnimationFrame(followPaintRafRef.current)
+			}
 		}
 	}, [])
 
@@ -595,5 +693,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		onUserFollow,
 		onScrollChange,
 		handleSocketMessage,
+		reassertFollow,
+		resubscribeFollow,
 	}
 }

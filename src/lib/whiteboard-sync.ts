@@ -15,6 +15,43 @@ export const CLIENT_PING_MS = 25_000
 export const FULL_RESYNC_EVERY = 20
 export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
+export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
+export const SCENE_PERSIST_FAILED_CODE = 'persist_failed' as const
+export const SCENE_TOO_LARGE_MESSAGE =
+	'This board is too large to save. The last change was not stored.'
+export const SCENE_PERSIST_FAILED_MESSAGE =
+	'Could not save this board. The last change was not stored.'
+
+export type SceneErrorCode =
+	| typeof SCENE_TOO_LARGE_CODE
+	| typeof SCENE_PERSIST_FAILED_CODE
+
+export type SceneErrorMessage = {
+	type: 'wb:error'
+	code: SceneErrorCode
+	message: string
+}
+
+export class ScenePersistError extends Error {
+	readonly code: SceneErrorCode
+	constructor(code: SceneErrorCode, message: string) {
+		super(message)
+		this.name = 'ScenePersistError'
+		this.code = code
+	}
+}
+
+export function sceneTooLargeError(): ScenePersistError {
+	return new ScenePersistError(SCENE_TOO_LARGE_CODE, SCENE_TOO_LARGE_MESSAGE)
+}
+
+export function asScenePersistError(err: unknown): ScenePersistError {
+	if (err instanceof ScenePersistError) return err
+	return new ScenePersistError(
+		SCENE_PERSIST_FAILED_CODE,
+		SCENE_PERSIST_FAILED_MESSAGE,
+	)
+}
 
 /** DO storage: first secret to connect is ephemeral Owner (Phase 3 roles). */
 export const META_HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
@@ -24,6 +61,8 @@ export const META_TEMP_ASSET_PREFIX_KEY = 'meta:tempAssetPrefix'
 export const META_UNSAVED_EXPIRES_AT_KEY = 'meta:unsavedExpiresAt'
 export const META_CREATED_AT_KEY = 'meta:createdAt'
 export const META_BOARD_ID_KEY = 'meta:boardId'
+/** Owner/Manager: joiners of the active share code land as Editor. */
+export const META_CLASS_CAN_EDIT_KEY = 'meta:classCanEdit'
 
 export type SceneElement = {
 	id: string
@@ -46,6 +85,7 @@ export type DatabaseScene = {
 export type OwnerHook = {
 	/** Scratch boards are ephemeral until Phase 3 claims a Google Owner. */
 	kind: 'ephemeral' | 'google'
+	/** `google:` prefix on can-edit hello; Viewers get null. */
 	cloudOwnerKey: string | null
 	isHost: boolean
 }
@@ -108,9 +148,42 @@ export type HelloMessage = {
 	canEdit: boolean
 	savedToLibrary: boolean
 	owner: OwnerHook
+	/** Live room name. Recents/Library is only an index of this value. */
+	title: string
+	/** Joiners of the active share code land as Editor when true. */
+	classCanEdit: boolean
 	// PHASE 3.3
 	role: WhiteboardRole
 	authToken: string
+}
+
+export type BoardPublicMeta = {
+	savedToLibrary: boolean
+	/** Can-edit live session or Clerk Owner/Manager/Editor. Unsigned GET: null. */
+	cloudOwnerKey: string | null
+	createdAt: string | null
+	unsavedExpiresAt: string | null
+	title: string
+	owner: OwnerHook
+	classCanEdit: boolean
+}
+
+/** First WebSocket message: Clerk JWT and optional scratch host proof. Never put these on the query string. */
+export type ConnectAuthMessage = {
+	type: 'wb:auth'
+	token?: string
+	/** Creating-browser scratch Owner proof. Omit after Google claim / `savedToLibrary`. */
+	hostSecret?: string
+}
+
+/** Guest connect `userId` is a device-install UUID only — never a Google account id. */
+export const GUEST_CONNECT_USER_ID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function isGuestConnectUserId(value: string): boolean {
+	const id = value.trim()
+	if (!id || /^google:/i.test(id)) return false
+	return GUEST_CONNECT_USER_ID_RE.test(id)
 }
 
 export type FollowSubscribeMessage = {
@@ -156,15 +229,40 @@ export function isSceneElement(value: unknown): value is SceneElement {
 	)
 }
 
-export function parseSceneElements(value: unknown): SceneElement[] {
-	if (!Array.isArray(value)) return []
+function collectSceneElements(
+	value: unknown,
+	max: number,
+): { elements: SceneElement[]; overflow: boolean } {
+	if (!Array.isArray(value)) return { elements: [], overflow: false }
 	const out: SceneElement[] = []
+	let overflow = false
 	for (const item of value) {
 		if (!isSceneElement(item)) continue
+		if (out.length >= max) {
+			overflow = true
+			break
+		}
 		out.push(item)
-		if (out.length >= MAX_SCENE_ELEMENTS) break
 	}
-	return out
+	return { elements: out, overflow }
+}
+
+/**
+ * Parse an incoming editor payload. Overflow is an error — callers must not
+ * persist or broadcast a silently trimmed scene.
+ */
+export function parseSceneElements(value: unknown): SceneElement[] {
+	const { elements, overflow } = collectSceneElements(
+		value,
+		MAX_SCENE_ELEMENTS,
+	)
+	if (overflow) throw sceneTooLargeError()
+	return elements
+}
+
+/** Load path: do not drop stored work if a board already exceeds the cap. */
+export function parseStoredSceneElements(value: unknown): SceneElement[] {
+	return collectSceneElements(value, Number.MAX_SAFE_INTEGER).elements
 }
 
 /** Last-write-wins by version, then versionNonce (same idea as reconcileElements). */
@@ -241,7 +339,11 @@ export function parseDatabaseScene(raw: string): DatabaseScene | null {
 		if (!parsed || typeof parsed !== 'object') return null
 		const data = parsed as Record<string, unknown>
 		if (data.type !== 'excalidraw') return null
-		const elements = parseSceneElements(data.elements)
+		const { elements, overflow } = collectSceneElements(
+			data.elements,
+			MAX_SCENE_ELEMENTS,
+		)
+		if (overflow) return null
 		const appState =
 			data.appState && typeof data.appState === 'object'
 				? (data.appState as SceneAppState)
@@ -270,7 +372,6 @@ export function buildWhiteboardConnectUrl(
 	opts: {
 		boardId: string
 		sessionId: string
-		hostSecret: string | null
 		displayName: string
 		userId: string
 	},
@@ -280,9 +381,11 @@ export function buildWhiteboardConnectUrl(
 		origin,
 	)
 	url.searchParams.set('sessionId', opts.sessionId)
-	if (opts.hostSecret) url.searchParams.set('hostSecret', opts.hostSecret)
 	if (opts.displayName) url.searchParams.set('displayName', opts.displayName)
-	if (opts.userId) url.searchParams.set('userId', opts.userId)
+	const guestUserId = opts.userId.trim()
+	if (guestUserId && isGuestConnectUserId(guestUserId)) {
+		url.searchParams.set('userId', guestUserId)
+	}
 	return url.toString()
 }
 

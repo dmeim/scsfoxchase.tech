@@ -20,9 +20,28 @@ import {
   listBoardsActive,
   parseJoinInput,
   removeBoardActive,
-  setBoardTitleActive,
+  renameBoardActive,
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
+
+/** Eight-character letter-digit code (server `SHARE_CODE_RE`). Not a 4-char token. */
+const HUB_SHARE_CODE_RE = /^([A-Za-z][0-9]){4}$/;
+
+/**
+ * Board URL / UUID via `parseJoinInput`; share codes must be eight characters.
+ * `whiteboard-library` still classifies four-character tokens as codes — ignore those.
+ */
+function parseHubJoinInput(
+  raw: string,
+): { kind: 'board'; id: string } | { kind: 'code'; code: string } | null {
+  const parsed = parseJoinInput(raw);
+  if (parsed?.kind === 'board') return parsed;
+  const trimmed = raw.trim();
+  if (HUB_SHARE_CODE_RE.test(trimmed)) {
+    return { kind: 'code', code: trimmed.toUpperCase() };
+  }
+  return null;
+}
 
 function cardHtml(entry: WhiteboardLibraryEntry): string {
   const title = escapeHtml(entry.title || 'Untitled board');
@@ -30,14 +49,10 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
   const date = escapeHtml(formatAccessedDate(entry.lastAccessedAt));
   const idAttr = escapeAttr(entry.id);
   const href = `/board/${encodeURIComponent(entry.id)}`;
-  const preview = entry.previewDataUrl
-    ? `<img src="${escapeAttr(entry.previewDataUrl)}" alt="" class="wb-card-preview-img" loading="lazy" />`
-    : `<div class="wb-card-preview-placeholder" aria-hidden="true"></div>`;
 
   return `
     <article class="wb-card" data-wb-card data-wb-id="${idAttr}">
       <a class="wb-card-link" href="${href}">
-        <div class="wb-card-preview">${preview}</div>
         <div class="wb-card-meta">
           <div class="wb-card-title" data-wb-card-title>${title}</div>
           <div class="wb-card-date">${date}</div>
@@ -199,6 +214,9 @@ const NOTE_SIGNED_OUT =
   'Create works without an account. That scratch board stays live if you refresh, but it is not in a library and is removed after 24 hours if it is never saved. Join by code or link also works signed out. Sign in with Google to Save and keep Recents, Library, and Assets.';
 const NOTE_SIGNED_IN =
   'New boards save to your Google library and you are Owner. A scratch board you created while signed out can be Saved from this account to claim Owner and lift the 24-hour limit. Leaving without Save means the board was never kept in your library — refresh does not erase it.';
+/** Joiners land as Viewer unless Class can edit is On (code join) or People Editor. UUID stays Viewer. */
+const JOIN_VIEW_ONLY_HINT =
+  'Join is view-only unless Class can edit is On, or the teacher sets Editor on People. A join code alone does not mean students can draw. UUID links stay Viewer.';
 
 function setHubNote(message: string) {
   const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');
@@ -455,10 +473,14 @@ function bindCardMenus(root: Element) {
     // Gate on auth-ready so a pre-AuthBridge rename does not miss the cloud library.
     void (async () => {
       await whenAuthReady();
-      if (kind === 'asset') {
-        await setAssetTitleActive(id, nextTitle);
-      } else {
-        await setBoardTitleActive(id, nextTitle);
+      try {
+        if (kind === 'asset') {
+          await setAssetTitleActive(id, nextTitle);
+        } else {
+          await renameBoardActive(id, nextTitle);
+        }
+      } catch {
+        // Live meta:title PATCH failed; Recents was not mirrored.
       }
       closeCardMenus();
       void renderLibrary();
@@ -502,6 +524,8 @@ function initWhiteboardHub() {
     joinHint.textContent = message;
   };
 
+  showActionHint(JOIN_VIEW_ONLY_HINT);
+
   const showAuthPendingUi = () => {
     setCloudListsVisible(false);
     setHubNote('Loading…');
@@ -528,11 +552,11 @@ function initWhiteboardHub() {
 
   joinForm?.addEventListener('submit', (event) => {
     event.preventDefault();
-    const parsed = parseJoinInput(joinInput?.value ?? '');
+    const parsed = parseHubJoinInput(joinInput?.value ?? '');
 
     if (!parsed) {
       showActionHint(
-        'Enter a share code (like A1B2), paste a board link (/board/…), or a UUID.',
+        'Enter a share code, paste a board link (/board/…), or a UUID. Treat share codes like passwords — do not project them where a hallway can see.',
       );
       joinInput?.focus();
       return;
