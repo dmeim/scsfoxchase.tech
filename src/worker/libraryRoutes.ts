@@ -174,6 +174,21 @@ function sortByAccessed<T extends { lastAccessedAt: string }>(
 	)
 }
 
+/** Recents/Library membership for this Clerk ownerKey (R2 index, not DO Owner). */
+export async function libraryIndexContainsBoard(
+	env: Env,
+	ownerKey: string,
+	boardId: string,
+): Promise<boolean> {
+	if (!ownerKey || !boardId || !env.WHITEBOARD_ASSETS) return false
+	const { entries } = await readJsonArray(
+		env.WHITEBOARD_ASSETS,
+		boardsObjectKey(ownerKey),
+		isBoardEntry,
+	)
+	return entries.some((entry) => entry.id === boardId)
+}
+
 function boardMetaUrl(request: Request, boardId: string): URL {
 	const url = new URL(request.url)
 	url.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`

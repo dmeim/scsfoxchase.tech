@@ -49,10 +49,14 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
   const date = escapeHtml(formatAccessedDate(entry.lastAccessedAt));
   const idAttr = escapeAttr(entry.id);
   const href = `/board/${encodeURIComponent(entry.id)}`;
+  const preview = entry.previewDataUrl
+    ? `<img src="${escapeAttr(entry.previewDataUrl)}" alt="" class="wb-card-preview-img" />`
+    : `<div class="wb-card-preview-placeholder" aria-hidden="true"></div>`;
 
   return `
     <article class="wb-card" data-wb-card data-wb-id="${idAttr}">
       <a class="wb-card-link" href="${href}">
+        <div class="wb-card-preview">${preview}</div>
         <div class="wb-card-meta">
           <div class="wb-card-title" data-wb-card-title>${title}</div>
           <div class="wb-card-date">${date}</div>
@@ -214,9 +218,9 @@ const NOTE_SIGNED_OUT =
   'Create works without an account. That scratch board stays live if you refresh, but it is not in a library and is removed after 24 hours if it is never saved. Join by code or link also works signed out. Sign in with Google to Save and keep Recents, Library, and Assets.';
 const NOTE_SIGNED_IN =
   'New boards save to your Google library and you are Owner. A scratch board you created while signed out can be Saved from this account to claim Owner and lift the 24-hour limit. Leaving without Save means the board was never kept in your library — refresh does not erase it.';
-/** Joiners land as Viewer unless Class can edit is On (code join) or People Editor. UUID stays Viewer. */
+/** Joiners land as Viewer unless Group Edit is On (code join) or People Editor. UUID stays Viewer. */
 const JOIN_VIEW_ONLY_HINT =
-  'Join is view-only unless Class can edit is On, or the teacher sets Editor on People. A join code alone does not mean students can draw. UUID links stay Viewer.';
+  'Join is view-only unless Group Edit is on, or you set Editor on People. UUID links stay Viewer.';
 
 function setHubNote(message: string) {
   const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');
@@ -514,17 +518,24 @@ function initWhiteboardHub() {
   getDeviceInstallId();
 
   const createBtn = root.querySelector<HTMLButtonElement>('[data-wb-create]');
+  const createHint = root.querySelector<HTMLElement>('[data-wb-create-hint]');
   const joinForm = root.querySelector<HTMLFormElement>('[data-wb-join]');
   const joinInput = root.querySelector<HTMLInputElement>('[data-wb-join-input]');
   const joinHint = root.querySelector<HTMLElement>('[data-wb-join-hint]');
 
-  const showActionHint = (message: string) => {
-    if (!joinHint) return;
-    joinHint.hidden = false;
-    joinHint.textContent = message;
+  const setHint = (el: HTMLElement | null, message: string | null) => {
+    if (!el) return;
+    if (!message) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent = message;
   };
 
-  showActionHint(JOIN_VIEW_ONLY_HINT);
+  const showCreateHint = (message: string | null) => setHint(createHint, message);
+  const showJoinHint = (message: string | null) => setHint(joinHint, message);
 
   const showAuthPendingUi = () => {
     setCloudListsVisible(false);
@@ -534,6 +545,7 @@ function initWhiteboardHub() {
   createBtn?.addEventListener('click', () => {
     if (createBtn.disabled) return;
     createBtn.disabled = true;
+    showCreateHint(null);
     void (async () => {
       try {
         await whenAuthReady();
@@ -545,9 +557,16 @@ function initWhiteboardHub() {
           err instanceof Error && err.message
             ? err.message
             : 'Could not create board. Check your connection and try again.';
-        showActionHint(message);
+        showCreateHint(message);
       }
     })();
+  });
+
+  joinInput?.addEventListener('focus', () => {
+    const current = joinHint?.textContent?.trim() ?? '';
+    if (!current || current === JOIN_VIEW_ONLY_HINT) {
+      showJoinHint(JOIN_VIEW_ONLY_HINT);
+    }
   });
 
   joinForm?.addEventListener('submit', (event) => {
@@ -555,7 +574,7 @@ function initWhiteboardHub() {
     const parsed = parseHubJoinInput(joinInput?.value ?? '');
 
     if (!parsed) {
-      showActionHint(
+      showJoinHint(
         'Enter a share code, paste a board link (/board/…), or a UUID. Treat share codes like passwords — do not project them where a hallway can see.',
       );
       joinInput?.focus();
@@ -567,19 +586,19 @@ function initWhiteboardHub() {
         await whenAuthReady();
         let boardId: string;
         if (parsed.kind === 'code') {
-          showActionHint('Looking up code…');
+          showJoinHint('Looking up code…');
           boardId = await lookupShareCode(parsed.code);
         } else {
           boardId = parsed.id;
         }
-        showActionHint('Opening board…');
+        showJoinHint('Opening board…');
         window.location.href = `/board/${encodeURIComponent(boardId)}`;
       } catch (err) {
         const message =
           err instanceof Error && err.message
             ? err.message
             : 'Could not open board. Check your connection and try again.';
-        showActionHint(message);
+        showJoinHint(message);
       }
     })();
   });

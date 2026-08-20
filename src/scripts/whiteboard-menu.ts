@@ -213,7 +213,7 @@ async function patchClassCanEdit(
     const message =
       typeof payload.error === 'string' && payload.error
         ? payload.error
-        : 'Could not update class can edit.'
+        : 'Could not update Group Edit.'
     throw new Error(message)
   }
   return payload.classCanEdit === true
@@ -918,7 +918,7 @@ function initWhiteboardMenu() {
         setShareHint(
           err instanceof Error && err.message
             ? err.message
-            : 'Could not update class can edit.',
+            : 'Could not update Group Edit.',
         )
       } finally {
         classCanEditBusy = false

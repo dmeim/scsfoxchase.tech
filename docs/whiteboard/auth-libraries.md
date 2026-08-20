@@ -11,7 +11,7 @@ Clerk Google sign-in, owner keys, and how Recents / Library / Assets work as a *
 - “Leave and lose work” means **never saved to the cloud library**, not “destroy on refresh.” Chromebooks refresh. The scene stays in the DO; **unsaved boards and their temp R2 objects are deleted after 24 hours**.
 - Sign in on a scratch board this browser created and Save: that Google account **claims Owner**, temp R2 files move under `google:{accountId}`, 24h TTL comes off.
 
-Join by share code, link, or UUID still works with **no account**. Role is decided on connect. Share-code joiners land as **Viewer** unless **Class can edit** is On (then they land as **Editor**) or an Owner or Manager sets **Editor** on **People**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
+Join by share code, link, or UUID still works with **no account**. Role is decided on connect. Share-code joiners land as **Viewer** unless **Group Edit** is On (then they land as **Editor**) or an Owner or Manager sets **Editor** on **People**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
 
 ## Clerk on the client
 
@@ -67,7 +67,7 @@ Clearing site data creates a new `deviceInstallId` and a new guest name. It does
 |---------|------------|-----------|
 | Recents / Library hub | Hidden | `GET/PUT/DELETE /api/whiteboard/library/boards`. Assets strip hidden (canvas PUT does not index `assets.json`) |
 | Create | Scratch DO + host secret; 24h TTL | Autosave to cloud; Owner = this Google account |
-| Join | Opens the board. Share-code joiners are **Viewer** unless **Class can edit** is On; UUID-only stays **Viewer**. Owner/Manager can still set **Editor** on **People** | Same; does **not** add Recents unless you already own it or Save a scratch you created |
+| Join | Opens the board. Share-code joiners are **Viewer** unless **Group Edit** is On; UUID-only stays **Viewer**. Owner/Manager can still set **Editor** on **People** | Same; does **not** add Recents unless you already own it or Save a scratch you created |
 | Save / claim | N/A (sign in first) | Creating-browser host secret + Clerk → Owner, lift TTL, move temp R2 |
 | Canvas files | `temp:{boardId}` | `google:{accountId}` after save |
 

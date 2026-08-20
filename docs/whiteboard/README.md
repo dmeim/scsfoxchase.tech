@@ -10,11 +10,11 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 
 | Area | What it does | Doc |
 |------|----------------|-----|
-| Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Share-code joiners land as **Viewer** unless **Class can edit** is On; UUID-only stays **Viewer** | [hub-and-board.md](./hub-and-board.md) |
+| Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Share-code joiners land as **Viewer** unless **Group Edit** is On; UUID-only stays **Viewer** | [hub-and-board.md](./hub-and-board.md) |
 | Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; R2 files by `fileId` | [sync-storage.md](./sync-storage.md) |
 | Auth + library | Clerk Google sign-in; cloud-only Recents / Library / Assets; scratch boards expire in 24h | [auth-libraries.md](./auth-libraries.md) |
-| Share codes | Short `A1B2C3D4` codes in KV; Open / Closed / Copy / New; hub join. A code opens the board; join is view-only unless **Class can edit** is On. UUID-only stays **Viewer**. A join code alone does not mean students can draw | [share-codes.md](./share-codes.md) |
-| People + permissions | Owner / Manager / Editor / Viewer; Follow (pan to unfollow); Follow Me (camera locked). **Class can edit** (share-code joiners land as Editor when On) or set **Editor** on People. UUID-only stays **Viewer** | [people-permissions.md](./people-permissions.md) |
+| Share codes | Short `A1B2C3D4` codes in KV; Open / Closed / Copy / New; hub join. A code opens the board; join is view-only unless **Group Edit** is On. UUID-only stays **Viewer**. A join code alone does not mean students can draw | [share-codes.md](./share-codes.md) |
+| People + permissions | Owner / Manager / Editor / Viewer; Follow (pan to unfollow); Follow Me (camera locked). **Group Edit** (share-code joiners land as Editor when On) or set **Editor** on People. UUID-only stays **Viewer** | [people-permissions.md](./people-permissions.md) |
 
 ## Routes
 

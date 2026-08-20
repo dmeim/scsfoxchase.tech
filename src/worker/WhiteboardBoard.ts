@@ -45,6 +45,7 @@ import {
 	verifyClerkWhiteboardToken,
 	type ClerkWhiteboardAuth,
 } from './clerkAuth'
+import { libraryIndexContainsBoard } from './libraryRoutes'
 import {
 	isExpiredIso,
 	kvCodeKey,
@@ -223,6 +224,8 @@ interface SocketAttachment {
 	followTargetSessionId?: string
 	/** Presented the active share code on connect (cookie). Not a stored role. */
 	joinedViaShareCode?: boolean
+	/** Board UUID from the connect URL (Durable Object name). */
+	boardId?: string
 }
 
 // PHASE 3.3
@@ -409,6 +412,7 @@ function normalizeAttachment(
 				? raw.followTargetSessionId
 				: undefined,
 		joinedViaShareCode: Boolean(raw?.joinedViaShareCode),
+		boardId: typeof raw?.boardId === 'string' ? raw.boardId : '',
 	}
 }
 
@@ -783,11 +787,13 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const joinedViaShareCode = await this.presentedJoinCodeIsActive(
 			joinCodeFromConnectRequest(request, boardId),
 		)
+		await this.ensureBoardLifetime(boardId)
 		const role = await this.resolveConnectRole({
 			clerkAuth,
 			guestUserId,
 			isHost,
 			joinedViaShareCode,
+			boardId,
 		})
 		const canEdit = roleCanEdit(role)
 		const authToken = crypto.randomUUID()
@@ -821,11 +827,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			connectOrigin: request.headers.get('Origin') ?? '',
 			connectClerkAuth: clerkAuth ?? undefined,
 			joinedViaShareCode,
+			boardId,
 		}
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
 
-		await this.ensureBoardLifetime(boardId)
 		await this.sendFullScene(serverWebSocket)
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
@@ -884,11 +890,16 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				sanitizeDisplayName(clerkAuth.displayName) || displayName
 		}
 		const joinedViaShareCode = Boolean(attachment.joinedViaShareCode)
+		const boardId =
+			attachment.boardId ||
+			(await this.ctx.storage.get<string>(META_BOARD_ID_KEY)) ||
+			''
 		const role = await this.resolveConnectRole({
 			clerkAuth,
 			guestUserId,
 			isHost,
 			joinedViaShareCode,
+			boardId,
 		})
 		const next: SocketAttachment = {
 			...attachment,
@@ -898,6 +909,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			pendingClerkAuth: false,
 			connectClerkAuth: undefined,
 			joinedViaShareCode,
+			boardId,
 			meta: {
 				...attachment.meta,
 				userId,
@@ -956,7 +968,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				return json(403, {
 					error: hasTitle
 						? 'Only the Owner or a Manager can rename this board.'
-						: 'Only the Owner or a Manager can change class can edit.',
+						: 'Only the Owner or a Manager can change Group Edit.',
 				})
 			}
 			if (hasTitle) {
@@ -1007,7 +1019,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			nextOwner !== undefined && nextOwner !== existingOwner
 		if (ownerChanging && existingGoogle) {
 			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
-			if (!clerkAuth || clerkAuth.ownerKey !== existingOwner) {
+			if (!clerkAuth || !this.clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
 				return json(403, {
 					error: 'Host secret cannot change the Google owner of a saved board',
 				})
@@ -1020,7 +1032,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			existingGoogle
 		) {
 			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
-			if (!clerkAuth || clerkAuth.ownerKey !== existingOwner) {
+			if (!clerkAuth || !this.clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
 				return json(403, {
 					error: 'Host secret cannot unsaved a Google-owned board',
 				})
@@ -1108,7 +1120,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	): Promise<boolean> {
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		if (cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey) {
+		if (cloudOwnerKey && this.clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
 			return true
 		}
 		const stored = await this.readStoredRoles()
@@ -1214,7 +1226,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		if (!clerkAuth) return null
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		if (cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey) {
+		if (cloudOwnerKey && this.clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
 			return {
 				role: 'owner',
 				userId: clerkAuth.accountId,
@@ -1498,18 +1510,86 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 	}
 
+	private clerkOwnerKeys(auth: ClerkWhiteboardAuth): string[] {
+		return [
+			...new Set([
+				auth.ownerKey,
+				`google:${auth.accountId}`,
+				`google:${auth.clerkUserId}`,
+			]),
+		].filter((key) => key.startsWith('google:'))
+	}
+
+	private clerkMatchesCloudOwner(
+		auth: ClerkWhiteboardAuth,
+		cloudOwnerKey: string | null,
+	): boolean {
+		if (!cloudOwnerKey) return false
+		return this.clerkOwnerKeys(auth).includes(cloudOwnerKey)
+	}
+
+	private async clerkOwnsLibraryIndex(
+		auth: ClerkWhiteboardAuth,
+		boardId: string,
+	): Promise<boolean> {
+		if (!boardId) return false
+		for (const key of this.clerkOwnerKeys(auth)) {
+			if (await libraryIndexContainsBoard(this.env, key, boardId)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	/**
+	 * Recents is an R2 index, not Owner proof — except when the DO has no
+	 * Google owner yet (pre-claim library PUT). Then Clerk + boards.json
+	 * membership backfills `cloudOwnerKey`. Also rewrite google:{clerkUserId}
+	 * → google:{sub}. Does not let leftover host steal an existing owner.
+	 */
+	private async syncCloudOwnerFromClerk(
+		auth: ClerkWhiteboardAuth,
+		boardId: string,
+	): Promise<void> {
+		const current =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+
+		if (this.clerkMatchesCloudOwner(auth, current)) {
+			if (current !== auth.ownerKey) {
+				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, auth.ownerKey)
+			}
+			if (!(await this.isSavedToLibrary())) {
+				await this.ctx.storage.put(META_SAVED_TO_LIBRARY_KEY, true)
+				await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+			}
+			return
+		}
+
+		if (current) return
+		if (!(await this.clerkOwnsLibraryIndex(auth, boardId))) return
+
+		await this.ctx.storage.put(META_CLOUD_OWNER_KEY, auth.ownerKey)
+		await this.ctx.storage.put(META_SAVED_TO_LIBRARY_KEY, true)
+		await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+	}
+
 	// PHASE 3.3 — roles + follow (do not replace the Phase 2 scene store above)
 	private async resolveConnectRole(opts: {
 		clerkAuth: ClerkWhiteboardAuth | null
 		guestUserId: string
 		isHost: boolean
 		joinedViaShareCode: boolean
+		boardId: string
 	}): Promise<WhiteboardRole> {
+		if (opts.clerkAuth) {
+			await this.syncCloudOwnerFromClerk(opts.clerkAuth, opts.boardId)
+		}
+
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
 
 		if (opts.clerkAuth) {
-			if (cloudOwnerKey && cloudOwnerKey === opts.clerkAuth.ownerKey) {
+			if (this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey)) {
 				return 'owner'
 			}
 			const stored = await this.readStoredRoles()

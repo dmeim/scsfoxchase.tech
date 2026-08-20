@@ -24,13 +24,13 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Saved-board hub rename 403 — **done** (title/`classCanEdit` PATCH accepts Clerk Owner/Manager). Summer Checklist Manual still open.
 - Meta forwarding clobbers Clerk JWT with leftover host — **done** (skip JWT-shaped host; forward Authorization to the DO stub). Summer Checklist Manual still open.
 - Launch-blocker **code** wave — **done** on `bd86b12`. Sentinel: no remaining launch-blocking code defects. Do not open another code wave unless a Manual fails.
-- Classroom Manuals still open (run first): Class can edit join → draw; Summer Checklist title on private Viewer tabs; close-within-1s last stroke; Editor paste+reload; Follow Me after hibernation; video after claim; Viewer cannot mint/close a code; leftover host cannot steal Owner after Save.
+- Classroom Manuals still open (run first): Group Edit join → draw; Summer Checklist title on private Viewer tabs; close-within-1s last stroke; Editor paste+reload; Follow Me after hibernation; video after claim; Viewer cannot mint/close a code; leftover host cannot steal Owner after Save.
 - Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible).
 - Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
 - Scene persist can drop work — **done** (no silent persist; `scene_json`; Editor toast). Manual reload-after-failure still open.
 - Share-code joiners default to Viewer (class-can-edit) — **done** (`meta:classCanEdit`; code cookie + flag → Editor; UUID stays Viewer). Manual still open.
 - Editor PUT still uses `temp:` on saved boards — **done** (`wb:hello` + session GET meta reveal `google:` to Owner/Manager/Editor). Manual paste+reload still open.
-- Class-can-edit training copy — **done** (hub/in-board/docs: view-only unless Class can edit is On or Editor on People).
+- Class-can-edit training copy — **done** (hub/in-board/docs: view-only unless Group Edit is On or Editor on People).
 - Stale class-can-edit mentions outside owned docs — **done** (README, auth-libraries, sync-storage, architecture, AGENTS.md). Historical spec left as history.
 - Docs: `sync-storage.md` dual JSON — **done** (live schema is `scene_json`; persist fail-closed).
 - Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy updated.
@@ -39,7 +39,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 
 - Excalidraw library sidebar hidden via CSS; Chromebook visual still manual (canvas search is hidden too).
 - Client `isShareCode` matches eight-character server codes.
-- Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only unless Class can edit is On or Editor on People. UUID stays Viewer. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
+- Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only unless Group Edit is On or Editor on People. UUID stays Viewer. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
 - Class-can-edit: share-code joiners land as Editor when the flag is on; UUID-only stays Viewer. Classroom Manual still open. Hub/in-board/owned docs match the shipped switch.
 - Owner hub Recents rename PATCHes live `meta:title` then mirrors Recents. Manager Recents is not the class title. Clerk Owner/Manager can PATCH title with no live socket. Meta forwarding skips JWT-shaped host and forwards Authorization.

@@ -99,19 +99,19 @@ const helpActive =
                     </label>
                   </div>
                   <div class="whiteboard-manage-share-head" data-wb-class-can-edit>
-                    <p class="whiteboard-join-label">Class can edit</p>
+                    <p class="whiteboard-join-label">Group Edit</p>
                     <label class="whiteboard-switch">
                       <span class="whiteboard-switch-label" data-wb-class-can-edit-state>Off</span>
                       <input
                         type="checkbox"
-                        aria-label="Class can edit — share-code joiners can draw"
+                        aria-label="Group Edit — share-code joiners can draw"
                         data-wb-class-can-edit-toggle
                       />
                       <span class="whiteboard-switch-track" aria-hidden="true"></span>
                     </label>
                   </div>
                   <p class="whiteboard-join-hint">
-                    Join is view-only unless Class can edit is On, or you set Editor on People.
+                    Share-code joiners can draw when Group Edit is on. UUID links stay view-only unless you set Editor on People.
                   </p>
                   <p class="whiteboard-join-hint" data-wb-share-hint hidden></p>
                 </div>
@@ -183,12 +183,6 @@ const helpActive =
                     </div>
                   </div>
                   <p class="whiteboard-join-hint whiteboard-share-expiry" data-wb-share-expiry hidden></p>
-                  <p class="whiteboard-join-hint">
-                    A join code is view-only unless Class can edit is On. UUID links stay Viewer. You can also set Editor on People.
-                  </p>
-                  <p class="whiteboard-join-hint">
-                    Bookmark the board page to come back later.
-                  </p>
                 </div>
 
                 <div class="whiteboard-menu-divider" role="separator"></div>
@@ -211,7 +205,7 @@ const helpActive =
                         <span class="visually-hidden">Force follow target</span>
                         <select
                           class="whiteboard-people-target-select"
-                          aria-label="Who the class follows"
+                          aria-label="Who others follow"
                           data-wb-force-follow-target
                         >
                           <option value="">Me</option>

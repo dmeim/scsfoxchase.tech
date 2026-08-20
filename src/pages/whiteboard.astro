@@ -20,9 +20,12 @@ import '../styles/whiteboard.css';
       </p>
 
       <div class="wb-actions">
-        <button type="button" class="wb-create-btn" data-wb-create>
-          Create a new whiteboard
-        </button>
+        <div class="wb-create">
+          <button type="button" class="wb-create-btn" data-wb-create>
+            Create a new whiteboard
+          </button>
+          <p class="wb-join-hint" data-wb-create-hint hidden></p>
+        </div>
 
         <form class="wb-join" data-wb-join>
           <div class="wb-join-fields">

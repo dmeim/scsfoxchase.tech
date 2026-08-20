@@ -514,6 +514,11 @@ export async function setBoardTitleActive(
   });
 }
 
+/**
+ * Mint a scratch board and navigate. Recents is written after the first
+ * WebSocket (host hash). A library PUT before connect 403s “Host secret
+ * required.” Signed-in claim runs from the board page on `wb:hello`.
+ */
 export async function createBoardActive(title = defaultBoardTitle()): Promise<{
   id: string;
   hostSecret: string;
@@ -529,12 +534,7 @@ export async function createBoardActive(title = defaultBoardTitle()): Promise<{
     title,
     lastAccessedAt: now,
   };
-  if (!isSignedIn()) {
-    return { id, hostSecret, entry: draft };
-  }
-  const entry = await upsertCloudBoard(draft, { hostSecret });
-  scheduleSavedToLibrary(id, hostSecret);
-  return { id, hostSecret, entry };
+  return { id, hostSecret, entry: draft };
 }
 
 /** Remove from the signed-in cloud library. No-op when signed out. */
@@ -612,21 +612,23 @@ export function formatAccessedDate(iso: string): string {
 }
 
 /**
- * Board-page hook: if this browser created a scratch board and the user signs
- * in, claim Owner + cloud library without waiting on Phase 3.3 People UI.
+ * Board-page hook: after `wb:hello` the host hash exists, so signed-in create
+ * can write Recents. Opening a Recents row retries touch once `savedToLibrary`
+ * is backfilled. Page-load touch before connect is expected to fail closed.
  */
 function bindBoardPageScratchClaim(): void {
   if (typeof window === 'undefined') return;
   const boardId = readBoardIdFromPath();
   if (!boardId) return;
   const tryClaim = () => {
-    if (!isSignedIn() || !getHostSecret(boardId)) return;
-    void claimBoardToLibrary(boardId).catch(() => {
-      // PATCH may 403 until the first WebSocket connect stores the host hash.
+    if (!isSignedIn()) return;
+    void touchBoardActive(boardId).catch(() => {
+      // PUT waits on first WebSocket host hash / savedToLibrary backfill.
     });
   };
   void whenAuthReady().then(tryClaim);
   onAuthChange(tryClaim);
+  window.addEventListener('scsfoxchase:whiteboard-hello', tryClaim);
 }
 
 bindBoardPageScratchClaim();
