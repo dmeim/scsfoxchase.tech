@@ -214,9 +214,9 @@ const NOTE_SIGNED_OUT =
   'Create works without an account. That scratch board stays live if you refresh, but it is not in a library and is removed after 24 hours if it is never saved. Join by code or link also works signed out. Sign in with Google to Save and keep Recents, Library, and Assets.';
 const NOTE_SIGNED_IN =
   'New boards save to your Google library and you are Owner. A scratch board you created while signed out can be Saved from this account to claim Owner and lift the 24-hour limit. Leaving without Save means the board was never kept in your library — refresh does not erase it.';
-/** Joiners land as Viewer. Class-can-edit has not shipped; teachers set Editor on People. */
+/** Joiners land as Viewer unless Class can edit is On (code join) or People Editor. UUID stays Viewer. */
 const JOIN_VIEW_ONLY_HINT =
-  'Join is view-only. Students cannot draw until you set Editor on People. Class-can-edit has not shipped.';
+  'Join is view-only unless Class can edit is On, or the teacher sets Editor on People. A join code alone does not mean students can draw. UUID links stay Viewer.';
 
 function setHubNote(message: string) {
   const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');

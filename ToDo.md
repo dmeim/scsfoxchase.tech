@@ -26,17 +26,18 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Scene persist can drop work — **done** (no silent persist; `scene_json`; Editor toast). Manual reload-after-failure still open.
 - Share-code joiners default to Viewer (class-can-edit) — **done** (`meta:classCanEdit`; code cookie + flag → Editor; UUID stays Viewer). Manual still open.
 - Editor PUT still uses `temp:` on saved boards — **done** (`wb:hello` + session GET meta reveal `google:` to Owner/Manager/Editor). Manual paste+reload still open.
-- Class-can-edit training copy — `worker` owns `src/components/Header.astro`, `src/scripts/whiteboard-hub.ts`, `docs/whiteboard/share-codes.md`, `docs/whiteboard/people-permissions.md`, `docs/whiteboard/hub-and-board.md`. Do not edit WhiteboardBoard.ts.
+- Class-can-edit training copy — **done** (hub/in-board/docs: view-only unless Class can edit is On or Editor on People).
+- Stale class-can-edit mentions outside owned docs — `doc-smith` owns `docs/whiteboard/README.md`, `docs/whiteboard/auth-libraries.md`, `docs/whiteboard/sync-storage.md`, `docs/architecture.md`, `AGENTS.md`. Do not edit src or WhiteboardBoard.ts.
 - Docs: `sync-storage.md` dual JSON — **done** (live schema is `scene_json`; persist fail-closed).
-- Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy update still open.
+- Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy updated.
 
 **Just closed (code-verified; classroom manuals still open):**
 
 - Excalidraw library sidebar hidden via CSS; Chromebook visual still manual (canvas search is hidden too).
 - Client `isShareCode` matches eight-character server codes.
-- Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only until Editor on People. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
+- Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only unless Class can edit is On or Editor on People. UUID stays Viewer. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
-- Class-can-edit: share-code joiners land as Editor when the flag is on; UUID-only stays Viewer. Classroom Manual still open. Training copy still in flight.
+- Class-can-edit: share-code joiners land as Editor when the flag is on; UUID-only stays Viewer. Classroom Manual still open. Hub/in-board/owned docs match the shipped switch.
 - Editor sessions learn `google:` on hello/meta so saved-board PUT is not `temp:`. Classroom paste+reload Manual still open.
 - Follow Me survives DO hibernation in code: `getForceFollowState` + attachment voluntary Follow + client `resubscribeFollow`. Classroom ping/pong Manual still open.
 - Scene persist: failed/oversize persist sends `wb:error` and does not broadcast; SQLite is one `scene_json` column. Classroom reload Manual still open.
@@ -871,7 +872,7 @@ When shipping the class-Editor setting, update hub and in-board copy. Until then
 
 - [x] Update hub and in-board copy (and `docs/whiteboard/share-codes.md` / `docs/whiteboard/people-permissions.md`) so a join code is not described as “students can draw.”
 - [x] Until Share-code joiners default to Viewer ships a class-Editor setting, tell teachers to set Editor on the People list.
-- [ ] When that setting ships, update the same copy to match (default Viewer vs class can edit).
+- [x] When that setting ships, update the same copy to match (default Viewer vs class can edit).
 - [x] Do not change `resolveConnectRole` in this issue.
 - [x] Grep hub/help strings for join-code wording. Confirm they do not imply draw access.
 - [x] Manual: a teacher reading the hub can tell that code join is view-only unless they promote or turn on class-can-edit.

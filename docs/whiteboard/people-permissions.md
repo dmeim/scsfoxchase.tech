@@ -8,7 +8,7 @@ Live presence, four roles, Follow, and Follow Me / force-follow. Live **cursors 
 
 Connected sessions appear in the board manage panel under **People**. Anyone may follow another person’s camera. **Owner** and **Manager** can change roles (with the rules below) and force the room — or one person — to follow a target. Viewers cannot mutate the document: Excalidraw `viewModeEnabled` **and** the Durable Object drops their `scene:update` writes.
 
-A share code (or board UUID) only **opens** the board. Code join is **Viewer** until Owner or Manager sets **Editor** on **People**. There is no class-wide Editor setting yet (class-can-edit is not shipped). A join code does not mean students can draw.
+A share code (or board UUID) only **opens** the board. Role is decided on connect. Share-code joiners land as **Viewer** unless **Class can edit** is On (`meta:classCanEdit`; manage-panel switch) — then they land as **Editor**. UUID-only stays **Viewer**. Owner or Manager can still set **Editor** on **People**. A join code alone does not mean students can draw.
 
 ## Roles
 
@@ -26,7 +26,7 @@ How Owner is chosen:
 - **Saved board:** Google account in `meta:cloudOwnerKey` (`google:{accountId}`).
 - **Scratch board:** creating browser that presents the host secret (ephemeral Owner). Guests without that secret default to **Viewer**.
 
-Guest **Editor** is not sticky on a shared Chromebook. Signed-out connect `userId` is minted for this board visit (this page load) in `getBoardConnectIdentity()` — not the durable `deviceInstallId` in `localStorage`. Refresh, a new tab, or joining again from the hub is a new guest and defaults to **Viewer**. Owner/Manager can promote that guest for this visit only.
+Guest **Editor** from **People** is not sticky on a shared Chromebook. Signed-out connect `userId` is minted for this board visit (this page load) in `getBoardConnectIdentity()` — not the durable `deviceInstallId` in `localStorage`. Refresh, a new tab, or joining again from the hub is a new guest and defaults to **Viewer**, unless they join with the active share code while **Class can edit** is On. Owner/Manager can still promote that guest for this visit only.
 
 **Google sign-in** is how a person stays Editor (or Manager) across visits and class periods. On shared Chromebooks, sign out of Google when the period ends so the next student does not keep a signed-in role. Signed-out guests do not need a site-data clear.
 
@@ -100,7 +100,7 @@ Legacy `{ "canEdit": true | false }` maps to Editor / Viewer.
 - Proof required: host secret **or** live Owner/Manager session token (**401** / **403** otherwise).
 - Owner session cannot be demoted (**400**).
 - Manager cannot assign Manager or change Owner / another Manager.
-- Default for new guest connects: **Viewer**.
+- Default for new guest connects: **Viewer** (UUID-only always). Share-code joiners land as **Editor** when **Class can edit** is On.
 - DO updates socket attachment, sends `wb:role` to that session, then rebroadcasts People.
 
 ### Client readonly
@@ -153,9 +153,10 @@ Manage panel listens for `scsfoxchase:whiteboard-force-follow` to keep the On/Of
 |--------|-----|
 | Open board by UUID / Open code | Anyone with the link, or `GET /api/whiteboard/join/:code` (unauthenticated, rate-limited) |
 | Edit canvas | Owner, Manager, Editor |
-| View only | Viewer (default for guests, including code join) |
+| View only | Viewer (default for guests and UUID-only links; code join unless Class can edit is On) |
 | Grant/revoke Manager | Owner only |
-| Set Editor / Viewer | Owner or Manager (per person on People; class-can-edit is not shipped) |
+| Set Editor / Viewer | Owner or Manager (per person on People) |
+| Class can edit | Owner or Manager. When On, share-code joiners land as Editor. UUID-only stays Viewer. Default Off. |
 | Follow Me / force-follow | Owner or Manager |
 | Voluntary Follow | Any session (subject to force-follow) |
 | Open / Closed / rotate / copy share code | Owner or Manager. Viewer **403**. Leftover host on a Google-owned board is not enough. Closed drops the KV mapping; UUID access remains a separate capability. |

@@ -37,7 +37,7 @@ The join field accepts:
 
 Join does **not** add the board to Recents/Library. Invalid input or an unavailable code shows a hint under the field.
 
-A share code (or link / UUID) only **opens** the board. Joiners land as **Viewer**: they can watch, not draw. There is no class-wide Editor setting yet (class-can-edit is not shipped). Until one ships, an Owner or Manager must set **Editor** on each person in the **People** list (manage panel, Share Open). A join code does not mean students can draw.
+A share code (or link / UUID) only **opens** the board. Joiners land as **Viewer** unless **Class can edit** is On (share-code joiners can then draw) or an Owner or Manager sets **Editor** on **People**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
 
 Join parsing: `parseJoinInput` in `src/scripts/whiteboard-library.ts`.  
 Code lookup: `lookupShareCode` in `src/lib/whiteboard-codes.ts`. Details: [share-codes.md](./share-codes.md).
@@ -106,7 +106,9 @@ Toggle: **Whiteboard** button opens a dialog panel. Escape / outside click close
 
 Open / Closed switch on the left column — **Owner/Manager only** (hidden for Editor/Viewer). When **Open**, the right column shows the share code (click to copy), **New Code**, **Copy Link** (permanent `/board/{uuid}` URL), expiry countdown, and People. See [share-codes.md](./share-codes.md).
 
-The code is a join token, not an edit grant. Students who join with it stay **Viewer** until you set **Editor** on **People**. Class-can-edit has not shipped.
+**Class can edit** (Owner/Manager; Off by default) is shipped. When On, joiners of the **active share code** land as Editor. UUID-only links stay Viewer. You can still set Editor per person on People.
+
+The code is a join token, not an automatic edit grant. Students who join with it stay **Viewer** unless **Class can edit** is On or you set **Editor** on **People**. UUID links stay Viewer.
 
 Share-code GET / POST / DELETE require Owner or Manager (live session token, scratch host secret, or Clerk matching the Google owner). Leftover host on a Google-owned board is not enough. Viewer gets **403**. Join lookup stays unauthenticated. Closed drops the KV mapping; UUID access remains a separate capability.
 
@@ -118,7 +120,7 @@ Owner/Manager control beside the **People** heading (hidden unless this session 
 
 Shown only while Share is Open. Columns: **Name** | **Follow** | **Role**. Live list from DO custom messages. See [people-permissions.md](./people-permissions.md).
 
-Until class-can-edit ships, use the **Role** column to promote a joiner from **Viewer** to **Editor** if they should draw. Do not treat an Open code as class-wide draw access.
+Use **Class can edit** so share-code joiners can draw without per-person clicks. Use the **Role** column to promote a UUID guest (or one student) from **Viewer** to **Editor**. Do not treat an Open code as class-wide draw access unless Class can edit is On.
 
 ### Whiteboard Library
 
