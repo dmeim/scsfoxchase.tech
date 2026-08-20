@@ -2381,11 +2381,15 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			sessionId,
 		)
 		if (attachment.pendingClerkAuth) {
+			if (data.type !== 'wb:auth') {
+				// Scene/ping/follow must not mint Owner or lock Viewer before
+				// Clerk + host proof arrive. Drop until `wb:auth`.
+				return
+			}
 			await this.finishPendingConnectAuth(ws, attachment, data)
-			if (data.type === 'wb:auth') return
+			return
 		}
 		const type = data.type
-
 		if (type === 'wb:auth') return
 
 		if (type === 'scene:request') {

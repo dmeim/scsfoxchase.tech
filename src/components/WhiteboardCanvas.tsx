@@ -14,7 +14,7 @@ import type {
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
-import { getSessionToken, whenAuthReady } from '../lib/whiteboard-identity'
+import { waitForSessionToken, whenAuthReady } from '../lib/whiteboard-identity'
 import {
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
@@ -259,7 +259,12 @@ export default function WhiteboardCanvas({
 
       let databaseJson: string | undefined
       try {
-        databaseJson = serializeAsJSON(elements, appState, {}, 'database')
+        databaseJson = serializeAsJSON(
+          elements,
+          { ...appState, viewModeEnabled: false },
+          {},
+          'database',
+        )
       } catch {
         databaseJson = undefined
       }
@@ -375,7 +380,7 @@ export default function WhiteboardCanvas({
 
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
-      const sessionToken = (await getSessionToken()) ?? ''
+      const sessionToken = (await waitForSessionToken()) ?? ''
       const hostSecret = getHostSecret(boardId)
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
@@ -542,6 +547,10 @@ export default function WhiteboardCanvas({
       unsubUserFollowRef.current = api.onUserFollow((payload) => {
         onUserFollowRef.current(payload)
       })
+      api.updateScene({
+        appState: { viewModeEnabled: !canEditRef.current },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      })
       requestAnimationFrame(() => {
         reassertFollowRef.current()
       })
@@ -581,21 +590,22 @@ export default function WhiteboardCanvas({
         touchAction: roles.forceFollowLocked ? 'none' : undefined,
       }}
     >
-      <Excalidraw
-        excalidrawAPI={handleApi}
-        theme={theme}
-        onChange={handleChange}
-        generateIdForFile={media.generateIdForFile}
-        validateEmbeddable={media.validateEmbeddable}
-        renderEmbeddable={media.renderEmbeddable}
-        onPaste={media.onPaste}
-        isCollaborating
-        name={roles.displayName}
-        // PHASE 3.3
-        viewModeEnabled={roles.viewModeEnabled}
-        collaborators={roles.collaborators}
-        onScrollChange={roles.onScrollChange}
-      />
+      {roles.helloReceived ? (
+        <Excalidraw
+          excalidrawAPI={handleApi}
+          theme={theme}
+          onChange={handleChange}
+          generateIdForFile={media.generateIdForFile}
+          validateEmbeddable={media.validateEmbeddable}
+          renderEmbeddable={media.renderEmbeddable}
+          onPaste={media.onPaste}
+          isCollaborating
+          name={roles.displayName}
+          viewModeEnabled={roles.viewModeEnabled}
+          collaborators={roles.collaborators}
+          onScrollChange={roles.onScrollChange}
+        />
+      ) : null}
       {roles.forceFollowLocked ? (
         <div
           aria-hidden
@@ -609,7 +619,26 @@ export default function WhiteboardCanvas({
           }}
         />
       ) : null}
-      {roles.viewModeEnabled ? (
+      {!roles.helloReceived ? (
+        <div
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 7,
+            padding: '4px 10px',
+            borderRadius: 2,
+            background: 'var(--primary-color)',
+            color: '#fff',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            pointerEvents: 'none',
+          }}
+        >
+          Connecting…
+        </div>
+      ) : roles.viewModeEnabled ? (
         <div
           style={{
             position: 'absolute',

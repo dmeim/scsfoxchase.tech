@@ -154,6 +154,20 @@ export async function getSessionToken(): Promise<string | null> {
 	}
 }
 
+/** Signed-in connect must not race Clerk `getToken()` — empty token → Viewer hello. */
+export async function waitForSessionToken(
+	tries = 20,
+	delayMs = 100,
+): Promise<string | null> {
+	for (let i = 0; i < tries; i++) {
+		const token = await getSessionToken()
+		if (token) return token
+		if (!isSignedIn()) return null
+		await new Promise((resolve) => setTimeout(resolve, delayMs))
+	}
+	return getSessionToken()
+}
+
 export async function getAuthHeaders(): Promise<Record<string, string>> {
 	const token = await getSessionToken()
 	if (!token) return {}
