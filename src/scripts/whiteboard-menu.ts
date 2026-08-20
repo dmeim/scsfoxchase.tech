@@ -17,9 +17,83 @@ import {
 import { assignableRolesFor } from '../lib/whiteboard-sync'
 import {
   getEntryActive,
+  getHostSecret,
   readBoardIdFromPath,
   setBoardTitleActive,
 } from './whiteboard-library'
+
+const DEFAULT_LIVE_TITLE = 'Untitled board'
+const MAX_BOARD_TITLE_LENGTH = 80
+
+function isPlaceholderTitle(title: string): boolean {
+  const cleaned = title.trim()
+  return !cleaned || cleaned === DEFAULT_LIVE_TITLE
+}
+
+async function readLiveBoardTitle(boardId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    )
+    if (!res.ok) return null
+    const body = (await res.json()) as { title?: unknown }
+    return typeof body.title === 'string' && body.title.trim()
+      ? body.title.trim()
+      : null
+  } catch {
+    return null
+  }
+}
+
+async function patchLiveBoardTitle(
+  boardId: string,
+  title: string,
+): Promise<string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  const hostSecret = getHostSecret(boardId)
+  if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`
+    headers['X-Board-Host'] = hostSecret
+  }
+  const sessionAuth = getBoardSessionAuth(boardId)
+  if (sessionAuth) {
+    headers['X-Board-Session'] = sessionAuth.sessionId
+    headers['X-Board-Auth'] = sessionAuth.authToken
+  }
+  const body: Record<string, string> = { title }
+  if (sessionAuth) {
+    body.sessionId = sessionAuth.sessionId
+    body.authToken = sessionAuth.authToken
+  }
+  const res = await fetch(
+    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    },
+  )
+  let payload: { title?: unknown; error?: unknown } = {}
+  try {
+    payload = (await res.json()) as typeof payload
+  } catch {
+    // ignore
+  }
+  if (!res.ok) {
+    const message =
+      typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : 'Could not save the name. Check your connection and try again.'
+    throw new Error(message)
+  }
+  const next =
+    typeof payload.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : title.trim()
+  return next.slice(0, MAX_BOARD_TITLE_LENGTH)
+}
 
 const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
@@ -42,6 +116,7 @@ function initWhiteboardMenu() {
   const panel = root.querySelector<HTMLElement>('[data-whiteboard-panel]')
   const nameForm = root.querySelector<HTMLFormElement>('[data-wb-manage-name]')
   const titleInput = root.querySelector<HTMLInputElement>('[data-wb-manage-title]')
+  const liveTitleEl = root.querySelector<HTMLElement>('[data-wb-live-title]')
   const hint = root.querySelector<HTMLElement>('[data-wb-manage-hint]')
 
   const shareToggle = root.querySelector<HTMLInputElement>('[data-wb-share-toggle]')
@@ -84,6 +159,7 @@ function initWhiteboardMenu() {
   let currentShare: ShareCodeState = { code: null, expiresAt: null, open: false }
   let titleDirty = false
   let titleSyncGen = 0
+  let liveTitle = ''
 
   let participants: ParticipantRow[] = []
   let yourSessionId = ''
@@ -106,32 +182,61 @@ function initWhiteboardMenu() {
     const allowed = canRenameBoard()
     if (nameForm) nameForm.hidden = !allowed
     if (nameDivider) nameDivider.hidden = !allowed
+    if (liveTitleEl) {
+      liveTitleEl.hidden = allowed || !liveTitleEl.textContent
+    }
   }
 
   if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
   renderNameFormUi()
 
   const applyTitle = (title: string) => {
-    if (!titleInput) return
-    titleInput.value = title
-    document.title = `${title} - St. Cecilia Technology`
+    const cleaned = title.trim() || DEFAULT_LIVE_TITLE
+    liveTitle = cleaned
+    if (titleInput && !titleDirty) titleInput.value = cleaned
+    document.title = `${cleaned} - St. Cecilia Technology`
+    if (liveTitleEl) {
+      liveTitleEl.textContent = cleaned
+      liveTitleEl.hidden = canRenameBoard()
+    }
   }
 
-  const syncTitleFromLibrary = () => {
-    if (!boardId || !titleInput) return
+  const maybeSeedOwnerTitle = async (currentLive: string) => {
+    if (!boardId || yourRole !== 'owner' || !isPlaceholderTitle(currentLive)) {
+      return
+    }
+    try {
+      await whenAuthReady()
+      if (yourRole !== 'owner') return
+      const entry = await getEntryActive(boardId)
+      const seed = entry?.title?.trim() || ''
+      if (!seed || isPlaceholderTitle(seed)) return
+      const next = await patchLiveBoardTitle(boardId, seed)
+      if (!titleDirty) applyTitle(next)
+    } catch {
+      // Recents is only a one-time Owner backfill, not the live name.
+    }
+  }
+
+  const syncTitleFromLiveRoom = (helloTitle?: string) => {
+    if (!boardId) return
     const gen = ++titleSyncGen
-    // Wait for Clerk so signed-in users read cloud library, not localStorage.
-    void whenAuthReady()
-      .then(() => getEntryActive(boardId))
-      .then((entry) => {
-        if (gen !== titleSyncGen || titleDirty) return
-        if (entry) applyTitle(entry.title)
-      })
+    const fromHello = typeof helloTitle === 'string' ? helloTitle.trim() : ''
+    if (fromHello) {
+      if (gen === titleSyncGen) applyTitle(fromHello)
+      void maybeSeedOwnerTitle(fromHello)
+      return
+    }
+    void readLiveBoardTitle(boardId).then((title) => {
+      if (gen !== titleSyncGen || !title) return
+      applyTitle(title)
+      void maybeSeedOwnerTitle(title)
+    })
   }
 
-  syncTitleFromLibrary()
+  syncTitleFromLiveRoom()
   onAuthChange(() => {
-    syncTitleFromLibrary()
+    renderNameFormUi()
   })
 
   const setHint = (message: string | null) => {
@@ -433,11 +538,22 @@ function initWhiteboardMenu() {
   }) as EventListener)
 
   window.addEventListener(HELLO_EVENT, ((event: CustomEvent) => {
-    const detail = event.detail as { role?: WhiteboardRole; sessionId?: string }
+    const detail = event.detail as {
+      role?: WhiteboardRole
+      sessionId?: string
+      title?: string
+    }
     if (detail.role) yourRole = detail.role
     if (typeof detail.sessionId === 'string') yourSessionId = detail.sessionId
     if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
     renderNameFormUi()
+    if (typeof detail.title === 'string' && detail.title.trim()) {
+      titleSyncGen += 1
+      applyTitle(detail.title)
+      void maybeSeedOwnerTitle(detail.title)
+    } else {
+      syncTitleFromLiveRoom()
+    }
   }) as EventListener)
 
   window.addEventListener(FOLLOWING_EVENT, ((event: CustomEvent) => {
@@ -464,7 +580,8 @@ function initWhiteboardMenu() {
     panel.setAttribute('aria-hidden', open ? 'false' : 'true')
     if (open) {
       titleDirty = false
-      syncTitleFromLibrary()
+      if (liveTitle) applyTitle(liveTitle)
+      else syncTitleFromLiveRoom()
       setHint(null)
       titleInput?.setCustomValidity('')
       void refreshShareState()
@@ -542,7 +659,7 @@ function initWhiteboardMenu() {
     }
 
     titleInput?.setCustomValidity('')
-    // Wait for Clerk so signed-in Save writes the cloud library.
+    // Live-room PATCH is the source of truth. Owner Recents is an optional mirror.
     void (async () => {
       try {
         await whenAuthReady()
@@ -551,14 +668,25 @@ function initWhiteboardMenu() {
           setHint(null)
           return
         }
-        const next = await setBoardTitleActive(boardId, nextTitle)
+        const nextTitleLive = await patchLiveBoardTitle(boardId, nextTitle)
         titleDirty = false
         titleSyncGen += 1
-        applyTitle(next.title)
+        applyTitle(nextTitleLive)
+        let mirroredToLibrary = false
+        if (yourRole === 'owner') {
+          try {
+            await setBoardTitleActive(boardId, nextTitleLive)
+            mirroredToLibrary = isSignedIn()
+          } catch {
+            // Recents is an optional Owner index; the live room already has the name.
+          }
+        }
         setHint(
-          isSignedIn()
-            ? 'Name saved to your library. Save does not store the drawing.'
-            : 'Name kept on this scratch board. Sign in to save it to your library.',
+          mirroredToLibrary
+            ? 'Name saved on this board and in your library. Save does not store the drawing.'
+            : isSignedIn()
+              ? 'Name saved on this board. Save does not store the drawing.'
+              : 'Name saved on this board. Sign in to save it to your library.',
         )
       } catch (err) {
         setHint(

@@ -40,13 +40,6 @@ import '../styles/whiteboard.css';
       // WhiteboardCanvas also calls touchBoardActive; duplicate is idempotent upsert.
       void whenAuthReady()
         .then(() => touchBoardActive(boardId))
-        .then((entry) => {
-          const titleInput = document.querySelector<HTMLInputElement>(
-            '[data-wb-manage-title]',
-          );
-          if (titleInput) titleInput.value = entry.title;
-          document.title = `${entry.title} - St. Cecilia Technology`;
-        })
         .catch(() => {
           // Cloud upsert can fail offline; island touch still runs when signed out.
         });

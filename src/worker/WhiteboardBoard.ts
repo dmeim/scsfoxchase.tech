@@ -50,6 +50,9 @@ import {
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
 const FORCE_FOLLOW_KEY = 'meta:forceFollow'
+const META_TITLE_KEY = 'meta:title'
+const MAX_BOARD_TITLE_LENGTH = 80
+const DEFAULT_BOARD_TITLE = 'Untitled board'
 // PHASE 3.3
 const ROLES_KEY = 'meta:roles'
 const ACTIVE_CODE_KEY = 'meta:activeCode'
@@ -155,6 +158,12 @@ function json(status: number, body: unknown): Response {
 		status,
 		headers: { 'Content-Type': 'application/json' },
 	})
+}
+
+function sanitizeBoardTitle(value: unknown): string | null {
+	if (typeof value !== 'string') return null
+	const cleaned = value.replace(/\s+/g, ' ').trim().slice(0, MAX_BOARD_TITLE_LENGTH)
+	return cleaned || null
 }
 
 function sanitizeDisplayName(raw: string | null): string {
@@ -568,6 +577,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			canEdit: attachment.canEdit,
 			savedToLibrary,
 			owner,
+			title: await this.readBoardTitle(),
 			role: attachment.role,
 			authToken: attachment.authToken,
 		})
@@ -646,12 +656,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(405, { error: 'Method not allowed' })
 		}
 
-		const hostSecret = url.searchParams.get('hostSecret')
-		if (!(await this.assertHost(hostSecret))) {
-			return json(403, { error: 'Host secret required' })
-		}
-
 		let body: {
+			title?: unknown
+			sessionId?: unknown
+			authToken?: unknown
 			savedToLibrary?: unknown
 			cloudOwnerKey?: unknown
 			tempAssetPrefix?: unknown
@@ -660,6 +668,40 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			body = (await request.json()) as typeof body
 		} catch {
 			return json(400, { error: 'Invalid JSON body' })
+		}
+
+		const hasTitle = 'title' in body
+		const hasLifetimeFields =
+			typeof body.savedToLibrary === 'boolean' ||
+			'cloudOwnerKey' in body ||
+			'tempAssetPrefix' in body
+
+		if (hasTitle) {
+			const actor = await this.resolveActorFromMeta(url, request, body)
+			if (!actor || (actor.role !== 'owner' && actor.role !== 'manager')) {
+				return json(403, {
+					error: 'Only the Owner or a Manager can rename this board.',
+				})
+			}
+			const nextTitle = sanitizeBoardTitle(body.title)
+			if (!nextTitle) {
+				return json(400, { error: 'Enter a board name' })
+			}
+			await this.ctx.storage.put(META_TITLE_KEY, nextTitle)
+			this.broadcastTitle(nextTitle)
+		}
+
+		if (!hasLifetimeFields) {
+			if (hasTitle) {
+				await this.ensureBoardLifetime(boardId)
+				return json(200, await this.readPublicMeta(true))
+			}
+			return json(400, { error: 'No meta fields to update' })
+		}
+
+		const hostSecret = url.searchParams.get('hostSecret')
+		if (!(await this.assertHost(hostSecret))) {
+			return json(403, { error: 'Host secret required' })
 		}
 
 		const existingOwner =
@@ -779,6 +821,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		cloudOwnerKey: string | null
 		createdAt: string | null
 		unsavedExpiresAt: string | null
+		title: string
 		owner: OwnerHook
 	}> {
 		const savedToLibrary = await this.isSavedToLibrary()
@@ -792,8 +835,43 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			unsavedExpiresAt:
 				(await this.ctx.storage.get<string>(META_UNSAVED_EXPIRES_AT_KEY)) ??
 				null,
+			title: await this.readBoardTitle(),
 			owner: await this.readOwnerHook(false, revealCloudOwnerKey),
 		}
+	}
+
+	private async readBoardTitle(): Promise<string> {
+		return sanitizeBoardTitle(await this.ctx.storage.get<string>(META_TITLE_KEY))
+			?? DEFAULT_BOARD_TITLE
+	}
+
+	private broadcastTitle(title: string): void {
+		for (const ws of this.sessionIdToWs.values()) {
+			sendJson(ws, { type: 'wb:title', title })
+		}
+	}
+
+	/**
+	 * Title PATCH: live session token (Owner/Manager) or scratch host proof.
+	 * Session may arrive on the stub query, JSON body, or request headers.
+	 */
+	private async resolveActorFromMeta(
+		url: URL,
+		request: Request,
+		body: { sessionId?: unknown; authToken?: unknown },
+	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
+		const actorUrl = new URL(url.toString())
+		const sessionId =
+			actorUrl.searchParams.get('actorSessionId') ||
+			request.headers.get('X-Board-Session')?.trim() ||
+			(typeof body.sessionId === 'string' ? body.sessionId.trim() : '')
+		const authToken =
+			actorUrl.searchParams.get('actorAuth') ||
+			request.headers.get('X-Board-Auth')?.trim() ||
+			(typeof body.authToken === 'string' ? body.authToken.trim() : '')
+		if (sessionId) actorUrl.searchParams.set('actorSessionId', sessionId)
+		if (authToken) actorUrl.searchParams.set('actorAuth', authToken)
+		return this.resolveActor(actorUrl)
 	}
 
 	private async readOwnerHook(

@@ -124,6 +124,12 @@ export default {
 			const hostSecret =
 				headerSecret || bearer || forwardUrl.searchParams.get('hostSecret')
 			if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
+			const actorSessionId = request.headers.get('X-Board-Session')?.trim()
+			const actorAuth = request.headers.get('X-Board-Auth')?.trim()
+			if (actorSessionId) {
+				forwardUrl.searchParams.set('actorSessionId', actorSessionId)
+			}
+			if (actorAuth) forwardUrl.searchParams.set('actorAuth', actorAuth)
 			const body =
 				request.method === 'GET' || request.method === 'HEAD'
 					? undefined

@@ -108,6 +108,8 @@ export type HelloMessage = {
 	canEdit: boolean
 	savedToLibrary: boolean
 	owner: OwnerHook
+	/** Live room name. Recents/Library is only an index of this value. */
+	title: string
 	// PHASE 3.3
 	role: WhiteboardRole
 	authToken: string

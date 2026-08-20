@@ -14,9 +14,11 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 
 **In flight (next wave):**
 
-- Board title is library-index-only — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`, `src/pages/board.astro`
+- Board title is library-index-only — **done** (`meta:title` on hello/PATCH; Viewer/Editor 403). Classroom Summer Checklist manual open.
 - Student Editors cannot upload media on saved boards (+ leftover `local:*` accept path) — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
 - Last strokes vanish on tab close (flush only) — `worker` owns `src/components/WhiteboardCanvas.tsx`
+- Share Open Closed rotate not role-gated — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-codes.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`
+- Manager rename leftover (no Manager Recents as class title) — `worker` owns `src/scripts/whiteboard-library.ts`
 
 **Just closed (code-verified; classroom manuals still open):**
 
@@ -266,12 +268,12 @@ Store `meta:title` on the Durable Object. Include it on `wb:hello` and broadcast
 
 ### Tasks
 
-- [ ] Store `meta:title` on the Durable Object in `src/worker/WhiteboardBoard.ts`. Include it on `wb:hello` and broadcast when it changes.
-- [ ] Add Owner/Manager PATCH for title (session token or host proof). This is the live-room source of truth; Recents is only an index.
-- [ ] In `src/scripts/whiteboard-menu.ts` (and the board header / tab title), set the name from `wb:hello`, not from the signed-in user’s `boards.json` or scratch `sessionStorage`.
-- [ ] Keep `setBoardTitleActive` / `upsertCloudBoard` as an optional Owner-index mirror, not the only write.
-- [ ] Grep for `wb:hello` and `setBoardTitleActive`. Confirm private-tab Viewers receive the title without the Owner library.
-- [ ] Run `npm run build`.
+- [x] Store `meta:title` on the Durable Object in `src/worker/WhiteboardBoard.ts`. Include it on `wb:hello` and broadcast when it changes.
+- [x] Add Owner/Manager PATCH for title (session token or host proof). This is the live-room source of truth; Recents is only an index.
+- [x] In `src/scripts/whiteboard-menu.ts` (and the board header / tab title), set the name from `wb:hello`, not from the signed-in user’s `boards.json` or scratch `sessionStorage`.
+- [x] Keep `setBoardTitleActive` / `upsertCloudBoard` as an optional Owner-index mirror, not the only write.
+- [x] Grep for `wb:hello` and `setBoardTitleActive`. Confirm private-tab Viewers receive the title without the Owner library.
+- [x] Run `npm run build`.
 - [ ] Manual: Owner names the board “Summer Checklist 2026-2027”; three private Viewer tabs show that name without a Recents entry.
 
 ---
@@ -298,7 +300,7 @@ Gate the name field and Save to **Owner** and **Manager**. When title is on the 
 
 - [x] In `src/scripts/whiteboard-menu.ts`, hide `[data-wb-manage-name]` (the Header.astro form) unless the live role is Owner or Manager, matching `canForceFollow`.
 - [x] Do not let Viewer or Editor submit Save or see a success state. Unsigned scratch rename may stay on `rememberScratchTitle` for the creating host only.
-- [ ] When a DO title PATCH exists (Board title is library-index-only), reject Viewer and Editor with 403.
+- [x] When a DO title PATCH exists (Board title is library-index-only), reject Viewer and Editor with 403.
 - [x] Grep for `data-wb-manage-name` and `setBoardTitleActive`. Confirm Viewer markup does not include a working Save.
 - [x] Run `npm run build`.
 - [ ] Manual: as a Viewer, **Name this whiteboard** and **Save** are not available.
