@@ -30,6 +30,26 @@ function isBoardUuid(value: string): boolean {
 	return UUID_RE.test(value)
 }
 
+function looksLikeJwt(raw: string | null): boolean {
+	if (!raw) return false
+	const parts = raw.trim().split('.')
+	return parts.length === 3 && raw.trim().length > 40
+}
+
+/** Host proof only — skip JWT-shaped leftovers so Clerk Bearer stays Clerk. */
+function extractHostSecret(request: Request, url: URL): string | null {
+	const header = request.headers.get('X-Board-Host')?.trim()
+	if (header && !looksLikeJwt(header)) return header
+	const auth = request.headers.get('Authorization')
+	if (auth?.toLowerCase().startsWith('bearer ')) {
+		const token = auth.slice(7).trim()
+		if (token && !looksLikeJwt(token)) return token
+	}
+	const query = url.searchParams.get('hostSecret')?.trim()
+	if (query && !looksLikeJwt(query)) return query
+	return null
+}
+
 export default {
 	async fetch(
 		request: Request,
@@ -117,19 +137,27 @@ export default {
 			const stub = env.WHITEBOARDS.get(id)
 			const forwardUrl = new URL(request.url)
 			forwardUrl.searchParams.set('boardId', boardId)
-			const headerSecret = request.headers.get('X-Board-Host')?.trim()
-			const auth = request.headers.get('Authorization')
-			const bearer =
-				auth?.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : ''
-			const hostSecret =
-				headerSecret || bearer || forwardUrl.searchParams.get('hostSecret')
+			const hostSecret = extractHostSecret(request, forwardUrl)
 			if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
 			const actorSessionId = request.headers.get('X-Board-Session')?.trim()
 			const actorAuth = request.headers.get('X-Board-Auth')?.trim()
 			if (actorSessionId) {
 				forwardUrl.searchParams.set('actorSessionId', actorSessionId)
 			}
-			if (actorAuth) forwardUrl.searchParams.set('actorAuth', actorAuth)
+			if (actorAuth) {
+				forwardUrl.searchParams.set('actorAuth', actorAuth)
+			}
+			const headers = new Headers({ 'Content-Type': 'application/json' })
+			const authorization = request.headers.get('Authorization')
+			if (authorization) headers.set('Authorization', authorization)
+			const cookie = request.headers.get('Cookie')
+			if (cookie) headers.set('Cookie', cookie)
+			const origin = request.headers.get('Origin')
+			if (origin) headers.set('Origin', origin)
+			const boardHost = request.headers.get('X-Board-Host')?.trim()
+			if (boardHost) headers.set('X-Board-Host', boardHost)
+			if (actorSessionId) headers.set('X-Board-Session', actorSessionId)
+			if (actorAuth) headers.set('X-Board-Auth', actorAuth)
 			const body =
 				request.method === 'GET' || request.method === 'HEAD'
 					? undefined
@@ -137,7 +165,7 @@ export default {
 			const metaResponse = await stub.fetch(
 				new Request(forwardUrl.toString(), {
 					method: request.method,
-					headers: { 'Content-Type': 'application/json' },
+					headers,
 					body,
 				}),
 			)
