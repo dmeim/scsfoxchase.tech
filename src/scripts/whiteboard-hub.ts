@@ -20,7 +20,7 @@ import {
   listBoardsActive,
   parseJoinInput,
   removeBoardActive,
-  setBoardTitleActive,
+  renameBoardActive,
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
 
@@ -473,10 +473,14 @@ function bindCardMenus(root: Element) {
     // Gate on auth-ready so a pre-AuthBridge rename does not miss the cloud library.
     void (async () => {
       await whenAuthReady();
-      if (kind === 'asset') {
-        await setAssetTitleActive(id, nextTitle);
-      } else {
-        await setBoardTitleActive(id, nextTitle);
+      try {
+        if (kind === 'asset') {
+          await setAssetTitleActive(id, nextTitle);
+        } else {
+          await renameBoardActive(id, nextTitle);
+        }
+      } catch {
+        // Live meta:title PATCH failed; Recents was not mirrored.
       }
       closeCardMenus();
       void renderLibrary();

@@ -20,7 +20,8 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Share Open Closed rotate not role-gated — **done** (`handleCodeHttp` Owner/Manager 403; share tools hidden). Classroom Viewer-cannot-mint Manual open.
 - Manager rename leftover (no Manager Recents as class title) — **done**. Manual Manager vs Owner Recents still open.
 - Video player URLs after claim + temp media expiry — **done** (google-then-temp hydrate; keep temp; skip expiry while `savedToLibrary`; DO rewrites persisted `owner=temp:` player URLs). Manuals open. Temp R2 still kept after rewrite.
-- Hub Recents rename vs live title — `worker` owns `src/scripts/whiteboard-hub.ts`, `src/scripts/whiteboard-library.ts`. PATCH `meta:title` on hub Owner rename. Do not edit WhiteboardBoard.ts.
+- Hub Recents rename vs live title — **done** (hub calls `renameBoardActive` → PATCH `meta:title` then Owner Recents). Summer Checklist Manual still open.
+- Saved-board hub rename 403 — `worker` owns `src/worker/WhiteboardBoard.ts` only. Title PATCH must accept Clerk Owner/Manager the same way share-admin / `canRevealCloudOwnerKey` do. Do not let leftover host rewrite `cloudOwnerKey`.
 - Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible).
 - Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
 - Scene persist can drop work — **done** (no silent persist; `scene_json`; Editor toast). Manual reload-after-failure still open.
@@ -38,6 +39,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only unless Class can edit is On or Editor on People. UUID stays Viewer. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
 - Class-can-edit: share-code joiners land as Editor when the flag is on; UUID-only stays Viewer. Classroom Manual still open. Hub/in-board/owned docs match the shipped switch.
+- Owner hub Recents rename PATCHes live `meta:title` then mirrors Recents. Manager Recents is not the class title. Saved-board Clerk title PATCH still leftover.
 - Editor sessions learn `google:` on hello/meta so saved-board PUT is not `temp:`. Classroom paste+reload Manual still open.
 - Follow Me survives DO hibernation in code: `getForceFollowState` + attachment voluntary Follow + client `resubscribeFollow`. Classroom ping/pong Manual still open.
 - Scene persist: failed/oversize persist sends `wb:error` and does not broadcast; SQLite is one `scene_json` column. Classroom reload Manual still open.

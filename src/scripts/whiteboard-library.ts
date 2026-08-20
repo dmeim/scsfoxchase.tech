@@ -12,6 +12,7 @@ import {
   markBoardSavedToLibrary,
   upsertCloudBoard,
 } from '../lib/whiteboard-cloud';
+import { getBoardSessionAuth } from '../lib/whiteboard-participants';
 import {
   getActiveIdentity,
   getAuthHeaders,
@@ -78,6 +79,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** Eight-character letter-digit code (server `SHARE_CODE_RE`). */
 const SHARE_CODE_RE = /^([A-Z][0-9]){4}$/;
+const MAX_BOARD_TITLE_LENGTH = 80;
 
 export function isBoardUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
@@ -395,8 +397,94 @@ async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null>
 }
 
 /**
+ * Same live `meta:title` PATCH as the manage panel: session token and/or
+ * scratch host proof, plus Clerk so an Owner on the hub (no open socket)
+ * can still rename. Guests receive `wb:title` from the Durable Object.
+ */
+async function patchLiveBoardTitle(
+  boardId: string,
+  title: string,
+): Promise<string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const hostSecret = getHostSecret(boardId);
+  if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`;
+    headers['X-Board-Host'] = hostSecret;
+  }
+  const sessionAuth = getBoardSessionAuth(boardId);
+  if (sessionAuth) {
+    headers['X-Board-Session'] = sessionAuth.sessionId;
+    headers['X-Board-Auth'] = sessionAuth.authToken;
+  }
+  const clerkHeaders = await getAuthHeaders();
+  if (clerkHeaders.Authorization) {
+    headers.Authorization = clerkHeaders.Authorization;
+  }
+  const body: Record<string, string> = { title };
+  if (sessionAuth) {
+    body.sessionId = sessionAuth.sessionId;
+    body.authToken = sessionAuth.authToken;
+  }
+  const res = await fetch(
+    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    },
+  );
+  let payload: { title?: unknown; error?: unknown } = {};
+  try {
+    payload = (await res.json()) as typeof payload;
+  } catch {
+    // ignore
+  }
+  if (!res.ok) {
+    const message =
+      typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : 'Could not save the name. Check your connection and try again.';
+    throw new Error(message);
+  }
+  const next =
+    typeof payload.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : title.trim();
+  return next.slice(0, MAX_BOARD_TITLE_LENGTH);
+}
+
+/**
+ * Hub Recents / Library rename. PATCHes live `meta:title` first so guests
+ * update, then optionally mirrors Owner Recents. Known-not-Owner Recents
+ * skips the live PATCH and does not write Manager `boards.json`.
+ */
+export async function renameBoardActive(
+  boardId: string,
+  title: string,
+): Promise<WhiteboardLibraryEntry> {
+  const cleaned = title.trim() || 'Untitled board';
+  if (!isSignedIn()) {
+    rememberScratchTitle(boardId, cleaned);
+    return untitledEntry(boardId, cleaned);
+  }
+  const hostSecret = getHostSecret(boardId);
+  if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
+    return untitledEntry(boardId, cleaned);
+  }
+  const liveTitle = await patchLiveBoardTitle(boardId, cleaned);
+  try {
+    return await setBoardTitleActive(boardId, liveTitle);
+  } catch {
+    // Recents is an optional Owner index; the live room already has the name.
+    return untitledEntry(boardId, liveTitle);
+  }
+}
+
+/**
  * Optional Owner Recents / Library mirror. Live title is Durable Object
- * `meta:title` (board Save PATCHes that). Does not write a Manager's
+ * `meta:title` (hub / manage panel PATCH that). Does not write a Manager's
  * `library/{manager}/boards.json` as the class title.
  */
 export async function setBoardTitleActive(
