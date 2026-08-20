@@ -15,10 +15,11 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 **In flight (next wave):**
 
 - Board title is library-index-only — **done** (`meta:title` on hello/PATCH; Viewer/Editor 403). Classroom Summer Checklist manual open.
-- Student Editors cannot upload media on saved boards (+ leftover `local:*` accept path) — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
+- Student Editors cannot upload media on saved boards — **done** (session PUT; Editors may still land on `temp:` until they know the `google:` prefix). Manual paste+reload open. `local:*` writes 403.
 - Last strokes vanish on tab close (flush only) — `worker` owns `src/components/WhiteboardCanvas.tsx`
 - Share Open Closed rotate not role-gated — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-codes.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`
 - Manager rename leftover (no Manager Recents as class title) — `worker` owns `src/scripts/whiteboard-library.ts`
+- Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
 
 **Just closed (code-verified; classroom manuals still open):**
 
@@ -207,12 +208,12 @@ Allow a connected **Editor** (and Owner/Manager) to PUT under that board’s ass
 
 ### Tasks
 
-- [ ] In `src/worker/assetRoutes.ts`, stop using Owner-only `assertGoogleOwnerWrite` as the sole gate for canvas PUT on a saved `google:` board.
-- [ ] Allow Owner, Manager, and Editor to PUT under that board’s asset prefix when they present a live WS session token (`X-Board-Session` / `X-Board-Auth`) and/or host proof. Keep Viewers read-only.
-- [ ] In `src/lib/whiteboard-excalidraw-files.ts`, stop swallowing PUT failures in `syncFiles`. Surface image upload errors in the canvas the same way video insert already toasts.
-- [ ] Keep `serializeAsJSON` `files: {}` (binaries stay in R2). After reload, images that got 403 must not remain as dangling `fileId`s without feedback.
-- [ ] Grep for `assertGoogleOwnerWrite`, `putImageFile`, and `syncFiles`. Confirm an Editor session can PUT; a Viewer cannot.
-- [ ] Run `npm run build`.
+- [x] In `src/worker/assetRoutes.ts`, stop using Owner-only `assertGoogleOwnerWrite` as the sole gate for canvas PUT on a saved `google:` board.
+- [x] Allow Owner, Manager, and Editor to PUT under that board’s asset prefix when they present a live WS session token (`X-Board-Session` / `X-Board-Auth`) and/or host proof. Keep Viewers read-only.
+- [x] In `src/lib/whiteboard-excalidraw-files.ts`, stop swallowing PUT failures in `syncFiles`. Surface image upload errors in the canvas the same way video insert already toasts.
+- [x] Keep `serializeAsJSON` `files: {}` (binaries stay in R2). After reload, images that got 403 must not remain as dangling `fileId`s without feedback.
+- [x] Grep for `assertGoogleOwnerWrite`, `putImageFile`, and `syncFiles`. Confirm an Editor session can PUT; a Viewer cannot.
+- [x] Run `npm run build`.
 - [ ] Manual: student Editor pastes an image on a saved board, reloads, and the picture is still there.
 
 ---
@@ -796,7 +797,7 @@ Remove or lock down `local:*` once hub leftovers are gone. Keep one asset store 
 
 ### Tasks
 
-- [ ] Remove or lock down `local:*` in `src/worker/assetRoutes.ts` once hub leftover uploads are gone.
+- [x] Remove or lock down `local:*` in `src/worker/assetRoutes.ts` once hub leftover uploads are gone.
 - [x] Delete or stop exporting `r2AssetStore` and deprecated `localBlobAssetStore` from `src/lib/whiteboard-assets.ts` if nothing live imports them. Keep one asset store for canvas `temp:` / `google:` files.
 - [x] Update docs that still describe `local:` leftover hub uploads.
 - [x] If PUT/DELETE on `local:*` remains even briefly, it must not stay unauthenticated (Temp and local asset writes have no auth).

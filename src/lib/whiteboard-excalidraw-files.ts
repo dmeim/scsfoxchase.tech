@@ -174,13 +174,32 @@ async function fetchBoardAssetMetaAsSigner(
 	}
 }
 
-function ownerKeysToTry(boardId: string, meta: BoardAssetMeta): string[] {
+function isGoogleOwnerKey(value: string | null | undefined): value is string {
+	return typeof value === 'string' && value.startsWith('google:')
+}
+
+function googleOwnerFromElements(
+	elements: readonly { type?: string; link?: string | null }[],
+): string | null {
+	for (const el of elements) {
+		if (el.type !== 'embeddable') continue
+		const parsed = parsePlayerPath(el.link || '')
+		if (parsed && isGoogleOwnerKey(parsed.ownerKey)) return parsed.ownerKey
+	}
+	return null
+}
+
+function ownerKeysToTry(
+	boardId: string,
+	meta: BoardAssetMeta,
+	extraGoogle?: string | null,
+): string[] {
 	const primary = ownerKeyForBoardMeta(boardId, meta)
 	const temp = tempOwnerKey(boardId)
-	const google =
-		typeof meta.cloudOwnerKey === 'string' &&
-		meta.cloudOwnerKey.startsWith('google:')
-			? meta.cloudOwnerKey
+	const google = isGoogleOwnerKey(meta.cloudOwnerKey)
+		? meta.cloudOwnerKey
+		: isGoogleOwnerKey(extraGoogle)
+			? extraGoogle
 			: null
 	return [...new Set([primary, temp, google].filter(Boolean) as string[])]
 }
@@ -208,14 +227,36 @@ export function useWhiteboardExcalidrawFiles(
 		savedToLibrary: false,
 		cloudOwnerKey: null,
 	})
+	const googleOwnerRef = useRef<string | null>(null)
 	const readyRef = useRef(new Set<string>())
 	const inflightRef = useRef(new Set<string>())
 	const prefixRegisteredRef = useRef(false)
 	const claimedOwnerRef = useRef<string | null>(null)
+	const toastedUploadRef = useRef(new Set<string>())
+
+	const rememberGoogleOwner = (key: string | null | undefined) => {
+		if (isGoogleOwnerKey(key)) googleOwnerRef.current = key
+	}
+
+	const resolveCanvasOwnerKey = useCallback((): string => {
+		const meta = metaRef.current
+		rememberGoogleOwner(meta.cloudOwnerKey)
+		const api = apiRef.current
+		if (api) {
+			rememberGoogleOwner(
+				googleOwnerFromElements(api.getSceneElementsIncludingDeleted()),
+			)
+		}
+		if (meta.savedToLibrary && googleOwnerRef.current) {
+			return googleOwnerRef.current
+		}
+		return ownerKeyForBoardMeta(boardId, meta)
+	}, [apiRef, boardId])
 
 	useEffect(() => {
 		if (!boardId) return
 		let cancelled = false
+		googleOwnerRef.current = null
 
 		const refreshMeta = async () => {
 			const identity = getActiveIdentity()
@@ -224,6 +265,13 @@ export function useWhiteboardExcalidrawFiles(
 				: await fetchBoardAssetMeta(boardId)
 			if (cancelled) return
 			metaRef.current = meta
+			rememberGoogleOwner(meta.cloudOwnerKey)
+			const api = apiRef.current
+			if (api) {
+				rememberGoogleOwner(
+					googleOwnerFromElements(api.getSceneElementsIncludingDeleted()),
+				)
+			}
 			if (
 				!meta.savedToLibrary &&
 				!prefixRegisteredRef.current
@@ -290,8 +338,7 @@ export function useWhiteboardExcalidrawFiles(
 
 	const putImageFile = useCallback(
 		async (fileId: string, file: BinaryFileData) => {
-			const meta = metaRef.current
-			const ownerKey = ownerKeyForBoardMeta(boardId, meta)
+			const ownerKey = resolveCanvasOwnerKey()
 			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
 				prefixRegisteredRef.current = true
 				void registerTempAssetPrefix(boardId).catch(() => {
@@ -306,7 +353,7 @@ export function useWhiteboardExcalidrawFiles(
 				mimeType: file.mimeType,
 			})
 		},
-		[boardId],
+		[boardId, resolveCanvasOwnerKey],
 	)
 
 	const failedAtRef = useRef(new Map<string, number>())
@@ -316,10 +363,11 @@ export function useWhiteboardExcalidrawFiles(
 			const api = apiRef.current
 			if (!api) return false
 			const found = await fetchCanvasBytes(
-				ownerKeysToTry(boardId, metaRef.current),
+				ownerKeysToTry(boardId, metaRef.current, googleOwnerRef.current),
 				fileId,
 			)
 			if (!found || !IMAGE_MIME.has(found.mimeType)) return false
+			rememberGoogleOwner(found.ownerKey)
 			const dataURL = await blobToDataURL(found.blob)
 			api.addFiles([
 				{
@@ -340,6 +388,7 @@ export function useWhiteboardExcalidrawFiles(
 			files: BinaryFiles,
 		) => {
 			if (!boardId) return
+			rememberGoogleOwner(googleOwnerFromElements(elements))
 			const referenced = referencedImageFileIds(elements)
 			const now = Date.now()
 			for (const fileId of referenced) {
@@ -353,7 +402,18 @@ export function useWhiteboardExcalidrawFiles(
 				void (async () => {
 					try {
 						if (existing?.dataURL) {
-							await putImageFile(fileId, existing)
+							try {
+								await putImageFile(fileId, existing)
+							} catch {
+								if (!toastedUploadRef.current.has(fileId)) {
+									toastedUploadRef.current.add(fileId)
+									apiRef.current?.setToast?.({
+										message: 'Image upload failed',
+										duration: 4000,
+									})
+								}
+								throw new Error('image upload failed')
+							}
 						} else {
 							const ok = await hydrateImage(fileId)
 							if (!ok) throw new Error('asset not in R2 yet')
@@ -369,15 +429,14 @@ export function useWhiteboardExcalidrawFiles(
 				})()
 			}
 		},
-		[boardId, hydrateImage, putImageFile],
+		[apiRef, boardId, hydrateImage, putImageFile],
 	)
 
 	const insertVideos = useCallback(
 		async (videoFiles: File[]) => {
 			const api = apiRef.current
 			if (!api || videoFiles.length === 0) return
-			const meta = metaRef.current
-			const ownerKey = ownerKeyForBoardMeta(boardId, meta)
+			const ownerKey = resolveCanvasOwnerKey()
 			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
 				prefixRegisteredRef.current = true
 				void registerTempAssetPrefix(boardId).catch(() => {
@@ -425,7 +484,7 @@ export function useWhiteboardExcalidrawFiles(
 				captureUpdate: CaptureUpdateAction.IMMEDIATELY,
 			})
 		},
-		[apiRef, boardId],
+		[apiRef, boardId, resolveCanvasOwnerKey],
 	)
 
 	useEffect(() => {

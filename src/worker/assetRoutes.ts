@@ -3,14 +3,16 @@
  * Keys: assets/{ownerKey}/{assetId}
  *   google:{accountId} — signed-in saved boards
  *   temp:{boardId}     — unsaved / signed-out scratch (24h TTL)
- *   local:{deviceId}   — legacy hub index (Phase 3.1 may drop)
+ *   local:{deviceId}   — leftover hub objects (GET only; no new writes)
  * Routes: PUT|GET|DELETE /api/whiteboard/assets/{ownerKey}/{assetId}
  *         POST /api/whiteboard/assets/claim
  *         POST /api/whiteboard/assets/expire-temp
  *
- * PUT/DELETE: google:* requires a Clerk session whose ownerKey matches.
- * temp:* / local:* require a host secret or a live can-edit board session.
- * Guessing a fileId from the scene is not enough to overwrite or delete.
+ * PUT/DELETE google:*: matching Clerk Owner, or a live Owner/Manager/Editor
+ * WebSocket session (`X-Board-Session` / `X-Board-Auth`) and/or host proof
+ * for that board (`X-Board-Id`). Viewers are read-only.
+ * temp:* requires a host secret or a live can-edit board session.
+ * local:* PUT/DELETE are rejected. Guessing a fileId is not enough.
  * GET stays unauthenticated so connected players can load media; SVG is
  * served as an attachment with nosniff (not a navigable executable document).
  */
@@ -33,7 +35,7 @@ const ALLOWED_MIME = new Set([
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-/** Signed-out hub: local:{uuid}; saved: google:{sub}; scratch media: temp:{boardUuid} */
+/** Leftover GET: local:{uuid}; saved: google:{sub}; scratch media: temp:{boardUuid} */
 const OWNER_KEY_RE = /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/
 
 function isAssetUuid(value: string): boolean {
@@ -156,6 +158,13 @@ function extractSessionProof(
 	return { sessionId, authToken }
 }
 
+function boardIdFromRequest(request: Request): string | null {
+	const headerId = request.headers.get('X-Board-Id')?.trim() || ''
+	if (UUID_RE.test(headerId)) return headerId
+	const queryId = new URL(request.url).searchParams.get('boardId')?.trim() || ''
+	return UUID_RE.test(queryId) ? queryId : null
+}
+
 function boardIdForAssetWrite(
 	request: Request,
 	ownerKey: string,
@@ -167,11 +176,8 @@ function boardIdForAssetWrite(
 		if (headerId && headerId !== fromKey) return null
 		return fromKey
 	}
-	if (isLocalOwnerKey(ownerKey)) {
-		const headerId = request.headers.get('X-Board-Id')?.trim() || ''
-		if (UUID_RE.test(headerId)) return headerId
-		const queryId = new URL(request.url).searchParams.get('boardId')?.trim() || ''
-		return UUID_RE.test(queryId) ? queryId : null
+	if (ownerKey.startsWith('google:')) {
+		return boardIdFromRequest(request)
 	}
 	return null
 }
@@ -192,7 +198,100 @@ async function verifyBoardWriteAccess(
 	})
 }
 
-async function assertTempLocalWrite(
+async function tryRevealCloudOwnerKey(
+	request: Request,
+	env: Env,
+	boardId: string,
+	hostSecret: string | null,
+): Promise<string | null> {
+	const stub = boardStub(env, boardId)
+	try {
+		const viaClerk = await readRevealedCloudOwnerKey(stub, request, boardId, {
+			authorization: request.headers.get('Authorization'),
+		})
+		if (viaClerk) return viaClerk
+	} catch {
+		// Guest editors have no matching Clerk; session path still proceeds.
+	}
+	if (!hostSecret) return null
+	try {
+		return await readRevealedCloudOwnerKey(stub, request, boardId, {
+			hostSecret,
+		})
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Saved-board canvas PUT/DELETE: Owner Clerk match, or a live can-edit
+ * session / host proof on this board. Do not use Clerk-owner as the sole gate
+ * (student Editors are signed in as a different google: account).
+ */
+async function assertGoogleAssetWrite(
+	request: Request,
+	env: Env,
+	ownerKey: string,
+): Promise<Response | null> {
+	if (!ownerKey.startsWith('google:')) {
+		return jsonError(
+			403,
+			'This prefix requires a host secret or editor session',
+			request,
+		)
+	}
+
+	const hostSecret = extractHostSecret(request)
+	const session = extractSessionProof(request)
+	const boardId = boardIdForAssetWrite(request, ownerKey)
+
+	let boardResult: Awaited<ReturnType<typeof verifyBoardWriteAccess>> | null =
+		null
+	if (boardId && (hostSecret || session)) {
+		try {
+			boardResult = await verifyBoardWriteAccess(
+				env,
+				boardId,
+				hostSecret,
+				session,
+			)
+			if (boardResult.ok) {
+				const revealed = await tryRevealCloudOwnerKey(
+					request,
+					env,
+					boardId,
+					hostSecret,
+				)
+				if (revealed && revealed !== ownerKey) {
+					return jsonError(
+						403,
+						'ownerKey does not match this board',
+						request,
+					)
+				}
+				return null
+			}
+		} catch {
+			boardResult = {
+				ok: false,
+				status: 503,
+				error: 'Could not verify board write access',
+			}
+		}
+	}
+
+	const clerkDenied = await assertGoogleOwnerWrite(request, env, ownerKey)
+	if (!clerkDenied) return null
+	if (boardResult && !boardResult.ok) {
+		return jsonError(boardResult.status, boardResult.error, request)
+	}
+	if ((hostSecret || session) && !boardId) {
+		return jsonError(401, 'Board proof required', request)
+	}
+	return clerkDenied
+}
+
+async function assertTempWrite(
 	request: Request,
 	env: Env,
 	ownerKey: string,
@@ -230,17 +329,20 @@ async function assertTempLocalWrite(
 	}
 }
 
-/** PUT/DELETE gate: never skip temp:* / local:* as unauthenticated capability URLs. */
+/** PUT/DELETE gate: never skip temp:* as unauthenticated capability URLs. */
 async function assertAssetWrite(
 	request: Request,
 	env: Env,
 	ownerKey: string,
 ): Promise<Response | null> {
 	if (ownerKey.startsWith('google:')) {
-		return assertGoogleOwnerWrite(request, env, ownerKey)
+		return assertGoogleAssetWrite(request, env, ownerKey)
 	}
-	if (isTempOwnerKey(ownerKey) || isLocalOwnerKey(ownerKey)) {
-		return assertTempLocalWrite(request, env, ownerKey)
+	if (isTempOwnerKey(ownerKey)) {
+		return assertTempWrite(request, env, ownerKey)
+	}
+	if (isLocalOwnerKey(ownerKey)) {
+		return jsonError(403, 'local: prefix is read-only', request)
 	}
 	return jsonError(403, 'Unsupported owner key', request)
 }
