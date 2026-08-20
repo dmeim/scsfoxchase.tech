@@ -49,7 +49,7 @@ The PWA service worker (`public/sw.js`) **never intercepts `/api/*`**, so this u
 - Merge: last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
 - Hibernation: WebSocket auto-response for ping/pong; session snapshots on socket attachments; resume on wake.
 - Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `roleCanEdit` is false.
-- Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner or already stored as Editor/Manager. There is no class-Editor flag yet — Owner/Manager set **Editor** on **People**.
+- Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner, already stored as Editor/Manager, or they join with the active share code while **Class can edit** is On (`meta:classCanEdit`) — then they land as **Editor**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
 - Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
 
 Live schema (`SCENE_TABLE_SQL`):

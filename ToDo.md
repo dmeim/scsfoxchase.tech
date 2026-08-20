@@ -27,7 +27,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Share-code joiners default to Viewer (class-can-edit) — **done** (`meta:classCanEdit`; code cookie + flag → Editor; UUID stays Viewer). Manual still open.
 - Editor PUT still uses `temp:` on saved boards — **done** (`wb:hello` + session GET meta reveal `google:` to Owner/Manager/Editor). Manual paste+reload still open.
 - Class-can-edit training copy — **done** (hub/in-board/docs: view-only unless Class can edit is On or Editor on People).
-- Stale class-can-edit mentions outside owned docs — `doc-smith` owns `docs/whiteboard/README.md`, `docs/whiteboard/auth-libraries.md`, `docs/whiteboard/sync-storage.md`, `docs/architecture.md`, `AGENTS.md`. Do not edit src or WhiteboardBoard.ts.
+- Stale class-can-edit mentions outside owned docs — **done** (README, auth-libraries, sync-storage, architecture, AGENTS.md). Historical spec left as history.
 - Docs: `sync-storage.md` dual JSON — **done** (live schema is `scene_json`; persist fail-closed).
 - Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy updated.
 
