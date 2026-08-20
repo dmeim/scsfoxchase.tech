@@ -2,15 +2,17 @@
 
 Short join codes for classroom boards: Open / Closed, Copy, New, hub join, and KV + Durable Object expiry.
 
-Treat live share codes as **secrets**. Anyone who can read an Open code can join the board. Do not write a code on a hallway-facing board or otherwise project it where passers-by can photograph it. Prefer the board link (`/board/{uuid}`) for anything that stays on screen.
+Treat live share codes as **secrets**. Anyone who can read an Open code can join the board as **Viewer**. Do not write a code on a hallway-facing board or otherwise project it where passers-by can photograph it. Prefer the board link (`/board/{uuid}`) for anything that stays on screen.
 
 ## Overview
 
-A share code is an eight-character token: **letter, digit** four times (`A1B2C3D4` form, `([A-Z][0-9]){4}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the KV mapping so `GET /api/whiteboard/join/:code` cannot start a new session. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
+A share code is an eight-character token: **letter, digit** four times (`A1B2C3D4` form, `([A-Z][0-9]){4}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) **drops the KV mapping** so `GET /api/whiteboard/join/:code` cannot start a new session.
 
-A code only **opens** the board. Join is **view-only**: joiners land as **Viewer** and cannot draw until an Owner or Manager sets **Editor** on **People** (manage panel, Share Open). There is no class-wide Editor setting yet.
+**Owner or Manager** only can Open, Closed, rotate, or copy the code. Editor and Viewer get **403** (`Only the Owner or a Manager can manage the share code.`). Proof is a live session token, scratch host secret, or Clerk matching `cloudOwnerKey`. Leftover host secret on a Google-owned board is **not** enough. Knowing the board UUID is **not** share-admin proof.
 
-**Closed does not revoke the UUID.** `/board/{uuid}` still loads the canvas after Closed until connect-time auth exists (see the “Connect trusts client userId” launch item). Closed only stops *new* joins that still need the short code.
+Join lookup (`GET /api/whiteboard/join/:code`) stays **unauthenticated** (rate-limited). A code only **opens** the board. Join is **view-only**: joiners land as **Viewer** and cannot draw until an Owner or Manager sets **Editor** on **People**. There is no class-wide Editor setting yet (class-can-edit is not shipped). Opening a code does not mean students can draw.
+
+**Closed does not revoke the UUID.** UUID access remains a separate capability: `/board/{uuid}` still loads the canvas after Closed until connect-time auth exists (see the “Connect trusts client userId” launch item). Closed only stops *new* joins that still need the short code.
 
 ## Format and TTL
 
@@ -47,6 +49,8 @@ Routed in `src/worker.ts` → `src/worker/codeRoutes.ts` (join) or forwarded to 
 GET /api/whiteboard/join/:code
 ```
 
+**Auth:** none (rate-limited). Returns a board UUID only; it does not grant Editor.
+
 **Response 200:** `{ "id": "<board-uuid>" }`  
 **404:** code missing, expired, malformed, or bad board id — message: *That code isn't available…*  
 **429:** join rate limit (see below) — *Too many join attempts. Wait a moment and try again.*
@@ -61,6 +65,16 @@ POST   /api/whiteboard/boards/:uuid/code          # open / keep
 POST   /api/whiteboard/boards/:uuid/code?rotate=1 # mint new
 DELETE /api/whiteboard/boards/:uuid/code          # closed
 ```
+
+**Auth (GET of the secret value, POST, DELETE):** Owner/Manager. The Worker forwards host proof, live session token, and/or Clerk session to the Durable Object (`requireShareCodeAdmin` in `WhiteboardBoard.ts`). Client helpers send those headers (`shareAdminHeaders` in `src/lib/whiteboard-codes.ts`).
+
+| Proof | When it counts |
+|-------|----------------|
+| Live session (`X-Board-Session` + `X-Board-Auth`) | Connected Owner or Manager |
+| Scratch host secret (`X-Board-Host` / Bearer) | Unsaved board only (no `google:` cloud owner) |
+| Clerk matching `cloudOwnerKey` | Saved Google Owner |
+
+**403:** Viewer, Editor, unsigned caller, or leftover host on a Google-owned board — `{ "error": "Only the Owner or a Manager can manage the share code." }`
 
 **GET / POST success shape:**
 
@@ -78,7 +92,7 @@ DELETE /api/whiteboard/boards/:uuid/code          # closed
 |--------|----------|
 | Open (`POST`, no rotate) | If a valid code exists, keep it; otherwise mint |
 | New code (`POST?rotate=1`) | Delete old KV entry, mint a new code, reset 12h TTL |
-| Closed (`DELETE`) | Revoke KV + DO meta + alarm. Join by that code 404s. `/board/{uuid}` still works until connect auth exists. |
+| Closed (`DELETE`) | Revoke KV + DO meta + alarm. Join by that code 404s. `/board/{uuid}` still works until connect auth exists (UUID access is a separate capability). |
 
 ### Rate limit
 
@@ -96,18 +110,20 @@ Allocation retries random samples (up to 24) until a free KV key is found.
 
 ## Manage panel UI
 
-On `/board/{uuid}`, header manage panel (`Header.astro` + `whiteboard-menu.ts`):
+On `/board/{uuid}`, header manage panel (`Header.astro` + `whiteboard-menu.ts`). Share Open / Closed, click-to-copy, **New Code**, and **Copy Link** are **Owner/Manager only** (`canManageShare`). Editor and Viewer do not see those controls.
 
 - Left column **Share** switch (Open / Closed) — `openBoardShareCode` / `closeBoardShareCode`
+- Hint: *Join is view-only. Students cannot draw until you set Editor on People.*
 - When Open, right column shows:
   - Share code **button** (not an input) with clipboard icon — click / Enter / Space to copy
   - **New Code** — rotate (`?rotate=1`)
   - **Copy Link** — permanent `{origin}/board/{uuid}` URL
   - Expiry line updated about every 30s (`formatShareExpiry` → “Codes expire in 11h 42m. A new code is needed to share again.”)
+  - Hint: *A join code opens the board as Viewer. Set Editor on People if students should draw.*
   - Static hint: bookmark the board page to return later
   - **People** (roles + Follow) — see [people-permissions.md](./people-permissions.md)
 
-Auth for these calls: none beyond knowing the board UUID. Keep the code off hallway-facing displays; use **Copy Link** when the URL can stay on screen.
+Keep the code off hallway-facing displays; use **Copy Link** when the URL can stay on screen. Copying the link does not grant draw access.
 
 ## Hub join flow
 
@@ -116,7 +132,7 @@ Auth for these calls: none beyond knowing the board UUID. Keep the code off hall
 3. For codes: `GET /api/whiteboard/join/:code` → UUID.
 4. Navigate to `/board/{uuid}`. Join does **not** write Recents/Library.
 
-Joining does **not** make the user Owner. Scratch Owner stays with the creating browser (host secret). Saved boards use the Google Owner. Join is **view-only** until an Owner or Manager sets **Editor** on **People** — opening a code does not give the class draw access. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
+Joining does **not** make the user Owner. Scratch Owner stays with the creating browser (host secret). Saved boards use the Google Owner. Join is **view-only** until an Owner or Manager sets **Editor** on **People** — a join code does not mean students can draw. Class-can-edit is not shipped. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
 
 ## Key files
 
@@ -124,7 +140,7 @@ Joining does **not** make the user Owner. Scratch Owner stays with the creating 
 |------|------|
 | `src/worker/shareCode.ts` | Format, TTL, KV key helpers |
 | `src/worker/codeRoutes.ts` | Join + join rate limits + forward board code routes |
-| `src/worker/WhiteboardBoard.ts` | Mint / revoke / alarm / mint rate limit |
+| `src/worker/WhiteboardBoard.ts` | Mint / revoke / alarm / mint rate limit / `requireShareCodeAdmin` (Owner/Manager) |
 | `src/lib/whiteboard-codes.ts` | Client fetch helpers + expiry label |
 | `src/scripts/whiteboard-menu.ts` | Manage panel share UI |
 | `src/scripts/whiteboard-hub.ts` | Hub join by code |

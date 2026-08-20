@@ -8,6 +8,8 @@ Live presence, four roles, Follow, and Follow Me / force-follow. Live **cursors 
 
 Connected sessions appear in the board manage panel under **People**. Anyone may follow another person’s camera. **Owner** and **Manager** can change roles (with the rules below) and force the room — or one person — to follow a target. Viewers cannot mutate the document: Excalidraw `viewModeEnabled` **and** the Durable Object drops their `scene:update` writes.
 
+A share code (or board UUID) only **opens** the board. Code join is **Viewer** until Owner or Manager sets **Editor** on **People**. There is no class-wide Editor setting yet (class-can-edit is not shipped). A join code does not mean students can draw.
+
 ## Roles
 
 | Role | Canvas | Roles UI | Follow force |
@@ -149,14 +151,14 @@ Manage panel listens for `scsfoxchase:whiteboard-force-follow` to keep the On/Of
 
 | Action | Who |
 |--------|-----|
-| Open board by UUID / code | Anyone with link or open code |
+| Open board by UUID / Open code | Anyone with the link, or `GET /api/whiteboard/join/:code` (unauthenticated, rate-limited) |
 | Edit canvas | Owner, Manager, Editor |
-| View only | Viewer (default for guests) |
+| View only | Viewer (default for guests, including code join) |
 | Grant/revoke Manager | Owner only |
-| Set Editor / Viewer | Owner or Manager |
+| Set Editor / Viewer | Owner or Manager (per person on People; class-can-edit is not shipped) |
 | Follow Me / force-follow | Owner or Manager |
 | Voluntary Follow | Any session (subject to force-follow) |
-| Open/Close share code | Anyone with board UUID |
+| Open / Closed / rotate / copy share code | Owner or Manager. Viewer **403**. Leftover host on a Google-owned board is not enough. Closed drops the KV mapping; UUID access remains a separate capability. |
 
 ## Key files
 

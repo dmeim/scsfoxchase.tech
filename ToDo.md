@@ -22,13 +22,13 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
 - Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible). DO persist still in flight.
 - Follow Me hibernation (Durable Object) — `worker` owns `src/worker/WhiteboardBoard.ts` only (do not edit Canvas or roles)
-- Share / join-code docs vs Owner-Manager gate — `doc-smith` owns `docs/whiteboard/share-codes.md`, `docs/whiteboard/people-permissions.md`, `docs/whiteboard/hub-and-board.md`
+- Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy update still open.
 
 **Just closed (code-verified; classroom manuals still open):**
 
 - Excalidraw library sidebar hidden via CSS; Chromebook visual still manual (canvas search is hidden too).
 - Client `isShareCode` matches eight-character server codes.
-- Docs: `A1B2C3D4` + host proof off the WS URL. Historical spec left as history. In-board copy: join is view-only until Editor on People.
+- Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only until Editor on People. Historical spec left as history.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
 
 **Sentinel on `1d63c52`:** WARN — claim and leftover host were the remaining launch blockers in that area; both now have code landings in this wave.
@@ -858,7 +858,7 @@ When shipping the class-Editor setting, update hub and in-board copy. Until then
 
 ### Tasks
 
-- [ ] Update hub and in-board copy (and `docs/whiteboard/share-codes.md` / `docs/whiteboard/people-permissions.md`) so a join code is not described as “students can draw.”
+- [x] Update hub and in-board copy (and `docs/whiteboard/share-codes.md` / `docs/whiteboard/people-permissions.md`) so a join code is not described as “students can draw.”
 - [x] Until Share-code joiners default to Viewer ships a class-Editor setting, tell teachers to set Editor on the People list.
 - [ ] When that setting ships, update the same copy to match (default Viewer vs class can edit).
 - [x] Do not change `resolveConnectRole` in this issue.
