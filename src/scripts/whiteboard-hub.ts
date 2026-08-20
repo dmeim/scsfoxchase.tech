@@ -49,14 +49,10 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
   const date = escapeHtml(formatAccessedDate(entry.lastAccessedAt));
   const idAttr = escapeAttr(entry.id);
   const href = `/board/${encodeURIComponent(entry.id)}`;
-  const preview = entry.previewDataUrl
-    ? `<img src="${escapeAttr(entry.previewDataUrl)}" alt="" class="wb-card-preview-img" loading="lazy" />`
-    : `<div class="wb-card-preview-placeholder" aria-hidden="true"></div>`;
 
   return `
     <article class="wb-card" data-wb-card data-wb-id="${idAttr}">
       <a class="wb-card-link" href="${href}">
-        <div class="wb-card-preview">${preview}</div>
         <div class="wb-card-meta">
           <div class="wb-card-title" data-wb-card-title>${title}</div>
           <div class="wb-card-date">${date}</div>
@@ -218,6 +214,9 @@ const NOTE_SIGNED_OUT =
   'Create works without an account. That scratch board stays live if you refresh, but it is not in a library and is removed after 24 hours if it is never saved. Join by code or link also works signed out. Sign in with Google to Save and keep Recents, Library, and Assets.';
 const NOTE_SIGNED_IN =
   'New boards save to your Google library and you are Owner. A scratch board you created while signed out can be Saved from this account to claim Owner and lift the 24-hour limit. Leaving without Save means the board was never kept in your library — refresh does not erase it.';
+/** Joiners land as Viewer. Class-can-edit has not shipped; teachers set Editor on People. */
+const JOIN_VIEW_ONLY_HINT =
+  'Join is view-only. Students cannot draw until you set Editor on People. Class-can-edit has not shipped.';
 
 function setHubNote(message: string) {
   const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');
@@ -520,6 +519,8 @@ function initWhiteboardHub() {
     joinHint.hidden = false;
     joinHint.textContent = message;
   };
+
+  showActionHint(JOIN_VIEW_ONLY_HINT);
 
   const showAuthPendingUi = () => {
     setCloudListsVisible(false);

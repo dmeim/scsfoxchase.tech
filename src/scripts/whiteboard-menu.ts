@@ -557,11 +557,15 @@ function initWhiteboardMenu() {
         applyTitle(next.title)
         setHint(
           isSignedIn()
-            ? 'Saved to your Google library.'
+            ? 'Name saved to your library. Save does not store the drawing.'
             : 'Name kept on this scratch board. Sign in to save it to your library.',
         )
-      } catch {
-        setHint('Could not save the name. Check your connection and try again.')
+      } catch (err) {
+        setHint(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not save the name. Check your connection and try again.',
+        )
       }
     })()
   })

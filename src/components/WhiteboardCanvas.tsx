@@ -318,10 +318,10 @@ export default function WhiteboardCanvas({
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
       const sessionToken = (await getSessionToken()) ?? ''
+      const hostSecret = getHostSecret(boardId)
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
         sessionId,
-        hostSecret: getHostSecret(boardId),
         displayName: identity.displayName,
         userId: sessionToken ? '' : identity.userId,
       })
@@ -333,7 +333,13 @@ export default function WhiteboardCanvas({
         attempt = 0
         clearTimers()
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'wb:auth', token: sessionToken }))
+          ws.send(
+            JSON.stringify({
+              type: 'wb:auth',
+              token: sessionToken,
+              ...(hostSecret ? { hostSecret } : {}),
+            }),
+          )
         }
         pingTimer = window.setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {

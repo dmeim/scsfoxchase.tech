@@ -12,23 +12,27 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 
 **Wave cap:** 10 concurrent specialists. Fill every unblocked file partition; do not overlap writers.
 
-**In flight:**
+**In flight (next wave):**
 
-- Claim moves temp assets to any Clerk account — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
-- Host secret still rewrites Owner after Save — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/components/WhiteboardCanvas.tsx`, `src/scripts/whiteboard-library.ts`
-- Recents Saved vs TTL (server) + Library JSON etag — `worker` owns `src/worker/libraryRoutes.ts`
-- Dead r2AssetStore + Hub Assets empty copy — `worker` owns `src/lib/whiteboard-assets.ts`, `src/pages/whiteboard.astro`
-- Shared Chromebooks reuse guest userId — `worker` owns `src/lib/whiteboard-excalidraw-roles.ts`, `docs/whiteboard/people-permissions.md`
-- Guests default Viewer training copy — `doc-smith` owns remaining whiteboard docs except `share-codes.md` / `people-permissions.md`
-- Connect+asset security review — `sentinel` (read-only, commit `1d63c52`)
-- Remaining ToDo file map — `scout` (read-only)
-- Recents/Library thumbnails + hub join-code view-only copy — `worker` owns `src/scripts/whiteboard-hub.ts`
-- Honest Save copy (index vs scene) — `worker` owns `src/scripts/whiteboard-menu.ts`
+- Board title is library-index-only — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`, `src/pages/board.astro`
+- Following overlay is glitchy — `worker` owns `src/lib/whiteboard-excalidraw-roles.ts`, `src/components/WhiteboardCanvas.tsx`
+- Student Editors cannot upload media on saved boards (+ leftover `local:*` accept path) — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
+- Excalidraw library sidebar blocked by CSP — `worker` owns `src/styles/whiteboard.css` (do not add `json.excalidraw.com` to `_headers`)
+- Eight-character `SHARE_CODE_RE` leftover — `worker` owns `src/scripts/whiteboard-library.ts`
+- Leftover `A1B2` / query-`hostSecret` docs — `doc-smith`
 
-**Just closed:**
+**Just closed (code-verified; classroom manuals still open):**
 
-- Share codes are short and unmetered — eight-character codes + join rate limits. Leftover: `whiteboard-library.ts` still has a 4-char `SHARE_CODE_RE`; other docs still mention `A1B2`. Classroom Closed/UUID manual not run.
-- Name this whiteboard UI — Owner/Manager only. PATCH 403 waits on Board title. Viewer classroom manual not run.
+- Claim moves temp assets to any Clerk account
+- Host secret still rewrites Owner after Save (leftover host can still write temp/local until cleared)
+- Recents Saved vs TTL (server) + Library JSON etag (menu 200 now implies DO flag)
+- Dead r2AssetStore exports + Hub Assets hidden (not upsert; `local:*` still accepted on Worker)
+- Shared Chromebooks guest `userId` (visit UUID)
+- Recents/Library unused preview slot removed; hub join is view-only
+- Honest Save copy in the manage panel
+- Maintainer docs for join = Viewer; in-board / `share-codes.md` still thin
+
+**Sentinel on `1d63c52`:** WARN — claim and leftover host were the remaining launch blockers in that area; both now have code landings in this wave.
 
 **AFK decisions (do not reopen unless blocked):**
 
@@ -88,12 +92,12 @@ Claim only when the Clerk `ownerKey` matches the DO `cloudOwnerKey`, or when the
 
 ### Tasks
 
-- [ ] In `src/worker/assetRoutes.ts` `handleClaim`, after `requireClerkWhiteboardAuth`, load the board’s `meta:cloudOwnerKey` and refuse the move unless the Clerk `ownerKey` matches, or the request presents a valid host secret for that board.
-- [ ] Do not call `moveTempPrefixToOwner` with an arbitrary caller’s `ownerKey`.
-- [ ] In `src/lib/whiteboard-excalidraw-files.ts` `claimAndRewrite` / `claimTempCanvasAssets`, skip the POST unless the signed-in identity is the board Owner.
-- [ ] Coordinate with Connect trusts client userId so GET meta is not enough to pick a destination prefix.
-- [ ] Grep for `handleClaim`, `claimTempCanvasAssets`, and `moveTempPrefixToOwner`. Confirm a second signed-in account cannot drain `temp:{boardId}`.
-- [ ] Run `npm run build`.
+- [x] In `src/worker/assetRoutes.ts` `handleClaim`, after `requireClerkWhiteboardAuth`, load the board’s `meta:cloudOwnerKey` and refuse the move unless the Clerk `ownerKey` matches, or the request presents a valid host secret for that board.
+- [x] Do not call `moveTempPrefixToOwner` with an arbitrary caller’s `ownerKey`.
+- [x] In `src/lib/whiteboard-excalidraw-files.ts` `claimAndRewrite` / `claimTempCanvasAssets`, skip the POST unless the signed-in identity is the board Owner.
+- [x] Coordinate with Connect trusts client userId so GET meta is not enough to pick a destination prefix.
+- [x] Grep for `handleClaim`, `claimTempCanvasAssets`, and `moveTempPrefixToOwner`. Confirm a second signed-in account cannot drain `temp:{boardId}`.
+- [x] Run `npm run build`.
 - [ ] Manual: student signs in on a scratch or saved board they do not own; temp media must stay put.
 
 ---
@@ -148,12 +152,12 @@ Do not treat save as success until DO `savedToLibrary` is true. Do not list or c
 
 ### Tasks
 
-- [ ] In `src/worker/libraryRoutes.ts` `tryMarkSavedToLibrary`, do not ignore the PATCH response. Fail or retry the library PUT until DO `savedToLibrary` is true.
-- [ ] Do not create or keep a Recents/Library row as durable while the unsaved 24h alarm is still armed.
-- [ ] In `src/scripts/whiteboard-menu.ts` / `src/scripts/whiteboard-library.ts` `setBoardTitleActive`, show “Saved to your Google library.” only after the DO flag is true. Surface an error if PATCH 403s or fails.
-- [ ] Confirm `expireUnsavedBoard` in `src/worker/WhiteboardBoard.ts` still wipes only when `savedToLibrary` is false — and that a successful save lifts that path.
-- [ ] Grep for `tryMarkSavedToLibrary`, `savedToLibrary`, and the Saved copy. Confirm the index write cannot succeed while TTL remains armed.
-- [ ] Run `npm run build`.
+- [x] In `src/worker/libraryRoutes.ts` `tryMarkSavedToLibrary`, do not ignore the PATCH response. Fail or retry the library PUT until DO `savedToLibrary` is true.
+- [x] Do not create or keep a Recents/Library row as durable while the unsaved 24h alarm is still armed.
+- [x] In `src/scripts/whiteboard-menu.ts` / `src/scripts/whiteboard-library.ts` `setBoardTitleActive`, show “Saved to your Google library.” only after the DO flag is true. Surface an error if PATCH 403s or fails.
+- [x] Confirm `expireUnsavedBoard` in `src/worker/WhiteboardBoard.ts` still wipes only when `savedToLibrary` is false — and that a successful save lifts that path.
+- [x] Grep for `tryMarkSavedToLibrary`, `savedToLibrary`, and the Saved copy. Confirm the index write cannot succeed while TTL remains armed.
+- [x] Run `npm run build`.
 - [ ] Manual: Save a new board; Recents says Saved only when a later reload still has the scene after 24h would have fired.
 
 ---
@@ -416,11 +420,11 @@ After a successful Google claim, stop sending host secret on connect; drop it fr
 
 ### Tasks
 
-- [ ] After a successful Google claim / `savedToLibrary`, stop sending `hostSecret` from `src/components/WhiteboardCanvas.tsx` into `buildWhiteboardConnectUrl`. Drop or scope `localStorage` via `persistHostSecret` / `getHostSecret` in `src/scripts/whiteboard-library.ts`.
-- [ ] In `handleMetaHttp` PATCH, reject `cloudOwnerKey` changes unless Clerk matches the existing `google:` owner (or a one-time claim). A leftover host secret must not rewrite Owner.
-- [ ] Move remaining host proof off the WebSocket query string (query strings hit logs). Prefer header or first-message proof for unsaved scratch boards.
-- [ ] Grep for `getHostSecret(boardId)` on connect and for PATCH of `cloudOwnerKey`. Confirm Save does not leave a durable host Owner-equivalent on the device.
-- [ ] Run `npm run build`.
+- [x] After a successful Google claim / `savedToLibrary`, stop sending `hostSecret` from `src/components/WhiteboardCanvas.tsx` into `buildWhiteboardConnectUrl`. Drop or scope `localStorage` via `persistHostSecret` / `getHostSecret` in `src/scripts/whiteboard-library.ts`.
+- [x] In `handleMetaHttp` PATCH, reject `cloudOwnerKey` changes unless Clerk matches the existing `google:` owner (or a one-time claim). A leftover host secret must not rewrite Owner.
+- [x] Move remaining host proof off the WebSocket query string (query strings hit logs). Prefer header or first-message proof for unsaved scratch boards.
+- [x] Grep for `getHostSecret(boardId)` on connect and for PATCH of `cloudOwnerKey`. Confirm Save does not leave a durable host Owner-equivalent on the device.
+- [x] Run `npm run build`.
 - [ ] Manual: shared Chromebook, next student, leftover secret cannot steal Owner on a saved board.
 
 ---
@@ -534,7 +538,7 @@ Flush pending strokes on `pagehide`/`visibilitychange` and before WS close. Do n
 
 - [ ] In `src/components/WhiteboardCanvas.tsx`, flush `pendingFlushRef` on `pagehide` / `visibilitychange` and before WebSocket close. Do not `clearTimeout` the `SCENE_FLUSH_MS` (1000) timer on unmount without sending.
 - [ ] Optionally persist immediately on disconnect so work done while the socket is down is not lost.
-- [ ] Keep Save copy honest in `whiteboard-menu.ts`: “Saved to your Google library.” is the index, not `persistScene`. Do not imply Save checkpointed the canvas.
+- [x] Keep Save copy honest in `whiteboard-menu.ts`: “Saved to your Google library.” is the index, not `persistScene`. Do not imply Save checkpointed the canvas.
 - [ ] Grep for `SCENE_FLUSH_MS`, `pendingFlushRef`, and unmount cleanup. Confirm a close cannot drop the last debounce window.
 - [ ] Run `npm run build`.
 - [ ] Manual: draw, close the tab within ~1s, reopen; the last stroke is on the board. Save without drawing does not claim the scene was stored.
@@ -561,11 +565,11 @@ Use R2 etags (If-Match) and retry. Or per-board objects instead of one array fil
 
 ### Tasks
 
-- [ ] In `src/worker/libraryRoutes.ts`, add R2 etags on `readJsonArray` / `writeJsonArray` (`If-Match`) and retry on conflict for both `boards.json` and `assets.json`.
-- [ ] Cover concurrent Recents `lastAccessedAt` vs rename so one PUT cannot drop the other entry.
-- [ ] Alternative allowed by the fix: per-board objects instead of one array file — pick one approach, do not leave unconditioned RMW.
-- [ ] Grep for `writeJsonArray` and R2 `put`. Confirm there is no unconditioned whole-file write.
-- [ ] Run `npm run build`.
+- [x] In `src/worker/libraryRoutes.ts`, add R2 etags on `readJsonArray` / `writeJsonArray` (`If-Match`) and retry on conflict for both `boards.json` and `assets.json`.
+- [x] Cover concurrent Recents `lastAccessedAt` vs rename so one PUT cannot drop the other entry.
+- [x] Alternative allowed by the fix: per-board objects instead of one array file — pick one approach, do not leave unconditioned RMW.
+- [x] Grep for `writeJsonArray` and R2 `put`. Confirm there is no unconditioned whole-file write.
+- [x] Run `npm run build`.
 - [ ] Manual or two-tab check: Owner rename and Recents touch at the same time; both entries survive.
 
 ---
@@ -653,11 +657,11 @@ Bind guest role to session id (tab) instead of install id, or rotate guest `user
 
 ### Tasks
 
-- [ ] Change `getBoardConnectIdentity()` in `src/lib/whiteboard-excalidraw-roles.ts` so signed-out `userId` is not the durable `deviceInstallId` from `getDeviceInstallId()` / `DEVICE_INSTALL_ID_KEY`.
-- [ ] Bind guest role to tab session id, or rotate guest `userId` per board visit, so the next student does not inherit Editor.
-- [ ] Keep Google sign-in as the way a person stays Editor across visits. Update `docs/whiteboard/people-permissions.md` for shared-Chromebook sign-out.
-- [ ] Grep for `getDeviceInstallId` on the connect identity path. Confirm `applyRoleToUser` is not keyed by a Chromebook-lifetime guest id.
-- [ ] Run `npm run build`.
+- [x] Change `getBoardConnectIdentity()` in `src/lib/whiteboard-excalidraw-roles.ts` so signed-out `userId` is not the durable `deviceInstallId` from `getDeviceInstallId()` / `DEVICE_INSTALL_ID_KEY`.
+- [x] Bind guest role to tab session id, or rotate guest `userId` per board visit, so the next student does not inherit Editor.
+- [x] Keep Google sign-in as the way a person stays Editor across visits. Update `docs/whiteboard/people-permissions.md` for shared-Chromebook sign-out.
+- [x] Grep for `getDeviceInstallId` on the connect identity path. Confirm `applyRoleToUser` is not keyed by a Chromebook-lifetime guest id.
+- [x] Run `npm run build`.
 - [ ] Manual: period 1 guest promoted to Editor; period 2 student on the same Chromebook (no site-data clear) is not still Editor.
 
 ---
@@ -682,11 +686,11 @@ On successful canvas PUT (Owner library), upsert `assets.json`, or drop hub Asse
 
 ### Tasks
 
-- [ ] Either upsert `library/{ownerKey}/assets.json` on successful canvas PUT (Owner library) in the asset PUT path, or remove/hide hub Assets until that write exists.
-- [ ] Update `src/lib/whiteboard-assets.ts` (the “Hub index is not updated.” comment) and empty copy on `src/pages/whiteboard.astro` so the strip does not imply it is the canvas media library.
-- [ ] Do not invent a second store. Canvas files stay at `assets/{ownerKey}/{fileId}`.
-- [ ] Grep for `assets.json` and hub Assets rendering. Confirm canvas PUT and hub index match the chosen approach.
-- [ ] Run `npm run build`.
+- [x] Either upsert `library/{ownerKey}/assets.json` on successful canvas PUT (Owner library) in the asset PUT path, or remove/hide hub Assets until that write exists.
+- [x] Update `src/lib/whiteboard-assets.ts` (the “Hub index is not updated.” comment) and empty copy on `src/pages/whiteboard.astro` so the strip does not imply it is the canvas media library.
+- [x] Do not invent a second store. Canvas files stay at `assets/{ownerKey}/{fileId}`.
+- [x] Grep for `assets.json` and hub Assets rendering. Confirm canvas PUT and hub index match the chosen approach.
+- [x] Run `npm run build`.
 - [ ] Manual: upload on a saved board; hub Assets either lists it or is not shown as an empty class-media library.
 
 ---
@@ -711,11 +715,11 @@ Capture a small preview on Save (or periodically) into the index, or remove the 
 
 ### Tasks
 
-- [ ] Either capture a small preview on Save (or periodically) into `previewDataUrl` on the index, or remove the unused `<img>` branch in `src/scripts/whiteboard-hub.ts`.
-- [ ] If capturing: wire it through `upsert` in `src/scripts/whiteboard-library.ts` / `src/worker/libraryRoutes.ts` so the field is no longer pass-through-only.
-- [ ] If removing: delete dead markup and keep the optional type only if still needed.
-- [ ] Grep for `previewDataUrl`. Confirm the hub does not render an empty preview slot that nothing fills, or that Save actually fills it.
-- [ ] Run `npm run build`.
+- [x] Either capture a small preview on Save (or periodically) into `previewDataUrl` on the index, or remove the unused `<img>` branch in `src/scripts/whiteboard-hub.ts`.
+- [x] If capturing: wire it through `upsert` in `src/scripts/whiteboard-library.ts` / `src/worker/libraryRoutes.ts` so the field is no longer pass-through-only.
+- [x] If removing: delete dead markup and keep the optional type only if still needed.
+- [x] Grep for `previewDataUrl`. Confirm the hub does not render an empty preview slot that nothing fills, or that Save actually fills it.
+- [x] Run `npm run build`.
 - [ ] Manual: Recents cards either show a real thumbnail or no preview chrome.
 
 ---
@@ -798,11 +802,11 @@ Remove or lock down `local:*` once hub leftovers are gone. Keep one asset store 
 ### Tasks
 
 - [ ] Remove or lock down `local:*` in `src/worker/assetRoutes.ts` once hub leftover uploads are gone.
-- [ ] Delete or stop exporting `r2AssetStore` and deprecated `localBlobAssetStore` from `src/lib/whiteboard-assets.ts` if nothing live imports them. Keep one asset store for canvas `temp:` / `google:` files.
-- [ ] Update docs that still describe `local:` leftover hub uploads.
-- [ ] If PUT/DELETE on `local:*` remains even briefly, it must not stay unauthenticated (Temp and local asset writes have no auth).
-- [ ] Grep for `r2AssetStore`, `localBlobAssetStore`, and `local:`. Confirm no live hub path still writes that prefix.
-- [ ] Run `npm run build`.
+- [x] Delete or stop exporting `r2AssetStore` and deprecated `localBlobAssetStore` from `src/lib/whiteboard-assets.ts` if nothing live imports them. Keep one asset store for canvas `temp:` / `google:` files.
+- [x] Update docs that still describe `local:` leftover hub uploads.
+- [x] If PUT/DELETE on `local:*` remains even briefly, it must not stay unauthenticated (Temp and local asset writes have no auth).
+- [x] Grep for `r2AssetStore`, `localBlobAssetStore`, and `local:`. Confirm no live hub path still writes that prefix.
+- [x] Run `npm run build`.
 
 ---
 
@@ -856,11 +860,11 @@ When shipping the class-Editor setting, update hub and in-board copy. Until then
 ### Tasks
 
 - [ ] Update hub and in-board copy (and `docs/whiteboard/share-codes.md` / `docs/whiteboard/people-permissions.md`) so a join code is not described as “students can draw.”
-- [ ] Until Share-code joiners default to Viewer ships a class-Editor setting, tell teachers to set Editor on the People list.
+- [x] Until Share-code joiners default to Viewer ships a class-Editor setting, tell teachers to set Editor on the People list.
 - [ ] When that setting ships, update the same copy to match (default Viewer vs class can edit).
-- [ ] Do not change `resolveConnectRole` in this issue.
-- [ ] Grep hub/help strings for join-code wording. Confirm they do not imply draw access.
-- [ ] Manual: a teacher reading the hub can tell that code join is view-only unless they promote or turn on class-can-edit.
+- [x] Do not change `resolveConnectRole` in this issue.
+- [x] Grep hub/help strings for join-code wording. Confirm they do not imply draw access.
+- [x] Manual: a teacher reading the hub can tell that code join is view-only unless they promote or turn on class-can-edit.
 
 ---
 

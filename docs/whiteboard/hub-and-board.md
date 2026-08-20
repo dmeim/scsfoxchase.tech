@@ -37,6 +37,8 @@ The join field accepts:
 
 Join does **not** add the board to Recents/Library. Invalid input or an unavailable code shows a hint under the field.
 
+A share code (or link / UUID) only **opens** the board. Joiners land as **Viewer**: they can watch, not draw. There is no class-wide Editor setting yet. Until one ships, an Owner or Manager must set **Editor** on each person in the **People** list (manage panel, Share Open). Opening a code does not give the class draw access.
+
 Join parsing: `parseJoinInput` in `src/scripts/whiteboard-library.ts`.  
 Code lookup: `lookupShareCode` in `src/lib/whiteboard-codes.ts`. Details: [share-codes.md](./share-codes.md).
 
@@ -48,9 +50,9 @@ Shown only while signed in (`[data-wb-cloud-lists]`). Signed-out hub copy explai
 |---------|---------|
 | **Recents** | Up to 8 boards by `lastAccessedAt` from the Google library |
 | **Library** | Full sorted cloud board list |
-| **Assets** | Images/videos from saved boards under `google:{accountId}` |
+| **Assets** | Hidden for now — canvas uploads stay on the board (`assets/{ownerKey}/{fileId}`) and are not a class media library |
 
-Each card supports **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row only. Board delete does not delete Durable Object state or R2 media for classmates still on the board; asset delete also best-effort `DELETE`s the R2 object.
+Recents and Library cards support **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row only. Board delete does not delete Durable Object state or R2 media for classmates still on the board.
 
 While Clerk is loading, empty states show **Loading…** so cloud lists do not flash empty.
 
@@ -104,6 +106,8 @@ Toggle: **Whiteboard** button opens a dialog panel. Escape / outside click close
 
 Open / Closed switch on the left column. When **Open**, the right column shows the share code (click to copy), **New Code**, **Copy Link** (permanent `/board/{uuid}` URL), expiry countdown, and People. See [share-codes.md](./share-codes.md).
 
+The code is a join token, not an edit grant. Students who join with it stay **Viewer** until you set **Editor** on **People**.
+
 Anyone who can open the board URL can call the code API (UUID is the capability). Host secret is **not** required for share-code actions.
 
 ### Follow Me
@@ -113,6 +117,8 @@ Owner/Manager control beside the **People** heading (hidden unless this session 
 ### People
 
 Shown only while Share is Open. Columns: **Name** | **Follow** | **Role**. Live list from DO custom messages. See [people-permissions.md](./people-permissions.md).
+
+Until a class-Editor setting exists, use the **Role** column to promote a joiner from **Viewer** to **Editor** if they should draw.
 
 ### Whiteboard Library
 

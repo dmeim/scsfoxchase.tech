@@ -11,7 +11,7 @@ Clerk Google sign-in, owner keys, and how Recents / Library / Assets work as a *
 - “Leave and lose work” means **never saved to the cloud library**, not “destroy on refresh.” Chromebooks refresh. The scene stays in the DO; **unsaved boards and their temp R2 objects are deleted after 24 hours**.
 - Sign in on a scratch board this browser created and Save: that Google account **claims Owner**, temp R2 files move under `google:{accountId}`, 24h TTL comes off.
 
-Join by share code, link, or UUID still works with **no account**. Joiners are **Viewer** by default.
+Join by share code, link, or UUID still works with **no account**. Joiners are **Viewer** by default (view only). They cannot draw until Owner or Manager sets **Editor** on the **People** list. There is no class-wide Editor setting yet.
 
 ## Clerk on the client
 
@@ -54,7 +54,7 @@ Secrets / vars: `CLERK_SECRET_KEY` (Worker secret), `PUBLIC_CLERK_PUBLISHABLE_KE
 | Unsaved / signed-out canvas files | `temp:{boardId}` | Board UUID; 24h TTL on R2 |
 | Guest identity (not a library) | `deviceInstallId` in `localStorage` | Stable per browser for generated display names and Follow `userId` |
 
-`getOwnerKey()` in `src/scripts/whiteboard-library.ts` returns the signed-in Google key or `local:{deviceInstallId}` (legacy hub uploads). Live canvas media uses `ownerKeyForBoardMeta` → `temp:` or `google:`.
+`getOwnerKey()` in `src/scripts/whiteboard-library.ts` returns the signed-in Google key or `local:{deviceInstallId}`. Live canvas files do not use that signed-out key; they use `ownerKeyForBoardMeta` → `temp:` or `google:`. The hub no longer uploads under `local:`.
 
 R2 media keys: `assets/{ownerKey}/{assetId}`.  
 Cloud indexes: `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json`.
@@ -65,9 +65,9 @@ Clearing site data creates a new `deviceInstallId` and a new guest name. It does
 
 | Surface | Signed out | Signed in |
 |---------|------------|-----------|
-| Recents / Library / Assets hub | Hidden | `GET/PUT/DELETE /api/whiteboard/library/boards` and `…/assets` |
+| Recents / Library hub | Hidden | `GET/PUT/DELETE /api/whiteboard/library/boards`. Assets strip hidden (canvas PUT does not index `assets.json`) |
 | Create | Scratch DO + host secret; 24h TTL | Autosave to cloud; Owner = this Google account |
-| Join | Opens the board as Viewer | Same; does **not** add Recents unless you already own it or Save a scratch you created |
+| Join | Opens the board as **Viewer** (view only). Promote on **People** to **Editor** to draw | Same; does **not** add Recents unless you already own it or Save a scratch you created |
 | Save / claim | N/A (sign in first) | Creating-browser host secret + Clerk → Owner, lift TTL, move temp R2 |
 | Canvas files | `temp:{boardId}` | `google:{accountId}` after save |
 

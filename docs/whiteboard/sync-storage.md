@@ -46,6 +46,7 @@ The PWA service worker (`public/sw.js`) **never intercepts `/api/*`**, so this u
 - Merge: last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
 - Hibernation: WebSocket auto-response for ping/pong; session snapshots on socket attachments; resume on wake.
 - Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `roleCanEdit` is false.
+- Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner or already stored as Editor/Manager. There is no class-Editor flag yet — Owner/Manager set **Editor** on **People**.
 - Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
 
 Custom messages the DO sends to connected clients:
@@ -73,7 +74,7 @@ Owner keys on canvas files:
 | Signed-in **saved** board | `google:{accountId}` |
 | Unsaved / signed-out scratch | `temp:{boardId}` (24h) |
 
-`local:{deviceInstallId}` is still accepted by the asset API for leftover hub uploads; the live canvas path uses `temp:` / `google:`.
+Canvas files use `temp:` / `google:` only (`assets/{ownerKey}/{fileId}`). The Worker still accepts `local:*` keys for leftover objects; that prefix is not a live hub upload path. PUT/DELETE on `temp:*` / `local:*` require a host secret or a live can-edit session.
 
 ### HTTP API
 
@@ -81,7 +82,7 @@ Owner keys on canvas files:
 
 | Method | Auth | Behavior |
 |--------|------|----------|
-| `PUT` | `google:*` requires Clerk session whose `ownerKey` matches; `temp:*` / `local:*` are capability-URL (unguessable UUIDs) | Upload body (max **8 MB**) |
+| `PUT` | `google:*` requires Clerk session whose `ownerKey` matches; `temp:*` / `local:*` require host secret or a live can-edit session | Upload body (max **8 MB**) |
 | `GET` / `HEAD` | Public if key known | Stream object; long cache. Expired `temp:*` objects 404 |
 | `DELETE` | Same write rules as PUT | Delete object |
 | `POST /api/whiteboard/assets/claim` | Clerk | Move `temp:{boardId}` → `google:{id}` after Save |
@@ -101,11 +102,11 @@ Player page: `src/pages/whiteboard-player.astro`. Worker sets `X-Frame-Options: 
 
 ### Hub Assets index (metadata)
 
-Separate from R2 binaries. **Signed-in cloud only** — Recents/Assets/Library are hidden when signed out.
+Separate from R2 binaries. Canvas PUT writes the object only; it does **not** upsert `assets.json`. The hub **Assets** strip is hidden until that index write exists, so it is not presented as a class media library.
 
-- R2 JSON `library/{ownerKey}/assets.json` via `/api/whiteboard/library/assets`
+- R2 JSON `library/{ownerKey}/assets.json` via `/api/whiteboard/library/assets` (API still exists for leftover rows)
 - Index entries include `id`, `title`, `mimeType`, `r2Key`, `ownerKey`, timestamps, optional `sourceBoardIds`
-- Deleting from the hub removes the index row and best-effort deletes the R2 object
+- Recents / Library are signed-in cloud only; signed-out lists stay hidden
 
 ## Cloud library board index
 

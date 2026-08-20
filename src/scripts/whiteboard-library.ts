@@ -164,6 +164,15 @@ function persistHostSecret(boardId: string, hostSecret: string): void {
   }
 }
 
+/** Drop creating-browser host proof. Call after a successful Google claim. */
+export function clearHostSecret(boardId: string): void {
+  try {
+    localStorage.removeItem(hostSecretKey(boardId));
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
+
 /** Scratch create: UUID + host secret only. Does not write a library index. */
 export function createBoard(title = defaultBoardTitle()): {
   id: string;
@@ -179,11 +188,7 @@ export function createBoard(title = defaultBoardTitle()): {
 
 /** Drop host secret for this board. Does not delete the Durable Object. */
 export function removeBoard(boardId: string): void {
-  try {
-    localStorage.removeItem(hostSecretKey(boardId));
-  } catch {
-    // ignore quota / private-mode failures
-  }
+  clearHostSecret(boardId);
 }
 
 function createHostSecret(): string {
@@ -192,6 +197,7 @@ function createHostSecret(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Scratch-board Owner proof only. Cleared after Google claim / `savedToLibrary`. */
 export function getHostSecret(boardId: string): string | null {
   try {
     return localStorage.getItem(hostSecretKey(boardId));
@@ -221,9 +227,13 @@ function scheduleSavedToLibrary(
 ): void {
   if (!isSignedIn() || !hostSecret) return;
   const ownerKey = getOwnerKey();
-  void markBoardSavedToLibrary(boardId, ownerKey, hostSecret).catch(() => {
-    // First WebSocket connect stores the host hash; later touch/Save retries.
-  });
+  void markBoardSavedToLibrary(boardId, ownerKey, hostSecret)
+    .then(() => {
+      clearHostSecret(boardId);
+    })
+    .catch(() => {
+      // First WebSocket connect stores the host hash; later touch/Save retries.
+    });
 }
 
 /**
@@ -248,6 +258,7 @@ export async function claimBoardToLibrary(
     scheduleSavedToLibrary(boardId, hostSecret);
     try {
       await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
+      clearHostSecret(boardId);
     } catch {
       scheduleSavedToLibrary(boardId, hostSecret);
     }
@@ -263,6 +274,7 @@ export async function claimBoardToLibrary(
   const saved = await upsertCloudBoard(next, { hostSecret });
   try {
     await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
+    clearHostSecret(boardId);
   } catch {
     scheduleSavedToLibrary(boardId, hostSecret);
   }

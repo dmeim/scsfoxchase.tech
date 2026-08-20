@@ -6,13 +6,18 @@
  *   library/{ownerKey}/assets.json
  *
  * Signed-in Clerk sessions only. PUT on a board may include X-Board-Host so
- * we can lift the Phase 2 24h scratch TTL on the Durable Object (best-effort;
- * the client also PATCHes /meta after the creating browser connects).
+ * we can lift the Phase 2 24h scratch TTL on the Durable Object. The index
+ * write is not treated as durable success until DO `savedToLibrary` is true.
+ * Index files use R2 etags (If-Match / If-None-Match) with retry.
  */
 import { requireClerkWhiteboardAuth } from './clerkAuth'
 
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const INDEX_WRITE_ATTEMPTS = 8
+const META_SAVE_ATTEMPTS = 8
+const META_SAVE_DELAY_MS = 250
 
 type BoardEntry = {
 	id: string
@@ -32,6 +37,10 @@ type AssetEntry = {
 	ownerKey: string
 	sourceBoardIds?: string[]
 }
+
+type MarkSavedResult =
+	| { ok: true }
+	| { ok: false; status: number; error: string }
 
 function boardsObjectKey(ownerKey: string): string {
 	return `library/${ownerKey}/boards.json`
@@ -93,19 +102,33 @@ function isAssetEntry(value: unknown): value is AssetEntry {
 	)
 }
 
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function laterIso(a: string, b: string): string {
+	return Date.parse(a) >= Date.parse(b) ? a : b
+}
+
+function r2PutOnlyIf(etag: string | null): R2Conditional {
+	return etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' }
+}
+
 async function readJsonArray<T>(
 	bucket: R2Bucket,
 	key: string,
 	guard: (value: unknown) => value is T,
-): Promise<T[]> {
+): Promise<{ entries: T[]; etag: string | null }> {
 	const object = await bucket.get(key)
-	if (!object) return []
+	if (!object) return { entries: [], etag: null }
 	try {
 		const parsed = (await object.json()) as unknown
-		if (!Array.isArray(parsed)) return []
-		return parsed.filter(guard)
+		if (!Array.isArray(parsed)) {
+			return { entries: [], etag: object.etag }
+		}
+		return { entries: parsed.filter(guard), etag: object.etag }
 	} catch {
-		return []
+		return { entries: [], etag: object.etag }
 	}
 }
 
@@ -113,13 +136,32 @@ async function writeJsonArray(
 	bucket: R2Bucket,
 	key: string,
 	entries: unknown[],
-): Promise<void> {
-	await bucket.put(key, JSON.stringify(entries), {
+	etag: string | null,
+): Promise<boolean> {
+	const stored = await bucket.put(key, JSON.stringify(entries), {
 		httpMetadata: {
 			contentType: 'application/json',
 			cacheControl: 'no-store',
 		},
+		onlyIf: r2PutOnlyIf(etag),
 	})
+	return stored !== null
+}
+
+async function mutateJsonArray<T>(
+	bucket: R2Bucket,
+	key: string,
+	guard: (value: unknown) => value is T,
+	mutate: (entries: T[]) => T[],
+): Promise<{ ok: true; entries: T[] } | { ok: false }> {
+	for (let attempt = 0; attempt < INDEX_WRITE_ATTEMPTS; attempt++) {
+		const { entries, etag } = await readJsonArray(bucket, key, guard)
+		const next = mutate(entries)
+		if (await writeJsonArray(bucket, key, next, etag)) {
+			return { ok: true, entries: next }
+		}
+	}
+	return { ok: false }
 }
 
 function sortByAccessed<T extends { lastAccessedAt: string }>(
@@ -132,39 +174,160 @@ function sortByAccessed<T extends { lastAccessedAt: string }>(
 	)
 }
 
+function boardMetaUrl(request: Request, boardId: string): URL {
+	const url = new URL(request.url)
+	url.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
+	url.search = ''
+	url.searchParams.set('boardId', boardId)
+	return url
+}
+
+function patchHeaders(request: Request): Headers {
+	const headers = new Headers({ 'Content-Type': 'application/json' })
+	const authorization = request.headers.get('Authorization')
+	if (authorization) headers.set('Authorization', authorization)
+	return headers
+}
+
+async function readSavedToLibrary(
+	env: Env,
+	request: Request,
+	boardId: string,
+): Promise<boolean> {
+	const id = env.WHITEBOARDS.idFromName(boardId)
+	const stub = env.WHITEBOARDS.get(id)
+	const res = await stub.fetch(
+		new Request(boardMetaUrl(request, boardId).toString(), {
+			method: 'GET',
+		}),
+	)
+	if (!res.ok) return false
+	try {
+		const body = (await res.json()) as { savedToLibrary?: unknown }
+		return body.savedToLibrary === true
+	} catch {
+		return false
+	}
+}
+
 /**
- * Best-effort Phase 2 meta claim. Fails closed if the creating browser has
- * not connected yet (host hash missing → 403); the client retries PATCH.
+ * Lift the 24h scratch TTL on the Durable Object. Fails closed unless
+ * `savedToLibrary` is true — the library PUT must not succeed as durable
+ * while the unsaved alarm is still armed. PATCH 403s until the creating
+ * browser’s first WebSocket stores `meta:hostSecretHash`; we retry.
  */
 async function tryMarkSavedToLibrary(
 	env: Env,
 	request: Request,
 	boardId: string,
 	ownerKey: string,
-): Promise<void> {
+): Promise<MarkSavedResult> {
 	const hostSecret = request.headers.get('X-Board-Host')?.trim()
-	if (!hostSecret) return
-	try {
-		const id = env.WHITEBOARDS.idFromName(boardId)
-		const stub = env.WHITEBOARDS.get(id)
-		const forwardUrl = new URL(request.url)
-		forwardUrl.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
-		forwardUrl.search = ''
-		forwardUrl.searchParams.set('boardId', boardId)
-		forwardUrl.searchParams.set('hostSecret', hostSecret)
-		await stub.fetch(
-			new Request(forwardUrl.toString(), {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					savedToLibrary: true,
-					cloudOwnerKey: ownerKey,
-				}),
-			}),
-		)
-	} catch {
-		// Index write already succeeded.
+	if (!hostSecret) {
+		try {
+			if (await readSavedToLibrary(env, request, boardId)) {
+				return { ok: true }
+			}
+		} catch {
+			// Fall through to fail closed.
+		}
+		return {
+			ok: false,
+			status: 409,
+			error:
+				'Board is not saved to the library yet. Open the board and try again.',
+		}
 	}
+
+	const id = env.WHITEBOARDS.idFromName(boardId)
+	const stub = env.WHITEBOARDS.get(id)
+	const forwardUrl = boardMetaUrl(request, boardId)
+	forwardUrl.searchParams.set('hostSecret', hostSecret)
+
+	const fallbackError =
+		'Could not mark this board as saved. Open the board and try again.'
+	let lastStatus = 503
+	let lastError = fallbackError
+
+	for (let attempt = 0; attempt < META_SAVE_ATTEMPTS; attempt++) {
+		try {
+			const res = await stub.fetch(
+				new Request(forwardUrl.toString(), {
+					method: 'PATCH',
+					headers: patchHeaders(request),
+					body: JSON.stringify({
+						savedToLibrary: true,
+						cloudOwnerKey: ownerKey,
+					}),
+				}),
+			)
+			let saved = false
+			try {
+				const body = (await res.json()) as {
+					savedToLibrary?: unknown
+					error?: unknown
+				}
+				saved = body.savedToLibrary === true
+				if (typeof body.error === 'string' && body.error.trim()) {
+					lastError = body.error
+				}
+			} catch {
+				saved = false
+			}
+			if (res.ok && saved) return { ok: true }
+			lastStatus = res.ok ? 409 : res.status
+			if (res.status === 403 && lastError === fallbackError) {
+				lastError = 'Host secret required. Open the board and try again.'
+			}
+		} catch {
+			lastStatus = 503
+			lastError = fallbackError
+		}
+		if (attempt < META_SAVE_ATTEMPTS - 1) {
+			await sleep(META_SAVE_DELAY_MS)
+		}
+	}
+
+	return { ok: false, status: lastStatus, error: lastError }
+}
+
+function upsertBoardEntry(
+	boards: BoardEntry[],
+	next: BoardEntry,
+): BoardEntry[] {
+	const copy = [...boards]
+	const index = copy.findIndex((entry) => entry.id === next.id)
+	const prev = index >= 0 ? copy[index] : undefined
+	if (prev) {
+		copy[index] = {
+			...prev,
+			...next,
+			lastAccessedAt: laterIso(prev.lastAccessedAt, next.lastAccessedAt),
+			previewDataUrl: next.previewDataUrl ?? prev.previewDataUrl,
+		}
+		return copy
+	}
+	copy.unshift(next)
+	return copy
+}
+
+function upsertAssetEntry(
+	assets: AssetEntry[],
+	next: AssetEntry,
+): AssetEntry[] {
+	const copy = [...assets]
+	const index = copy.findIndex((entry) => entry.id === next.id)
+	const prev = index >= 0 ? copy[index] : undefined
+	if (prev) {
+		copy[index] = {
+			...prev,
+			...next,
+			lastAccessedAt: laterIso(prev.lastAccessedAt, next.lastAccessedAt),
+		}
+		return copy
+	}
+	copy.unshift(next)
+	return copy
 }
 
 /**
@@ -218,10 +381,12 @@ export async function handleLibraryRequest(
 
 	if (boardsList) {
 		if (request.method === 'GET') {
-			const boards = sortByAccessed(
-				await readJsonArray(bucket, boardsObjectKey(ownerKey), isBoardEntry),
+			const { entries } = await readJsonArray(
+				bucket,
+				boardsObjectKey(ownerKey),
+				isBoardEntry,
 			)
-			return json(200, { boards, ownerKey }, request)
+			return json(200, { boards: sortByAccessed(entries), ownerKey }, request)
 		}
 		if (request.method === 'PUT') {
 			let body: unknown
@@ -233,22 +398,34 @@ export async function handleLibraryRequest(
 			if (!isBoardEntry(body)) {
 				return json(400, { error: 'Invalid board entry' }, request)
 			}
-			const boards = await readJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				isBoardEntry,
-			)
-			const index = boards.findIndex((entry) => entry.id === body.id)
 			const next: BoardEntry = {
 				id: body.id,
 				title: body.title.trim() || 'Untitled board',
 				lastAccessedAt: body.lastAccessedAt || new Date().toISOString(),
 				previewDataUrl: body.previewDataUrl,
 			}
-			if (index >= 0) boards[index] = { ...boards[index], ...next }
-			else boards.unshift(next)
-			await writeJsonArray(bucket, boardsObjectKey(ownerKey), boards)
-			await tryMarkSavedToLibrary(env, request, next.id, ownerKey)
+			const marked = await tryMarkSavedToLibrary(
+				env,
+				request,
+				next.id,
+				ownerKey,
+			)
+			if (!marked.ok) {
+				return json(marked.status, { error: marked.error }, request)
+			}
+			const written = await mutateJsonArray(
+				bucket,
+				boardsObjectKey(ownerKey),
+				isBoardEntry,
+				(boards) => upsertBoardEntry(boards, next),
+			)
+			if (!written.ok) {
+				return json(
+					409,
+					{ error: 'Library index conflict, retry' },
+					request,
+				)
+			}
 			return json(200, { board: next }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
@@ -260,16 +437,19 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid board id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const boards = await readJsonArray(
+			const written = await mutateJsonArray(
 				bucket,
 				boardsObjectKey(ownerKey),
 				isBoardEntry,
+				(boards) => boards.filter((entry) => entry.id !== boardId),
 			)
-			await writeJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				boards.filter((entry) => entry.id !== boardId),
-			)
+			if (!written.ok) {
+				return json(
+					409,
+					{ error: 'Library index conflict, retry' },
+					request,
+				)
+			}
 			return json(200, { ok: true }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
@@ -277,10 +457,12 @@ export async function handleLibraryRequest(
 
 	if (assetsList) {
 		if (request.method === 'GET') {
-			const assets = sortByAccessed(
-				await readJsonArray(bucket, assetsObjectKey(ownerKey), isAssetEntry),
+			const { entries } = await readJsonArray(
+				bucket,
+				assetsObjectKey(ownerKey),
+				isAssetEntry,
 			)
-			return json(200, { assets, ownerKey }, request)
+			return json(200, { assets: sortByAccessed(entries), ownerKey }, request)
 		}
 		if (request.method === 'PUT') {
 			let body: unknown
@@ -295,12 +477,6 @@ export async function handleLibraryRequest(
 			if (body.ownerKey !== ownerKey) {
 				return json(403, { error: 'ownerKey mismatch' }, request)
 			}
-			const assets = await readJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				isAssetEntry,
-			)
-			const index = assets.findIndex((entry) => entry.id === body.id)
 			const next: AssetEntry = {
 				id: body.id,
 				title: body.title.trim() || 'Untitled asset',
@@ -312,9 +488,19 @@ export async function handleLibraryRequest(
 				ownerKey,
 				sourceBoardIds: body.sourceBoardIds,
 			}
-			if (index >= 0) assets[index] = { ...assets[index], ...next }
-			else assets.unshift(next)
-			await writeJsonArray(bucket, assetsObjectKey(ownerKey), assets)
+			const written = await mutateJsonArray(
+				bucket,
+				assetsObjectKey(ownerKey),
+				isAssetEntry,
+				(assets) => upsertAssetEntry(assets, next),
+			)
+			if (!written.ok) {
+				return json(
+					409,
+					{ error: 'Library index conflict, retry' },
+					request,
+				)
+			}
 			return json(200, { asset: next }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
@@ -326,16 +512,19 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid asset id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const assets = await readJsonArray(
+			const written = await mutateJsonArray(
 				bucket,
 				assetsObjectKey(ownerKey),
 				isAssetEntry,
+				(assets) => assets.filter((entry) => entry.id !== assetId),
 			)
-			await writeJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				assets.filter((entry) => entry.id !== assetId),
-			)
+			if (!written.ok) {
+				return json(
+					409,
+					{ error: 'Library index conflict, retry' },
+					request,
+				)
+			}
 			return json(200, { ok: true }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)

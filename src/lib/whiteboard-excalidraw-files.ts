@@ -35,7 +35,7 @@ import {
 	uploadCanvasBytes,
 	type BoardAssetMeta,
 } from './whiteboard-assets'
-import { isSignedIn } from './whiteboard-identity'
+import { getActiveIdentity, getAuthHeaders } from './whiteboard-identity'
 
 const IMAGE_MIME = new Set([
 	'image/jpeg',
@@ -148,6 +148,32 @@ function viewportCenter(
 	}
 }
 
+/** Signed-in GET so the matching Owner can see cloudOwnerKey. */
+async function fetchBoardAssetMetaAsSigner(
+	boardId: string,
+): Promise<BoardAssetMeta> {
+	const headers = await getAuthHeaders()
+	if (Object.keys(headers).length === 0) {
+		return fetchBoardAssetMeta(boardId)
+	}
+	const res = await fetch(
+		`/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+		{ headers },
+	)
+	if (!res.ok) {
+		return { savedToLibrary: false, cloudOwnerKey: null }
+	}
+	const body = (await res.json()) as {
+		savedToLibrary?: unknown
+		cloudOwnerKey?: unknown
+	}
+	return {
+		savedToLibrary: body.savedToLibrary === true,
+		cloudOwnerKey:
+			typeof body.cloudOwnerKey === 'string' ? body.cloudOwnerKey : null,
+	}
+}
+
 function ownerKeysToTry(boardId: string, meta: BoardAssetMeta): string[] {
 	const primary = ownerKeyForBoardMeta(boardId, meta)
 	const temp = tempOwnerKey(boardId)
@@ -192,7 +218,10 @@ export function useWhiteboardExcalidrawFiles(
 		let cancelled = false
 
 		const refreshMeta = async () => {
-			const meta = await fetchBoardAssetMeta(boardId)
+			const identity = getActiveIdentity()
+			const meta = identity
+				? await fetchBoardAssetMetaAsSigner(boardId)
+				: await fetchBoardAssetMeta(boardId)
 			if (cancelled) return
 			metaRef.current = meta
 			if (
@@ -207,6 +236,7 @@ export function useWhiteboardExcalidrawFiles(
 			if (
 				meta.savedToLibrary &&
 				meta.cloudOwnerKey?.startsWith('google:') &&
+				identity?.ownerKey === meta.cloudOwnerKey &&
 				claimedOwnerRef.current !== meta.cloudOwnerKey
 			) {
 				void claimAndRewrite(meta.cloudOwnerKey)
@@ -214,9 +244,8 @@ export function useWhiteboardExcalidrawFiles(
 		}
 
 		const claimAndRewrite = async (googleOwner: string) => {
-			if (isSignedIn()) {
-				await claimTempCanvasAssets(boardId).catch(() => null)
-			}
+			if (getActiveIdentity()?.ownerKey !== googleOwner) return
+			await claimTempCanvasAssets(boardId).catch(() => null)
 			const api = apiRef.current
 			if (!api) return
 			const elements = api.getSceneElementsIncludingDeleted()

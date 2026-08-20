@@ -113,10 +113,12 @@ export type HelloMessage = {
 	authToken: string
 }
 
-/** First WebSocket message: Clerk session JWT. Never put this on the query string. */
+/** First WebSocket message: Clerk JWT and optional scratch host proof. Never put these on the query string. */
 export type ConnectAuthMessage = {
 	type: 'wb:auth'
 	token?: string
+	/** Creating-browser scratch Owner proof. Omit after Google claim / `savedToLibrary`. */
+	hostSecret?: string
 }
 
 /** Guest connect `userId` is a device-install UUID only — never a Google account id. */
@@ -286,7 +288,6 @@ export function buildWhiteboardConnectUrl(
 	opts: {
 		boardId: string
 		sessionId: string
-		hostSecret: string | null
 		displayName: string
 		userId: string
 	},
@@ -296,7 +297,6 @@ export function buildWhiteboardConnectUrl(
 		origin,
 	)
 	url.searchParams.set('sessionId', opts.sessionId)
-	if (opts.hostSecret) url.searchParams.set('hostSecret', opts.hostSecret)
 	if (opts.displayName) url.searchParams.set('displayName', opts.displayName)
 	const guestUserId = opts.userId.trim()
 	if (guestUserId && isGuestConnectUserId(guestUserId)) {

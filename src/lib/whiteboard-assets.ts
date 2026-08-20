@@ -1,34 +1,31 @@
 /**
- * Whiteboard asset library (localStorage + cloud) + R2 upload helpers.
+ * Whiteboard hub asset index (cloud) + canvas R2 helpers.
  *
- * Owner keys:
+ * Canvas owner keys (live path):
  * - Signed-in saved boards: google:{accountId}
  * - Unsaved / signed-out scratch: temp:{boardId} (24h TTL)
- * - Legacy hub index: local:{deviceInstallId}
  *
- * R2 object keys: assets/{ownerKey}/{assetId}
+ * R2 object keys stay assets/{ownerKey}/{fileId} (one store; not a second library).
  * Resolve URL: /api/whiteboard/assets/{encodeURIComponent(ownerKey)}/{assetId}
- * Canvas images/GIF/video: see whiteboard-excalidraw-files.ts (not hub drag-drop).
+ * Canvas images/GIF/video: whiteboard-excalidraw-files.ts. Hub Assets is not
+ * a class media library — canvas PUT does not upsert assets.json.
+ *
+ * local:{deviceInstallId} is not a live hub upload prefix. The Worker may still
+ * GET leftover objects; parsePlayerPath accepts the shape for old links.
  */
 import {
 	deleteCloudAsset,
 	fetchCloudAssets,
 	upsertCloudAsset,
 } from './whiteboard-cloud'
-import { getAuthHeaders, isClerkConfigured, isSignedIn, whenAuthReady } from './whiteboard-identity'
+import { getAuthHeaders, isSignedIn } from './whiteboard-identity'
 import {
-	getDeviceInstallId,
 	getHostSecret,
 	getOwnerKey,
 	isBoardUuid,
 	readBoardIdFromPath,
 } from '../scripts/whiteboard-library'
 import { getBoardSessionAuth } from './whiteboard-participants'
-
-type WhiteboardAssetStore = {
-	upload: (asset: { id?: string }, file: File) => Promise<{ src: string }>
-	resolve: (asset: { props: { src?: string } }) => string | undefined
-}
 
 export const ASSETS_KEY = 'scsfoxchase.whiteboard.assets'
 
@@ -251,12 +248,6 @@ export async function removeAssetActive(assetId: string): Promise<boolean> {
 	return removeAsset(assetId)
 }
 
-function defaultTitleFromFile(file: File): string {
-	const name = (file.name || '').trim()
-	if (!name || name === 'image.png' || name === 'blob') return 'Untitled asset'
-	return name.slice(0, 120)
-}
-
 function assertUploadAllowed(file: File): void {
 	const mime = (file.type || '').split(';')[0].trim().toLowerCase()
 	if (!mime || !ALLOWED_MIME.has(mime)) {
@@ -271,79 +262,10 @@ function assertUploadAllowed(file: File): void {
 	}
 }
 
-/**
- * Mint library UUID, upload to R2 under the active owner key, upsert active Assets index.
- */
-export const r2AssetStore: WhiteboardAssetStore = {
-	async upload(_asset, file) {
-		assertUploadAllowed(file)
-
-		// Avoid writing under local:* while Clerk is still loading for a signed-in session.
-		if (isClerkConfigured()) {
-			await whenAuthReady()
-		}
-
-		const ownerKey = getOwnerKey()
-		// Ensure device id exists before signed-out upload
-		if (!isSignedIn()) void getDeviceInstallId()
-
-		const assetId = crypto.randomUUID()
-		const url = assetResolveUrl(ownerKey, assetId)
-		const mimeType = (file.type || 'application/octet-stream')
-			.split(';')[0]
-			.trim()
-			.toLowerCase()
-
-		const res = await fetch(url, {
-			method: 'PUT',
-			headers: {
-				'Content-Type': mimeType,
-				...(await assetWriteHeaders(ownerKey)),
-			},
-			body: file,
-		})
-
-		if (!res.ok) {
-			let message = `Upload failed (${res.status})`
-			try {
-				const body = (await res.json()) as { error?: string }
-				if (body.error) message = body.error
-			} catch {
-				// ignore
-			}
-			throw new Error(message)
-		}
-
-		const boardId = readBoardIdFromPath()
-		const sourceBoardIds =
-			boardId && isBoardUuid(boardId) ? [boardId] : undefined
-
-		await upsertAssetActive({
-			id: assetId,
-			title: defaultTitleFromFile(file),
-			mimeType,
-			size: file.size,
-			r2Key: r2KeyFor(ownerKey, assetId),
-			ownerKey,
-			sourceBoardIds,
-			lastAccessedAt: new Date().toISOString(),
-		})
-
-		// Absolute URL so peers on other origins/devices resolve the same capability path
-		const src = new URL(url, window.location.origin).toString()
-		return { src }
-	},
-
-	resolve(asset) {
-		return asset.props.src
-	},
-}
-
-/** @deprecated Phase 3 stub — use r2AssetStore */
-export const localBlobAssetStore = r2AssetStore
-
 // ---------------------------------------------------------------------------
-// Phase 3.2 — canvas files (Excalidraw fileId → R2). Hub index is not updated.
+// Canvas files (Excalidraw fileId → R2 at assets/{ownerKey}/{fileId}).
+// Canvas PUT does not upsert library/{ownerKey}/assets.json. The hub Assets
+// strip is hidden until that index write exists — not a class media library.
 // ---------------------------------------------------------------------------
 
 export type BoardAssetMeta = {

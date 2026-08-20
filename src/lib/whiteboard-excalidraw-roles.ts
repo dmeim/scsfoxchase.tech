@@ -12,7 +12,7 @@ import {
 import type { Collaborator, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { getActiveIdentity } from './whiteboard-identity'
 import {
-	getOrCreateGuestDisplayName,
+	generateGuestDisplayName,
 	peopleListLabel,
 } from './whiteboard-display-name'
 import {
@@ -26,8 +26,11 @@ import {
 	type ParticipantRow,
 	type WhiteboardRole,
 } from './whiteboard-participants'
-import { isWhiteboardRole, roleCanEdit } from './whiteboard-sync'
-import { getDeviceInstallId } from '../scripts/whiteboard-library'
+import {
+	isGuestConnectUserId,
+	isWhiteboardRole,
+	roleCanEdit,
+} from './whiteboard-sync'
 
 const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
@@ -38,18 +41,34 @@ const BOUNDS_THROTTLE_MS = 120
 
 type UserToFollow = { socketId: string; username: string }
 
+/**
+ * Signed-out connect `userId` for this board page load. Module-local so
+ * WebSocket reconnects keep the same guest; a new visit mints a new UUID.
+ * Must not use localStorage `deviceInstallId` — that is Chromebook-lifetime
+ * and would let period 2 inherit period 1's stored Editor role.
+ */
+let guestVisitUserId = ''
+
+function getGuestVisitUserId(): string {
+	if (guestVisitUserId && isGuestConnectUserId(guestVisitUserId)) {
+		return guestVisitUserId
+	}
+	guestVisitUserId = crypto.randomUUID()
+	return guestVisitUserId
+}
+
 export function getBoardConnectIdentity(): { displayName: string; userId: string } {
 	const identity = getActiveIdentity()
-	const deviceId = getDeviceInstallId()
 	if (identity) {
 		return {
 			displayName: identity.displayName.slice(0, 48),
 			userId: identity.accountId,
 		}
 	}
+	const userId = getGuestVisitUserId()
 	return {
-		displayName: getOrCreateGuestDisplayName(deviceId),
-		userId: deviceId,
+		displayName: generateGuestDisplayName(userId),
+		userId,
 	}
 }
 

@@ -108,9 +108,11 @@ interface SocketAttachment {
 	role: WhiteboardRole
 	authToken: string
 	meta: SessionMeta
-	/** Waiting for first-message Clerk proof (`wb:auth`). */
+	/** Waiting for first-message Clerk / host proof (`wb:auth`). */
 	pendingClerkAuth?: boolean
 	connectOrigin?: string
+	/** Cookie Clerk from the upgrade request; first-message token wins. */
+	connectClerkAuth?: ClerkWhiteboardAuth
 }
 
 // PHASE 3.3
@@ -190,6 +192,16 @@ function sanitizeAssetPrefix(raw: string | null | undefined): string | null {
 	return value
 }
 
+function isClerkWhiteboardAuth(value: unknown): value is ClerkWhiteboardAuth {
+	if (!value || typeof value !== 'object') return false
+	const row = value as Partial<ClerkWhiteboardAuth>
+	return (
+		typeof row.accountId === 'string' &&
+		typeof row.ownerKey === 'string' &&
+		typeof row.clerkUserId === 'string'
+	)
+}
+
 /** Normalize attachments from older deploys that lacked canEdit/meta/role. */
 function normalizeAttachment(
 	raw: Partial<SocketAttachment> | null | undefined,
@@ -222,6 +234,9 @@ function normalizeAttachment(
 		pendingClerkAuth: Boolean(raw?.pendingClerkAuth),
 		connectOrigin:
 			typeof raw?.connectOrigin === 'string' ? raw.connectOrigin : '',
+		connectClerkAuth: isClerkWhiteboardAuth(raw?.connectClerkAuth)
+			? raw.connectClerkAuth
+			: undefined,
 	}
 }
 
@@ -385,6 +400,36 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return Boolean(existing && existing === hash)
 	}
 
+	private async hasGoogleCloudOwner(): Promise<boolean> {
+		const key =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		return Boolean(key && key.startsWith('google:'))
+	}
+
+	/**
+	 * Scratch Owner proof only. After a Google claim, leftover host secrets
+	 * must not count as Owner (shared Chromebook). `mint` is first-connect
+	 * only — HTTP handlers must not mint a hash.
+	 */
+	private async hostProvesScratchOwner(
+		hostSecret: string | null,
+		opts: { mint: boolean },
+	): Promise<boolean> {
+		const ok = opts.mint
+			? await this.resolveHost(hostSecret)
+			: await this.assertHost(hostSecret)
+		if (!ok) return false
+		if (await this.hasGoogleCloudOwner()) return false
+		return true
+	}
+
+	/** Header only — never the WebSocket query string (access logs). */
+	private connectHostSecretFromHeader(request: Request): string | null {
+		const header = request.headers.get('X-Board-Host')?.trim()
+		if (!header || looksLikeJwt(header)) return null
+		return header
+	}
+
 	async fetch(request: Request): Promise<Response> {
 		this.hydrateSockets()
 		const url = new URL(request.url)
@@ -447,8 +492,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return new Response('Missing sessionId', { status: 400 })
 		}
 
-		const hostSecret = url.searchParams.get('hostSecret')
-		const isHost = await this.resolveHost(hostSecret)
+		const headerHost = this.connectHostSecretFromHeader(request)
+		const isHost = await this.hostProvesScratchOwner(headerHost, { mint: true })
 		const guestUserId = sanitizeUserId(url.searchParams.get('userId'))
 		let displayName = sanitizeDisplayName(url.searchParams.get('displayName'))
 		if (!displayName) {
@@ -456,7 +501,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		const clerkAuth = await tryClerkWhiteboardAuth(request, this.env)
-		const pendingClerkAuth = !clerkAuth
+		// Always wait for first-message `wb:auth` so scratch host proof can
+		// arrive off the query string (browsers cannot set WS headers).
+		const pendingClerkAuth = true
 		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
 		if (clerkAuth) {
 			displayName = sanitizeDisplayName(clerkAuth.displayName) || displayName
@@ -496,18 +543,13 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			meta,
 			pendingClerkAuth,
 			connectOrigin: request.headers.get('Origin') ?? '',
+			connectClerkAuth: clerkAuth ?? undefined,
 		}
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
 
 		await this.ensureBoardLifetime(boardId)
 		await this.sendFullScene(serverWebSocket)
-		if (!pendingClerkAuth) {
-			await this.sendConnectHello(serverWebSocket, attachment)
-			this.broadcastParticipants()
-			void this.broadcastForceFollow()
-			void this.refreshFollowedFlags()
-		}
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
 	}
@@ -536,14 +578,24 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		attachment: SocketAttachment,
 		data: Record<string, unknown>,
 	): Promise<SocketAttachment> {
-		let clerkAuth: ClerkWhiteboardAuth | null = null
+		let clerkAuth: ClerkWhiteboardAuth | null =
+			attachment.connectClerkAuth ?? null
 		if (data.type === 'wb:auth' && typeof data.token === 'string') {
-			clerkAuth = await verifyClerkWhiteboardToken(
+			const fromToken = await verifyClerkWhiteboardToken(
 				data.token,
 				this.env,
 				attachment.connectOrigin,
 			)
+			if (fromToken) clerkAuth = fromToken
 		}
+
+		const hostSecret =
+			data.type === 'wb:auth' && typeof data.hostSecret === 'string'
+				? data.hostSecret
+				: ''
+		const isHost =
+			attachment.isHost ||
+			(await this.hostProvesScratchOwner(hostSecret, { mint: true }))
 
 		const guestUserId = sanitizeUserId(attachment.meta.userId)
 		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
@@ -555,17 +607,20 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const role = await this.resolveConnectRole({
 			clerkAuth,
 			guestUserId,
-			isHost: attachment.isHost,
+			isHost,
 		})
 		const next: SocketAttachment = {
 			...attachment,
+			isHost,
 			role,
 			canEdit: roleCanEdit(role),
 			pendingClerkAuth: false,
+			connectClerkAuth: undefined,
 			meta: {
 				...attachment.meta,
 				userId,
 				displayName,
+				isHost,
 			},
 		}
 		ws.serializeAttachment(next)
@@ -607,6 +662,47 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(400, { error: 'Invalid JSON body' })
 		}
 
+		const existingOwner =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		const existingGoogle = Boolean(
+			existingOwner && existingOwner.startsWith('google:'),
+		)
+
+		let nextOwner: string | null | undefined
+		if ('cloudOwnerKey' in body) {
+			if (body.cloudOwnerKey === null) {
+				nextOwner = null
+			} else if (typeof body.cloudOwnerKey === 'string') {
+				const key = sanitizeOwnerKey(body.cloudOwnerKey)
+				if (!key) return json(400, { error: 'Invalid cloudOwnerKey' })
+				nextOwner = key
+			}
+		}
+
+		const ownerChanging =
+			nextOwner !== undefined && nextOwner !== existingOwner
+		if (ownerChanging && existingGoogle) {
+			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+			if (!clerkAuth || clerkAuth.ownerKey !== existingOwner) {
+				return json(403, {
+					error: 'Host secret cannot change the Google owner of a saved board',
+				})
+			}
+		}
+
+		if (
+			typeof body.savedToLibrary === 'boolean' &&
+			body.savedToLibrary === false &&
+			existingGoogle
+		) {
+			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+			if (!clerkAuth || clerkAuth.ownerKey !== existingOwner) {
+				return json(403, {
+					error: 'Host secret cannot unsaved a Google-owned board',
+				})
+			}
+		}
+
 		if (typeof body.savedToLibrary === 'boolean') {
 			await this.ctx.storage.put(META_SAVED_TO_LIBRARY_KEY, body.savedToLibrary)
 			if (body.savedToLibrary) {
@@ -622,13 +718,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 		}
 
-		if ('cloudOwnerKey' in body) {
-			if (body.cloudOwnerKey === null) {
+		if (ownerChanging) {
+			if (nextOwner === null) {
 				await this.ctx.storage.delete(META_CLOUD_OWNER_KEY)
-			} else if (typeof body.cloudOwnerKey === 'string') {
-				const key = sanitizeOwnerKey(body.cloudOwnerKey)
-				if (!key) return json(400, { error: 'Invalid cloudOwnerKey' })
-				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, key)
+			} else if (typeof nextOwner === 'string') {
+				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, nextOwner)
 			}
 		}
 

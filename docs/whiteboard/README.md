@@ -10,11 +10,11 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 
 | Area | What it does | Doc |
 |------|----------------|-----|
-| Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel | [hub-and-board.md](./hub-and-board.md) |
+| Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Joiners are **Viewer** until promoted | [hub-and-board.md](./hub-and-board.md) |
 | Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; R2 files by `fileId` | [sync-storage.md](./sync-storage.md) |
 | Auth + library | Clerk Google sign-in; cloud-only Recents / Library / Assets; scratch boards expire in 24h | [auth-libraries.md](./auth-libraries.md) |
-| Share codes | Short `A1B2` codes in KV; Open / Closed / Copy / New; hub join | [share-codes.md](./share-codes.md) |
-| People + permissions | Owner / Manager / Editor / Viewer; Follow (pan to unfollow); Follow Me (camera locked) | [people-permissions.md](./people-permissions.md) |
+| Share codes | Short `A1B2` codes in KV; Open / Closed / Copy / New; hub join. A code opens the board; it is not draw access | [share-codes.md](./share-codes.md) |
+| People + permissions | Owner / Manager / Editor / Viewer; Follow (pan to unfollow); Follow Me (camera locked). Set **Editor** on People so a joiner can draw | [people-permissions.md](./people-permissions.md) |
 
 ## Routes
 

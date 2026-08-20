@@ -24,7 +24,9 @@ How Owner is chosen:
 - **Saved board:** Google account in `meta:cloudOwnerKey` (`google:{accountId}`).
 - **Scratch board:** creating browser that presents the host secret (ephemeral Owner). Guests without that secret default to **Viewer**.
 
-Guest identity sticks on that browser (`deviceInstallId` + generated display name). New browser = new guest. Owner/Manager can promote/demote that person on this board.
+Guest **Editor** is not sticky on a shared Chromebook. Signed-out connect `userId` is minted for this board visit (this page load) in `getBoardConnectIdentity()` — not the durable `deviceInstallId` in `localStorage`. Refresh, a new tab, or joining again from the hub is a new guest and defaults to **Viewer**. Owner/Manager can promote that guest for this visit only.
+
+**Google sign-in** is how a person stays Editor (or Manager) across visits and class periods. On shared Chromebooks, sign out of Google when the period ends so the next student does not keep a signed-in role. Signed-out guests do not need a site-data clear.
 
 Helpers: `WHITEBOARD_ROLES`, `roleCanEdit`, `assignableRolesFor` in `src/lib/whiteboard-sync.ts`.
 
@@ -41,7 +43,7 @@ Participant row shape (`ParticipantRow`):
 | Field | Meaning |
 |-------|---------|
 | `sessionId` | WebSocket session id |
-| `userId` | Google account id or guest `deviceInstallId` (Follow target) |
+| `userId` | Google account id, or a per-visit guest UUID (Follow target). Not `deviceInstallId`. |
 | `displayName` | Full Google name or generated guest name |
 | `role` | `owner` \| `manager` \| `editor` \| `viewer` |
 | `canEdit` | Derived from role (`roleCanEdit`) |

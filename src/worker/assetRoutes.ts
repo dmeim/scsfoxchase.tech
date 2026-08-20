@@ -370,6 +370,162 @@ export async function claimTempAssetsFromMetaResponse(
 	}
 }
 
+function boardStub(
+	env: Env,
+	boardId: string,
+): DurableObjectStub<WhiteboardBoard> {
+	return env.WHITEBOARDS.get(
+		env.WHITEBOARDS.idFromName(boardId),
+	) as DurableObjectStub<WhiteboardBoard>
+}
+
+/**
+ * GET meta reveals `cloudOwnerKey` only to the matching Owner or host.
+ * Do not send a leftover host secret on the Clerk-only probe — that would
+ * expose another account's key. Host GETs are used only after
+ * `assertAssetWriteAccess` confirms the secret.
+ */
+async function readRevealedCloudOwnerKey(
+	stub: DurableObjectStub<WhiteboardBoard>,
+	request: Request,
+	boardId: string,
+	proof: { hostSecret?: string | null; authorization?: string | null },
+): Promise<string | null> {
+	const forwardUrl = new URL(request.url)
+	forwardUrl.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
+	forwardUrl.search = ''
+	forwardUrl.searchParams.set('boardId', boardId)
+	const hostSecret = proof.hostSecret?.trim()
+	if (hostSecret) {
+		forwardUrl.searchParams.set('hostSecret', hostSecret)
+	}
+	const headers = new Headers({ 'Content-Type': 'application/json' })
+	const authorization = proof.authorization?.trim()
+	if (authorization) {
+		headers.set('Authorization', authorization)
+	}
+	const origin = request.headers.get('Origin')
+	if (origin) headers.set('Origin', origin)
+	const cookie = request.headers.get('Cookie')
+	if (cookie && !hostSecret) headers.set('Cookie', cookie)
+
+	const res = await stub.fetch(
+		new Request(forwardUrl.toString(), { method: 'GET', headers }),
+	)
+	if (!res.ok) return null
+	const meta = (await res.json()) as { cloudOwnerKey?: unknown }
+	if (
+		typeof meta.cloudOwnerKey === 'string' &&
+		meta.cloudOwnerKey.startsWith('google:')
+	) {
+		return meta.cloudOwnerKey
+	}
+	return null
+}
+
+/**
+ * Destination is the board's Google Owner, never an arbitrary Clerk caller.
+ * Matching Owner may claim without a host secret. Scratch (unset
+ * cloudOwnerKey) requires a valid host secret before moving into the
+ * caller's google: prefix. A leftover host secret cannot retarget an
+ * existing google: prefix to a different account.
+ */
+async function resolveClaimDestination(
+	request: Request,
+	env: Env,
+	boardId: string,
+	clerkOwnerKey: string,
+): Promise<
+	{ ok: true; destOwnerKey: string } | { ok: false; response: Response }
+> {
+	if (!clerkOwnerKey.startsWith('google:')) {
+		return {
+			ok: false,
+			response: jsonError(
+				403,
+				'ownerKey does not match signed-in account',
+				request,
+			),
+		}
+	}
+
+	const stub = boardStub(env, boardId)
+	let revealed: string | null
+	try {
+		revealed = await readRevealedCloudOwnerKey(stub, request, boardId, {
+			authorization: request.headers.get('Authorization'),
+		})
+	} catch {
+		return {
+			ok: false,
+			response: jsonError(503, 'Could not verify board owner', request),
+		}
+	}
+	if (revealed === clerkOwnerKey) {
+		return { ok: true, destOwnerKey: clerkOwnerKey }
+	}
+
+	const hostSecret = extractHostSecret(request)
+	if (!hostSecret) {
+		return {
+			ok: false,
+			response: jsonError(
+				403,
+				"Not allowed to claim this board's assets",
+				request,
+			),
+		}
+	}
+
+	let hostCheck: Awaited<ReturnType<WhiteboardBoard['assertAssetWriteAccess']>>
+	try {
+		hostCheck = await stub.assertAssetWriteAccess({
+			hostSecret,
+			sessionId: null,
+			authToken: null,
+		})
+	} catch {
+		return {
+			ok: false,
+			response: jsonError(
+				503,
+				'Could not verify board write access',
+				request,
+			),
+		}
+	}
+	if (!hostCheck.ok) {
+		return {
+			ok: false,
+			response: jsonError(hostCheck.status, hostCheck.error, request),
+		}
+	}
+
+	let stored: string | null
+	try {
+		stored = await readRevealedCloudOwnerKey(stub, request, boardId, {
+			hostSecret,
+		})
+	} catch {
+		return {
+			ok: false,
+			response: jsonError(503, 'Could not verify board owner', request),
+		}
+	}
+	if (stored && stored.startsWith('google:') && stored !== clerkOwnerKey) {
+		return {
+			ok: false,
+			response: jsonError(
+				403,
+				"Not allowed to claim this board's assets",
+				request,
+			),
+		}
+	}
+
+	return { ok: true, destOwnerKey: clerkOwnerKey }
+}
+
 async function handleClaim(
 	request: Request,
 	env: Env,
@@ -407,7 +563,15 @@ async function handleClaim(
 		})
 	}
 
-	const destOwnerKey = authResult.auth.ownerKey
+	const resolved = await resolveClaimDestination(
+		request,
+		env,
+		boardId,
+		authResult.auth.ownerKey,
+	)
+	if (!resolved.ok) return resolved.response
+
+	const destOwnerKey = resolved.destOwnerKey
 	const { moved } = await moveTempPrefixToOwner(env, boardId, destOwnerKey)
 	return jsonOk(request, {
 		ok: true,
