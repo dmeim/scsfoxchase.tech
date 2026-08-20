@@ -19,6 +19,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Last strokes vanish on tab close (flush only) — **done**. Classroom close-within-1s manual open.
 - Share Open Closed rotate not role-gated — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-codes.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`
 - Manager rename leftover (no Manager Recents as class title) — `worker` owns `src/scripts/whiteboard-library.ts`
+- Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
 - Follow Me client resubscribe after socket gap — `worker` owns `src/components/WhiteboardCanvas.tsx`, `src/lib/whiteboard-excalidraw-roles.ts` (do not edit WhiteboardBoard.ts)
 
 **Just closed (code-verified; classroom manuals still open):**
