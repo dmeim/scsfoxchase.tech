@@ -1168,8 +1168,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	/**
-	 * Title PATCH: live session token (Owner/Manager) or scratch host proof.
-	 * Session may arrive on the stub query, JSON body, or request headers.
+	 * Title / class-can-edit PATCH: live session token, scratch host proof,
+	 * then Clerk Owner (`cloudOwnerKey`) or stored Clerk Manager. Hub rename
+	 * usually has Clerk (worker forwards the JWT as `hostSecret`) and no
+	 * live socket. JWT-shaped values stay Clerk, not host proof.
 	 */
 	private async resolveActorFromMeta(
 		url: URL,
@@ -1187,7 +1189,49 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			(typeof body.authToken === 'string' ? body.authToken.trim() : '')
 		if (sessionId) actorUrl.searchParams.set('actorSessionId', sessionId)
 		if (authToken) actorUrl.searchParams.set('actorAuth', authToken)
-		return this.resolveActor(actorUrl)
+		const headerHost = request.headers.get('X-Board-Host')?.trim()
+		if (
+			headerHost &&
+			!looksLikeJwt(headerHost) &&
+			!actorUrl.searchParams.get('hostSecret')
+		) {
+			actorUrl.searchParams.set('hostSecret', headerHost)
+		}
+		const fromLive = await this.resolveActor(actorUrl)
+		if (fromLive) return fromLive
+		return this.resolveClerkOwnerOrManager(request, url)
+	}
+
+	/**
+	 * Share-admin / title PATCH Clerk fallback: Owner via `cloudOwnerKey`,
+	 * or stored Manager. Editors and unsigned stay out (Viewer 403).
+	 */
+	private async resolveClerkOwnerOrManager(
+		request: Request,
+		url: URL,
+	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
+		const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+		if (!clerkAuth) return null
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey) {
+			return {
+				role: 'owner',
+				userId: clerkAuth.accountId,
+				sessionId: '',
+			}
+		}
+		const stored = await this.readStoredRoles()
+		const storedRole =
+			stored[clerkAuth.accountId] ??
+			stored[clerkAuth.ownerKey] ??
+			stored[clerkAuth.clerkUserId]
+		if (storedRole !== 'manager') return null
+		return {
+			role: 'manager',
+			userId: clerkAuth.accountId,
+			sessionId: '',
+		}
 	}
 
 	private async readOwnerHook(
@@ -1959,8 +2003,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	/**
 	 * Share-code GET (secret value) / POST / DELETE: Owner or Manager only.
-	 * Proof is a live session token, scratch host secret, or Clerk matching
-	 * `cloudOwnerKey`. Leftover host on a Google-owned board is not enough.
+	 * Proof is a live session token, scratch host secret, or Clerk Owner /
+	 * stored Manager. Leftover host on a Google-owned board is not enough.
 	 */
 	private async resolveShareCodeActor(
 		request: Request,
@@ -1987,19 +2031,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 		const fromLive = await this.resolveActor(actorUrl)
 		if (fromLive) return fromLive
-
-		const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
-		if (!clerkAuth) return null
-		const cloudOwnerKey =
-			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		if (cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey) {
-			return {
-				role: 'owner',
-				userId: clerkAuth.accountId,
-				sessionId: '',
-			}
-		}
-		return null
+		return this.resolveClerkOwnerOrManager(request, url)
 	}
 
 	private async requireShareCodeAdmin(
