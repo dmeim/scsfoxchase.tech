@@ -6,13 +6,11 @@
  * - POST /api/whiteboard/boards/:uuid/code       → mint / keep / rotate
  * - DELETE /api/whiteboard/boards/:uuid/code     → revoke (Closed)
  *
- * Auth: board UUID is the capability (same as opening /board/{uuid}).
- * Any collaborator who knows the UUID can open/close/copy codes — no host secret.
- * Mint/rotate is rate-limited inside the Durable Object (`assertMintAllowed`).
- * Join is unauthenticated and rate-limited here (per IP + per-code failed lookups).
- *
- * Closed deletes the KV mapping so join cannot mint a new session from that
- * code. `/board/{uuid}` still opens the canvas until connect auth exists.
+ * Auth: join is unauthenticated (rate-limited). Board code GET/POST/DELETE
+ * require Owner/Manager proof forwarded to the Durable Object (host secret,
+ * live session token, or Clerk matching cloudOwnerKey). UUID access after
+ * Closed remains a separate capability.
+ * Mint/rotate is also rate-limited inside the Durable Object (`assertMintAllowed`).
  */
 import {
 	isExpiredIso,
@@ -41,13 +39,33 @@ function isBoardUuid(value: string): boolean {
 	return UUID_RE.test(value)
 }
 
+function looksLikeJwt(raw: string | null): boolean {
+	if (!raw) return false
+	const parts = raw.trim().split('.')
+	return parts.length === 3 && raw.trim().length > 40
+}
+
+function extractHostSecret(request: Request, url: URL): string | null {
+	const header = request.headers.get('X-Board-Host')?.trim()
+	if (header && !looksLikeJwt(header)) return header
+	const auth = request.headers.get('Authorization')
+	if (auth?.toLowerCase().startsWith('bearer ')) {
+		const token = auth.slice(7).trim()
+		if (token && !looksLikeJwt(token)) return token
+	}
+	const query = url.searchParams.get('hostSecret')?.trim()
+	if (query && !looksLikeJwt(query)) return query
+	return null
+}
+
 function corsHeaders(request: Request): HeadersInit {
 	const origin = request.headers.get('Origin')
 	if (!origin) return {}
 	return {
 		'Access-Control-Allow-Origin': origin,
 		'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
+		'Access-Control-Allow-Headers':
+			'Content-Type, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth',
 		Vary: 'Origin',
 	}
 }
@@ -191,17 +209,43 @@ export async function handleCodeRequest(
 				request,
 			)
 		}
+		const hostSecret = extractHostSecret(request, url)
+		const actorSessionId = request.headers.get('X-Board-Session')?.trim() || ''
+		const actorAuth = request.headers.get('X-Board-Auth')?.trim() || ''
 		const id = env.WHITEBOARDS.idFromName(boardId)
 		const stub = env.WHITEBOARDS.get(id)
-		// Forward to DO; include boardId in query for KV payload / mint.
 		const forwardUrl = new URL(request.url)
 		forwardUrl.searchParams.set('boardId', boardId)
-		return stub.fetch(
+		if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
+		if (actorSessionId) {
+			forwardUrl.searchParams.set('actorSessionId', actorSessionId)
+		}
+		if (actorAuth) forwardUrl.searchParams.set('actorAuth', actorAuth)
+		const headers = new Headers({ Accept: 'application/json' })
+		const authorization = request.headers.get('Authorization')
+		if (authorization) headers.set('Authorization', authorization)
+		const cookie = request.headers.get('Cookie')
+		if (cookie) headers.set('Cookie', cookie)
+		const origin = request.headers.get('Origin')
+		if (origin) headers.set('Origin', origin)
+		const boardHost = request.headers.get('X-Board-Host')?.trim()
+		if (boardHost) headers.set('X-Board-Host', boardHost)
+		if (actorSessionId) headers.set('X-Board-Session', actorSessionId)
+		if (actorAuth) headers.set('X-Board-Auth', actorAuth)
+		const response = await stub.fetch(
 			new Request(forwardUrl.toString(), {
 				method: request.method,
-				headers: { Accept: 'application/json' },
+				headers,
 			}),
 		)
+		const text = await response.text()
+		return new Response(text, {
+			status: response.status,
+			headers: {
+				'Content-Type': 'application/json',
+				...corsHeaders(request),
+			},
+		})
 	}
 
 	return null

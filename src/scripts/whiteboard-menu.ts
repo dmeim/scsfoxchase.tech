@@ -119,6 +119,8 @@ function initWhiteboardMenu() {
   const liveTitleEl = root.querySelector<HTMLElement>('[data-wb-live-title]')
   const hint = root.querySelector<HTMLElement>('[data-wb-manage-hint]')
 
+  const shareBlock = root.querySelector<HTMLElement>('[data-wb-manage-share]')
+  const shareTools = root.querySelector<HTMLElement>('[data-wb-manage-share-tools]')
   const shareToggle = root.querySelector<HTMLInputElement>('[data-wb-share-toggle]')
   const shareState = root.querySelector<HTMLElement>('[data-wb-share-state]')
   const shareCodeBtn = root.querySelector<HTMLButtonElement>('[data-wb-share-code]')
@@ -172,6 +174,13 @@ function initWhiteboardMenu() {
   let forceFollowTargetUserId = ''
   const canForceFollow = () => yourRole === 'owner' || yourRole === 'manager'
   const canRenameBoard = () => canForceFollow()
+  const canManageShare = () => canForceFollow()
+  const stopExpiryTimer = () => {
+    if (expiryTimer != null) {
+      window.clearInterval(expiryTimer)
+      expiryTimer = null
+    }
+  }
   const nameDivider =
     nameForm?.nextElementSibling instanceof HTMLElement &&
     nameForm.nextElementSibling.classList.contains('whiteboard-menu-divider')
@@ -187,8 +196,23 @@ function initWhiteboardMenu() {
     }
   }
 
+  const renderShareAdminUi = () => {
+    const allowed = canManageShare()
+    if (shareBlock) shareBlock.hidden = !allowed
+    if (shareTools) shareTools.hidden = !allowed
+    if (!allowed) {
+      stopExpiryTimer()
+      currentShare = { code: null, expiresAt: null, open: false }
+      if (shareToggle) shareToggle.checked = false
+      if (shareState) shareState.textContent = 'Closed'
+      if (shareCodeBtn) shareCodeBtn.disabled = true
+      if (shareCodeValue) shareCodeValue.textContent = 'Code'
+    }
+  }
+
   if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
   renderNameFormUi()
+  renderShareAdminUi()
 
   const applyTitle = (title: string) => {
     const cleaned = title.trim() || DEFAULT_LIVE_TITLE
@@ -329,16 +353,10 @@ function initWhiteboardMenu() {
     }
   }
 
-  const stopExpiryTimer = () => {
-    if (expiryTimer != null) {
-      window.clearInterval(expiryTimer)
-      expiryTimer = null
-    }
-  }
-
   const setSharingLayout = (open: boolean) => {
-    panel.classList.toggle('is-sharing', open)
-    if (shareRight) shareRight.hidden = !open
+    const showRight = canManageShare() ? open : participants.length > 0
+    panel.classList.toggle('is-sharing', showRight)
+    if (shareRight) shareRight.hidden = !showRight
   }
 
   const renderShareUi = (state: ShareCodeState) => {
@@ -378,7 +396,7 @@ function initWhiteboardMenu() {
   }
 
   const refreshShareState = async () => {
-    if (!boardId) return
+    if (!boardId || !canManageShare()) return
     try {
       const state = await fetchBoardShareCode(boardId)
       renderShareUi(state)
@@ -412,6 +430,8 @@ function initWhiteboardMenu() {
       peopleEmpty.hidden = false
       renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
       renderNameFormUi()
+      renderShareAdminUi()
+      setSharingLayout(Boolean(currentShare.open && currentShare.code))
       return
     }
 
@@ -521,6 +541,8 @@ function initWhiteboardMenu() {
     }
     renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
     renderNameFormUi()
+    renderShareAdminUi()
+    setSharingLayout(Boolean(currentShare.open && currentShare.code))
   }
 
   window.addEventListener(PARTICIPANTS_EVENT, ((event: CustomEvent) => {
@@ -532,8 +554,17 @@ function initWhiteboardMenu() {
     participants = Array.isArray(detail.participants) ? detail.participants : []
     yourSessionId =
       typeof detail.yourSessionId === 'string' ? detail.yourSessionId : ''
+    const couldManageShare = canManageShare()
     if (detail.yourRole) yourRole = detail.yourRole
     renderNameFormUi()
+    renderShareAdminUi()
+    if (
+      !couldManageShare &&
+      canManageShare() &&
+      root.classList.contains('is-open')
+    ) {
+      void refreshShareState()
+    }
     renderPeople()
   }) as EventListener)
 
@@ -547,6 +578,10 @@ function initWhiteboardMenu() {
     if (typeof detail.sessionId === 'string') yourSessionId = detail.sessionId
     if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
     renderNameFormUi()
+    renderShareAdminUi()
+    if (canManageShare() && root.classList.contains('is-open')) {
+      void refreshShareState()
+    }
     if (typeof detail.title === 'string' && detail.title.trim()) {
       titleSyncGen += 1
       applyTitle(detail.title)
@@ -699,7 +734,7 @@ function initWhiteboardMenu() {
   })
 
   shareToggle?.addEventListener('change', () => {
-    if (!boardId || shareBusy) {
+    if (!boardId || shareBusy || !canManageShare()) {
       if (shareToggle) shareToggle.checked = currentShare.open
       return
     }
@@ -726,7 +761,7 @@ function initWhiteboardMenu() {
   })
 
   shareNew?.addEventListener('click', () => {
-    if (!boardId || shareBusy || !currentShare.open) return
+    if (!boardId || shareBusy || !currentShare.open || !canManageShare()) return
     shareBusy = true
     setShareHint(null)
     void (async () => {
@@ -749,7 +784,7 @@ function initWhiteboardMenu() {
   // Activating the share code control copies it (no separate Copy Code button).
   shareCodeBtn?.addEventListener('click', () => {
     const code = currentShare.code
-    if (!code || !currentShare.open) return
+    if (!canManageShare() || !code || !currentShare.open) return
     void copyText(
       code,
       'Code Copied',
@@ -758,7 +793,7 @@ function initWhiteboardMenu() {
   })
 
   shareCopyLink?.addEventListener('click', () => {
-    if (!boardId) return
+    if (!boardId || !canManageShare()) return
     const url = `${window.location.origin}/board/${boardId}`
     void copyText(
       url,

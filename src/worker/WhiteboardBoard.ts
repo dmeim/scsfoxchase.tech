@@ -1459,6 +1459,64 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * Share-code GET (secret value) / POST / DELETE: Owner or Manager only.
+	 * Proof is a live session token, scratch host secret, or Clerk matching
+	 * `cloudOwnerKey`. Leftover host on a Google-owned board is not enough.
+	 */
+	private async resolveShareCodeActor(
+		request: Request,
+		url: URL,
+	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
+		const actorUrl = new URL(url.toString())
+		const sessionId =
+			actorUrl.searchParams.get('actorSessionId') ||
+			request.headers.get('X-Board-Session')?.trim() ||
+			''
+		const authToken =
+			actorUrl.searchParams.get('actorAuth') ||
+			request.headers.get('X-Board-Auth')?.trim() ||
+			''
+		if (sessionId) actorUrl.searchParams.set('actorSessionId', sessionId)
+		if (authToken) actorUrl.searchParams.set('actorAuth', authToken)
+		const headerHost = request.headers.get('X-Board-Host')?.trim()
+		if (
+			headerHost &&
+			!looksLikeJwt(headerHost) &&
+			!actorUrl.searchParams.get('hostSecret')
+		) {
+			actorUrl.searchParams.set('hostSecret', headerHost)
+		}
+		const fromLive = await this.resolveActor(actorUrl)
+		if (fromLive) return fromLive
+
+		const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+		if (!clerkAuth) return null
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey) {
+			return {
+				role: 'owner',
+				userId: clerkAuth.accountId,
+				sessionId: '',
+			}
+		}
+		return null
+	}
+
+	private async requireShareCodeAdmin(
+		request: Request,
+		url: URL,
+	): Promise<Response | null> {
+		const actor = await this.resolveShareCodeActor(request, url)
+		if (actor && (actor.role === 'owner' || actor.role === 'manager')) {
+			return null
+		}
+		return json(403, {
+			error: 'Only the Owner or a Manager can manage the share code.',
+		})
+	}
+
 	private async handleCodeHttp(
 		request: Request,
 		url: URL,
@@ -1469,6 +1527,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				error: 'Share codes are not configured on this Worker.',
 			})
 		}
+
+		const denied = await this.requireShareCodeAdmin(request, url)
+		if (denied) return denied
 
 		if (request.method === 'GET') {
 			const state = await this.readActiveCode()

@@ -17,16 +17,18 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Board title is library-index-only — **done** (`meta:title` on hello/PATCH; Viewer/Editor 403). Classroom Summer Checklist manual open.
 - Student Editors cannot upload media on saved boards — **done** (session PUT; Editors may still land on `temp:` until they know the `google:` prefix). Manual paste+reload open. `local:*` writes 403.
 - Last strokes vanish on tab close (flush only) — **done**. Classroom close-within-1s manual open.
-- Share Open Closed rotate not role-gated — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-codes.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`
+- Share Open Closed rotate not role-gated — **done** (`handleCodeHttp` Owner/Manager 403; share tools hidden). Classroom Viewer-cannot-mint Manual open.
 - Manager rename leftover (no Manager Recents as class title) — **done**. Manual Manager vs Owner Recents still open.
 - Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
 - Follow Me client resubscribe after socket gap — `worker` owns `src/components/WhiteboardCanvas.tsx`, `src/lib/whiteboard-excalidraw-roles.ts` (do not edit WhiteboardBoard.ts)
+- Follow Me hibernation (Durable Object) — `worker` owns `src/worker/WhiteboardBoard.ts` only (do not edit Canvas or roles)
+- Share / join-code docs vs Owner-Manager gate — `doc-smith` owns `docs/whiteboard/share-codes.md`, `docs/whiteboard/people-permissions.md`, `docs/whiteboard/hub-and-board.md`
 
 **Just closed (code-verified; classroom manuals still open):**
 
 - Excalidraw library sidebar hidden via CSS; Chromebook visual still manual (canvas search is hidden too).
 - Client `isShareCode` matches eight-character server codes.
-- Docs: `A1B2C3D4` + host proof off the WS URL. Historical spec left as history. In-board People copy still leftover.
+- Docs: `A1B2C3D4` + host proof off the WS URL. Historical spec left as history. In-board copy: join is view-only until Editor on People.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
 
 **Sentinel on `1d63c52`:** WARN — claim and leftover host were the remaining launch blockers in that area; both now have code landings in this wave.
@@ -358,12 +360,12 @@ Require Owner/Manager proof (Clerk + `cloudOwnerKey`, or host secret, or `authTo
 
 ### Tasks
 
-- [ ] In `src/worker/WhiteboardBoard.ts` `handleCodeHttp`, require Owner/Manager proof (Clerk + `cloudOwnerKey`, host secret, or `authToken` with role) on GET of the secret value, POST, and DELETE. Mirror `handleParticipantPatch` / `handleForceFollowPatch`.
-- [ ] Update `src/lib/whiteboard-codes.ts` to send the session token (or host proof) on those fetches.
-- [ ] Hide Open / Closed / rotate / copy in the manage panel unless the live role is Owner or Manager.
-- [ ] Closed still stops new joins; UUID access remains a separate capability (see Connect trusts client userId).
-- [ ] Grep for `handleCodeHttp` and whiteboard-codes fetches. Confirm a Viewer GET/POST/DELETE is 403.
-- [ ] Run `npm run build`.
+- [x] In `src/worker/WhiteboardBoard.ts` `handleCodeHttp`, require Owner/Manager proof (Clerk + `cloudOwnerKey`, host secret, or `authToken` with role) on GET of the secret value, POST, and DELETE. Mirror `handleParticipantPatch` / `handleForceFollowPatch`.
+- [x] Update `src/lib/whiteboard-codes.ts` to send the session token (or host proof) on those fetches.
+- [x] Hide Open / Closed / rotate / copy in the manage panel unless the live role is Owner or Manager.
+- [x] Closed still stops new joins; UUID access remains a separate capability (see Connect trusts client userId).
+- [x] Grep for `handleCodeHttp` and whiteboard-codes fetches. Confirm a Viewer GET/POST/DELETE is 403.
+- [x] Run `npm run build`.
 - [ ] Manual: Viewer cannot close or mint a code mid-lesson; Owner still can.
 
 ---

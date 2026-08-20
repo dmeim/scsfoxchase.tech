@@ -85,7 +85,7 @@ const helpActive =
 
                 <div class="whiteboard-menu-divider" role="separator" hidden></div>
 
-                <div class="whiteboard-manage-block" data-wb-manage-share>
+                <div class="whiteboard-manage-block" data-wb-manage-share hidden>
                   <div class="whiteboard-manage-share-head">
                     <p class="whiteboard-join-label">Share</p>
                     <label class="whiteboard-switch">
@@ -98,6 +98,9 @@ const helpActive =
                       <span class="whiteboard-switch-track" aria-hidden="true"></span>
                     </label>
                   </div>
+                  <p class="whiteboard-join-hint">
+                    Join is view-only. Students cannot draw until you set Editor on People.
+                  </p>
                   <p class="whiteboard-join-hint" data-wb-share-hint hidden></p>
                 </div>
 
@@ -113,7 +116,7 @@ const helpActive =
                 data-wb-manage-right
                 hidden
               >
-                <div class="whiteboard-manage-block" data-wb-manage-share-tools>
+                <div class="whiteboard-manage-block" data-wb-manage-share-tools hidden>
                   <div class="whiteboard-share-toolbar-wrap">
                     <div class="whiteboard-share-toolbar">
                       <button
@@ -168,6 +171,9 @@ const helpActive =
                     </div>
                   </div>
                   <p class="whiteboard-join-hint whiteboard-share-expiry" data-wb-share-expiry hidden></p>
+                  <p class="whiteboard-join-hint">
+                    A join code opens the board as Viewer. Set Editor on People if students should draw.
+                  </p>
                   <p class="whiteboard-join-hint">
                     Bookmark the board page to come back later.
                   </p>
