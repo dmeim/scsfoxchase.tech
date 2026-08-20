@@ -20,8 +20,9 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Share Open Closed rotate not role-gated — **done** (`handleCodeHttp` Owner/Manager 403; share tools hidden). Classroom Viewer-cannot-mint Manual open.
 - Manager rename leftover (no Manager Recents as class title) — **done**. Manual Manager vs Owner Recents still open.
 - Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
-- Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible). DO persist still in flight.
-- Follow Me hibernation (Durable Object) — `worker` owns `src/worker/WhiteboardBoard.ts` only (do not edit Canvas or roles)
+- Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible).
+- Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
+- Scene persist can drop work — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-sync.ts`, `src/components/WhiteboardCanvas.tsx` (toast). Do not edit assetRoutes / files.ts.
 - Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy update still open.
 
 **Just closed (code-verified; classroom manuals still open):**
@@ -29,7 +30,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Excalidraw library sidebar hidden via CSS; Chromebook visual still manual (canvas search is hidden too).
 - Client `isShareCode` matches eight-character server codes.
 - Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only until Editor on People. Historical spec left as history.
-- Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
+- Follow Me survives DO hibernation in code: `getForceFollowState` + attachment voluntary Follow + client `resubscribeFollow`. Classroom ping/pong Manual still open.
 
 **Sentinel on `1d63c52`:** WARN — claim and leftover host were the remaining launch blockers in that area; both now have code landings in this wave.
 
@@ -241,13 +242,13 @@ In `relaySceneBounds`, load follow state with `getForceFollowState()`. Persist v
 
 ### Tasks
 
-- [ ] In `src/worker/WhiteboardBoard.ts` `relaySceneBounds`, load force-follow with `getForceFollowState()` instead of `this.forceFollowCache ?? this.emptyForceFollow()`.
-- [ ] Persist voluntary follow on the socket attachment or in storage so a hibernation wake does not empty `voluntaryFollow`.
-- [ ] After `hydrateSockets` / on `webSocketMessage` following a wake, restore follow from attachments and rebroadcast `wb:forceFollow` to already-open tabs, not only to a newly connected socket.
+- [x] In `src/worker/WhiteboardBoard.ts` `relaySceneBounds`, load force-follow with `getForceFollowState()` instead of `this.forceFollowCache ?? this.emptyForceFollow()`.
+- [x] Persist voluntary follow on the socket attachment or in storage so a hibernation wake does not empty `voluntaryFollow`.
+- [x] After `hydrateSockets` / on `webSocketMessage` following a wake, restore follow from attachments and rebroadcast `wb:forceFollow` to already-open tabs, not only to a newly connected socket.
 - [x] In `src/components/WhiteboardCanvas.tsx` / `src/lib/whiteboard-excalidraw-roles.ts`, resubscribe `wb:follow` whenever the socket is open after a gap, even if the tab never disconnected.
-- [ ] Do not treat this as the Following overlay bug (stock FollowMode chrome). That is Following overlay is glitchy.
-- [ ] Grep for `relaySceneBounds`, `forceFollowCache`, `voluntaryFollow`, and `setWebSocketAutoResponse`. Confirm a wake cannot treat Follow Me as off while sockets stayed open.
-- [ ] Run `npm run build`.
+- [x] Do not treat this as the Following overlay bug (stock FollowMode chrome). That is Following overlay is glitchy.
+- [x] Grep for `relaySceneBounds`, `forceFollowCache`, `voluntaryFollow`, and `setWebSocketAutoResponse`. Confirm a wake cannot treat Follow Me as off while sockets stayed open.
+- [x] Run `npm run build`.
 - [ ] Manual: turn on Follow Me, wait for DO hibernation (ping/pong without JS), confirm students still track without a refresh.
 
 ---

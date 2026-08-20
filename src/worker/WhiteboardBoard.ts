@@ -116,6 +116,8 @@ interface SocketAttachment {
 	connectOrigin?: string
 	/** Cookie Clerk from the upgrade request; first-message token wins. */
 	connectClerkAuth?: ClerkWhiteboardAuth
+	/** Voluntary Follow target; survives hibernation with the socket. */
+	followTargetSessionId?: string
 }
 
 // PHASE 3.3
@@ -246,6 +248,11 @@ function normalizeAttachment(
 		connectClerkAuth: isClerkWhiteboardAuth(raw?.connectClerkAuth)
 			? raw.connectClerkAuth
 			: undefined,
+		followTargetSessionId:
+			typeof raw?.followTargetSessionId === 'string' &&
+			raw.followTargetSessionId
+				? raw.followTargetSessionId
+				: undefined,
 	}
 }
 
@@ -262,9 +269,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
 	/** Cached force-follow flag (null until first storage read). */
 	private forceFollowCache: StoredForceFollow | null = null
-	/** PHASE 3.3: followerSessionId → targetSessionId (in-memory; clients resubscribe). */
+	/** followerSessionId → targetSessionId; restored from socket attachments after hibernation. */
 	private readonly voluntaryFollow = new Map<string, string>()
 	private socketsHydrated = false
+	/** After a wake, rebroadcast Follow Me to sockets that never disconnected. */
+	private forceFollowNeedsRebroadcast = false
 	private sceneCache: LiveScene | null = null
 	private sceneLoaded = false
 	private updatesSinceFullSync = 0
@@ -287,6 +296,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private resetLiveState(): void {
 		this.forceFollowCache = null
 		this.voluntaryFollow.clear()
+		this.forceFollowNeedsRebroadcast = false
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
 		this.updatesSinceFullSync = 0
@@ -378,6 +388,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private hydrateSockets(): void {
 		if (this.socketsHydrated) return
 		this.socketsHydrated = true
+		this.voluntaryFollow.clear()
 		for (const ws of this.ctx.getWebSockets()) {
 			const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
 			if (!raw?.sessionId) continue
@@ -385,6 +396,30 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			ws.serializeAttachment(attachment)
 			this.sessionIdToWs.set(attachment.sessionId, ws)
 		}
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const attachment = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			const target = attachment.followTargetSessionId
+			if (target && this.sessionIdToWs.has(target)) {
+				this.voluntaryFollow.set(sessionId, target)
+			} else if (target) {
+				this.persistVoluntaryFollow(sessionId, null)
+			}
+		}
+		this.forceFollowNeedsRebroadcast = this.sessionIdToWs.size > 0
+	}
+
+	/**
+	 * After hibernation, already-open tabs never got a new `wb:hello`.
+	 * Reload Follow Me from storage and send `wb:forceFollow` to them.
+	 */
+	private async restoreFollowAfterWake(): Promise<void> {
+		if (!this.forceFollowNeedsRebroadcast) return
+		this.forceFollowNeedsRebroadcast = false
+		await this.broadcastForceFollow()
+		await this.refreshFollowedFlags()
 	}
 
 	/**
@@ -441,6 +476,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	async fetch(request: Request): Promise<Response> {
 		this.hydrateSockets()
+		await this.restoreFollowAfterWake()
 		const url = new URL(request.url)
 		const connectMatch = url.pathname.match(
 			/^\/api\/whiteboard\/connect\/([^/]+)\/?$/i,
@@ -1417,7 +1453,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
-	private handleFollowSubscribe(
+	private persistVoluntaryFollow(
 		fromSessionId: string,
 		targetSessionId: string | null,
 	): void {
@@ -1425,20 +1461,39 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			this.voluntaryFollow.delete(fromSessionId)
 		} else if (this.sessionIdToWs.has(targetSessionId)) {
 			this.voluntaryFollow.set(fromSessionId, targetSessionId)
+		} else {
+			return
 		}
+		const ws = this.sessionIdToWs.get(fromSessionId)
+		if (!ws) return
+		const prev = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			fromSessionId,
+		)
+		ws.serializeAttachment({
+			...prev,
+			followTargetSessionId: targetSessionId || undefined,
+		})
+	}
+
+	private handleFollowSubscribe(
+		fromSessionId: string,
+		targetSessionId: string | null,
+	): void {
+		this.persistVoluntaryFollow(fromSessionId, targetSessionId)
 		void this.refreshFollowedFlags()
 	}
 
-	private relaySceneBounds(
+	private async relaySceneBounds(
 		fromSessionId: string,
 		bounds: [number, number, number, number],
-	): void {
+	): Promise<void> {
 		const payload = {
 			type: 'wb:sceneBounds' as const,
 			socketId: fromSessionId,
 			bounds,
 		}
-		const force = this.forceFollowCache ?? this.emptyForceFollow()
+		const force = await this.getForceFollowState()
 		const fromRow = this.participantFromSession(fromSessionId)
 		for (const [sessionId, ws] of this.sessionIdToWs) {
 			if (sessionId === fromSessionId) continue
@@ -1752,6 +1807,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
 		this.hydrateSockets()
+		await this.restoreFollowAfterWake()
 		const sessionId = this.getSessionId(ws)
 		if (!sessionId) return
 		this.sessionIdToWs.set(sessionId, ws)
@@ -1798,7 +1854,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				bounds.length === 4 &&
 				bounds.every((n) => typeof n === 'number' && Number.isFinite(n))
 			) {
-				this.relaySceneBounds(
+				await this.relaySceneBounds(
 					sessionId,
 					bounds as [number, number, number, number],
 				)
@@ -1851,9 +1907,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
 		if (!raw?.sessionId) return
 		this.sessionIdToWs.delete(raw.sessionId)
-		this.voluntaryFollow.delete(raw.sessionId)
+		this.persistVoluntaryFollow(raw.sessionId, null)
 		for (const [follower, target] of [...this.voluntaryFollow]) {
-			if (target === raw.sessionId) this.voluntaryFollow.delete(follower)
+			if (target === raw.sessionId) this.persistVoluntaryFollow(follower, null)
 		}
 		this.broadcastParticipants()
 		void this.refreshFollowedFlags()
