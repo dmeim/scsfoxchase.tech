@@ -15,6 +15,43 @@ export const CLIENT_PING_MS = 25_000
 export const FULL_RESYNC_EVERY = 20
 export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
+export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
+export const SCENE_PERSIST_FAILED_CODE = 'persist_failed' as const
+export const SCENE_TOO_LARGE_MESSAGE =
+	'This board is too large to save. The last change was not stored.'
+export const SCENE_PERSIST_FAILED_MESSAGE =
+	'Could not save this board. The last change was not stored.'
+
+export type SceneErrorCode =
+	| typeof SCENE_TOO_LARGE_CODE
+	| typeof SCENE_PERSIST_FAILED_CODE
+
+export type SceneErrorMessage = {
+	type: 'wb:error'
+	code: SceneErrorCode
+	message: string
+}
+
+export class ScenePersistError extends Error {
+	readonly code: SceneErrorCode
+	constructor(code: SceneErrorCode, message: string) {
+		super(message)
+		this.name = 'ScenePersistError'
+		this.code = code
+	}
+}
+
+export function sceneTooLargeError(): ScenePersistError {
+	return new ScenePersistError(SCENE_TOO_LARGE_CODE, SCENE_TOO_LARGE_MESSAGE)
+}
+
+export function asScenePersistError(err: unknown): ScenePersistError {
+	if (err instanceof ScenePersistError) return err
+	return new ScenePersistError(
+		SCENE_PERSIST_FAILED_CODE,
+		SCENE_PERSIST_FAILED_MESSAGE,
+	)
+}
 
 /** DO storage: first secret to connect is ephemeral Owner (Phase 3 roles). */
 export const META_HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
@@ -176,15 +213,40 @@ export function isSceneElement(value: unknown): value is SceneElement {
 	)
 }
 
-export function parseSceneElements(value: unknown): SceneElement[] {
-	if (!Array.isArray(value)) return []
+function collectSceneElements(
+	value: unknown,
+	max: number,
+): { elements: SceneElement[]; overflow: boolean } {
+	if (!Array.isArray(value)) return { elements: [], overflow: false }
 	const out: SceneElement[] = []
+	let overflow = false
 	for (const item of value) {
 		if (!isSceneElement(item)) continue
+		if (out.length >= max) {
+			overflow = true
+			break
+		}
 		out.push(item)
-		if (out.length >= MAX_SCENE_ELEMENTS) break
 	}
-	return out
+	return { elements: out, overflow }
+}
+
+/**
+ * Parse an incoming editor payload. Overflow is an error — callers must not
+ * persist or broadcast a silently trimmed scene.
+ */
+export function parseSceneElements(value: unknown): SceneElement[] {
+	const { elements, overflow } = collectSceneElements(
+		value,
+		MAX_SCENE_ELEMENTS,
+	)
+	if (overflow) throw sceneTooLargeError()
+	return elements
+}
+
+/** Load path: do not drop stored work if a board already exceeds the cap. */
+export function parseStoredSceneElements(value: unknown): SceneElement[] {
+	return collectSceneElements(value, Number.MAX_SAFE_INTEGER).elements
 }
 
 /** Last-write-wins by version, then versionNonce (same idea as reconcileElements). */
@@ -261,7 +323,11 @@ export function parseDatabaseScene(raw: string): DatabaseScene | null {
 		if (!parsed || typeof parsed !== 'object') return null
 		const data = parsed as Record<string, unknown>
 		if (data.type !== 'excalidraw') return null
-		const elements = parseSceneElements(data.elements)
+		const { elements, overflow } = collectSceneElements(
+			data.elements,
+			MAX_SCENE_ELEMENTS,
+		)
+		if (overflow) return null
 		const appState =
 			data.appState && typeof data.appState === 'object'
 				? (data.appState as SceneAppState)

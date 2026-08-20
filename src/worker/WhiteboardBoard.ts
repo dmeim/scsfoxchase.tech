@@ -11,6 +11,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { generateGuestDisplayName } from '../lib/whiteboard-display-name'
 import {
 	FULL_RESYNC_EVERY,
+	MAX_SCENE_ELEMENTS,
 	MAX_SCENE_JSON_BYTES,
 	META_BOARD_ID_KEY,
 	META_CLOUD_OWNER_KEY,
@@ -19,6 +20,7 @@ import {
 	META_TEMP_ASSET_PREFIX_KEY,
 	META_UNSAVED_EXPIRES_AT_KEY,
 	UNSAVED_BOARD_TTL_MS,
+	asScenePersistError,
 	canAssignRole,
 	isAssignableRole,
 	isWhiteboardRole,
@@ -26,13 +28,14 @@ import {
 	mergeSceneElements,
 	parseDatabaseScene,
 	parseSceneElements,
+	parseStoredSceneElements,
 	roleCanEdit,
-	stringifyDatabaseScene,
-	toDatabaseScene,
+	sceneTooLargeError,
 	type AssignableRole,
 	type OwnerHook,
 	type SceneAppState,
 	type SceneElement,
+	type ScenePersistError,
 	type WhiteboardRole,
 } from '../lib/whiteboard-sync'
 import {
@@ -62,8 +65,15 @@ const CODE_MINT_LOG_KEY = 'meta:codeMintLog'
 const SCENE_TABLE_SQL = `
 	CREATE TABLE IF NOT EXISTS excalidraw_scene (
 		id INTEGER PRIMARY KEY CHECK (id = 1),
-		database_json TEXT NOT NULL,
-		live_json TEXT NOT NULL,
+		scene_json TEXT NOT NULL,
+		updated_at INTEGER NOT NULL
+	)
+`
+
+const SCENE_TABLE_V2_SQL = `
+	CREATE TABLE IF NOT EXISTS excalidraw_scene_v2 (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		scene_json TEXT NOT NULL,
 		updated_at INTEGER NOT NULL
 	)
 `
@@ -90,6 +100,95 @@ function listUserSqlTables(storage: DurableObjectStorage): string[] {
 
 function hasTldrawSqlTables(names: string[]): boolean {
 	return names.some((name) => name.startsWith('tldraw_'))
+}
+
+function listSceneTableColumns(storage: DurableObjectStorage): string[] {
+	try {
+		return storage.sql
+			.exec<{ name: string }>('PRAGMA table_info(excalidraw_scene)')
+			.toArray()
+			.map((row) => row.name)
+	} catch {
+		return []
+	}
+}
+
+function liveOrDatabaseToSceneJson(row: {
+	live_json?: string | null
+	database_json?: string | null
+}): string | null {
+	if (typeof row.live_json === 'string' && row.live_json.length > 0) {
+		return row.live_json
+	}
+	if (typeof row.database_json === 'string' && row.database_json.length > 0) {
+		const database = parseDatabaseScene(row.database_json)
+		if (database) {
+			return JSON.stringify({
+				elements: database.elements,
+				appState: database.appState,
+			})
+		}
+		return row.database_json
+	}
+	return null
+}
+
+/**
+ * One JSON column per row. Old boards stored `database_json` + `live_json`
+ * together, which can exceed SQLite's per-row limit even when each value
+ * is under MAX_SCENE_JSON_BYTES.
+ */
+function migrateExcalidrawSceneTable(storage: DurableObjectStorage): void {
+	const tables = new Set(listUserSqlTables(storage))
+	if (tables.has('excalidraw_scene_v2') && !tables.has('excalidraw_scene')) {
+		storage.sql.exec(
+			'ALTER TABLE excalidraw_scene_v2 RENAME TO excalidraw_scene',
+		)
+		return
+	}
+
+	storage.sql.exec(SCENE_TABLE_SQL)
+	const columns = new Set(listSceneTableColumns(storage))
+	if (
+		columns.has('scene_json') &&
+		!columns.has('live_json') &&
+		!columns.has('database_json')
+	) {
+		if (tables.has('excalidraw_scene_v2')) {
+			storage.sql.exec('DROP TABLE IF EXISTS excalidraw_scene_v2')
+		}
+		return
+	}
+	if (!columns.has('live_json') && !columns.has('database_json')) return
+
+	const row = storage.sql
+		.exec<{
+			live_json: string | null
+			database_json: string | null
+			updated_at: number | null
+		}>('SELECT live_json, database_json, updated_at FROM excalidraw_scene WHERE id = 1')
+		.toArray()[0]
+	const sceneJson = row ? liveOrDatabaseToSceneJson(row) : null
+
+	storage.sql.exec(SCENE_TABLE_V2_SQL)
+	storage.sql.exec('DELETE FROM excalidraw_scene_v2')
+	try {
+		if (sceneJson) {
+			storage.sql.exec(
+				`INSERT INTO excalidraw_scene_v2 (id, scene_json, updated_at)
+				 VALUES (1, ?, ?)`,
+				sceneJson,
+				row?.updated_at ?? Date.now(),
+			)
+		}
+	} catch {
+		storage.sql.exec('DROP TABLE IF EXISTS excalidraw_scene_v2')
+		return
+	}
+	storage.sql.exec('DROP TABLE excalidraw_scene')
+	storage.sql.exec(
+		'ALTER TABLE excalidraw_scene_v2 RENAME TO excalidraw_scene',
+	)
 }
 
 /** Max mint/rotate attempts per board in a rolling window. */
@@ -289,7 +388,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			if (hasTldrawSqlTables(tables)) {
 				await this.clearAllStorage()
 			}
-			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
+			migrateExcalidrawSceneTable(this.ctx.storage)
 		})
 	}
 
@@ -955,26 +1054,28 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		await this.scheduleNextAlarm()
 	}
 
-	private async loadScene(): Promise<LiveScene> {
-		if (this.sceneLoaded && this.sceneCache) return this.sceneCache
-		this.sceneLoaded = true
-		const row = this.ctx.storage.sql
-			.exec<{ live_json: string; database_json: string }>(
-				'SELECT live_json, database_json FROM excalidraw_scene WHERE id = 1',
-			)
-			.toArray()[0]
-		if (!row) {
-			this.sceneCache = { elements: [], appState: {} }
-			return this.sceneCache
-		}
+	private parseLiveSceneJson(raw: string): LiveScene | null {
 		try {
-			const live = JSON.parse(row.live_json) as unknown
+			const live = JSON.parse(raw) as unknown
 			if (Array.isArray(live)) {
-				this.sceneCache = { elements: parseSceneElements(live), appState: {} }
-			} else if (live && typeof live === 'object') {
+				return { elements: parseStoredSceneElements(live), appState: {} }
+			}
+			if (live && typeof live === 'object') {
 				const rec = live as Record<string, unknown>
-				this.sceneCache = {
-					elements: parseSceneElements(rec.elements),
+				if (rec.type === 'excalidraw') {
+					const database = parseDatabaseScene(raw)
+					return database
+						? { elements: database.elements, appState: database.appState }
+						: {
+								elements: parseStoredSceneElements(rec.elements),
+								appState:
+									rec.appState && typeof rec.appState === 'object'
+										? (rec.appState as SceneAppState)
+										: {},
+							}
+				}
+				return {
+					elements: parseStoredSceneElements(rec.elements),
 					appState:
 						rec.appState && typeof rec.appState === 'object'
 							? (rec.appState as SceneAppState)
@@ -982,46 +1083,82 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				}
 			}
 		} catch {
-			this.sceneCache = null
+			return null
 		}
-		if (!this.sceneCache) {
-			const database = parseDatabaseScene(row.database_json)
-			this.sceneCache = database
-				? { elements: database.elements, appState: database.appState }
+		return null
+	}
+
+	private async loadScene(): Promise<LiveScene> {
+		if (this.sceneLoaded && this.sceneCache) return this.sceneCache
+		this.sceneLoaded = true
+		const columns = new Set(listSceneTableColumns(this.ctx.storage))
+		if (columns.has('scene_json')) {
+			const row = this.ctx.storage.sql
+				.exec<{ scene_json: string }>(
+					'SELECT scene_json FROM excalidraw_scene WHERE id = 1',
+				)
+				.toArray()[0]
+			this.sceneCache = row
+				? this.parseLiveSceneJson(row.scene_json) ?? {
+						elements: [],
+						appState: {},
+					}
 				: { elements: [], appState: {} }
+			return this.sceneCache
 		}
-		if (!this.sceneCache.appState || Object.keys(this.sceneCache.appState).length === 0) {
+
+		const row = columns.has('live_json')
+			? this.ctx.storage.sql
+					.exec<{ live_json: string; database_json: string }>(
+						'SELECT live_json, database_json FROM excalidraw_scene WHERE id = 1',
+					)
+					.toArray()[0]
+			: undefined
+		if (!row) {
+			this.sceneCache = { elements: [], appState: {} }
+			return this.sceneCache
+		}
+		this.sceneCache =
+			this.parseLiveSceneJson(row.live_json) ??
+			this.parseLiveSceneJson(row.database_json) ?? {
+				elements: [],
+				appState: {},
+			}
+		if (
+			(!this.sceneCache.appState ||
+				Object.keys(this.sceneCache.appState).length === 0) &&
+			row.database_json
+		) {
 			const database = parseDatabaseScene(row.database_json)
 			if (database) this.sceneCache.appState = database.appState
 		}
 		return this.sceneCache
 	}
 
-	private persistScene(
-		scene: LiveScene,
-		databaseJson: string | undefined,
-	): void {
-		const parsed = databaseJson ? parseDatabaseScene(databaseJson) : null
-		const database = parsed
-			? stringifyDatabaseScene(parsed)
-			: stringifyDatabaseScene(toDatabaseScene(scene.elements, scene.appState))
-		if (database.length > MAX_SCENE_JSON_BYTES) return
+	private persistScene(scene: LiveScene): void {
+		if (scene.elements.length > MAX_SCENE_ELEMENTS) {
+			throw sceneTooLargeError()
+		}
 		const liveJson = JSON.stringify({
 			elements: scene.elements,
 			appState: scene.appState,
 		})
-		if (liveJson.length > MAX_SCENE_JSON_BYTES) return
-		this.ctx.storage.sql.exec(
-			`INSERT INTO excalidraw_scene (id, database_json, live_json, updated_at)
-			 VALUES (1, ?, ?, ?)
-			 ON CONFLICT(id) DO UPDATE SET
-			   database_json = excluded.database_json,
-			   live_json = excluded.live_json,
-			   updated_at = excluded.updated_at`,
-			database,
-			liveJson,
-			Date.now(),
-		)
+		if (liveJson.length > MAX_SCENE_JSON_BYTES) {
+			throw sceneTooLargeError()
+		}
+		try {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO excalidraw_scene (id, scene_json, updated_at)
+				 VALUES (1, ?, ?)
+				 ON CONFLICT(id) DO UPDATE SET
+				   scene_json = excluded.scene_json,
+				   updated_at = excluded.updated_at`,
+				liveJson,
+				Date.now(),
+			)
+		} catch (err) {
+			throw asScenePersistError(err)
+		}
 		this.sceneCache = scene
 		this.sceneLoaded = true
 	}
@@ -1045,6 +1182,27 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
+	private notifyScenePersistError(
+		fromSessionId: string,
+		error: ScenePersistError,
+	): void {
+		const payload = {
+			type: 'wb:error' as const,
+			code: error.code,
+			message: error.message,
+		}
+		const origin = this.sessionIdToWs.get(fromSessionId)
+		if (origin) sendJson(origin, payload)
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			if (sessionId === fromSessionId) continue
+			const attachment = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			if (roleCanEdit(attachment.role)) sendJson(ws, payload)
+		}
+	}
+
 	private async applySceneUpdate(
 		fromSessionId: string,
 		incoming: SceneElement[],
@@ -1062,7 +1220,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			if (parsed) appState = parsed.appState
 		}
 		const nextScene: LiveScene = { elements: next, appState }
-		this.persistScene(nextScene, databaseJson)
+		this.persistScene(nextScene)
 
 		this.updatesSinceFullSync += 1
 		if (full || this.updatesSinceFullSync >= FULL_RESYNC_EVERY) {
@@ -1869,18 +2027,27 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			)
 			// PHASE 3.3: Viewers cannot mutate the document (UI + server).
 			if (!roleCanEdit(attachment.role)) return
-			const elements = parseSceneElements(data.elements)
-			const databaseJson =
-				typeof data.databaseJson === 'string' &&
-				data.databaseJson.length <= MAX_SCENE_JSON_BYTES
-					? data.databaseJson
-					: undefined
-			await this.applySceneUpdate(
-				sessionId,
-				elements,
-				databaseJson,
-				data.full === true,
-			)
+			try {
+				if (
+					typeof data.databaseJson === 'string' &&
+					data.databaseJson.length > MAX_SCENE_JSON_BYTES
+				) {
+					throw sceneTooLargeError()
+				}
+				const elements = parseSceneElements(data.elements)
+				const databaseJson =
+					typeof data.databaseJson === 'string'
+						? data.databaseJson
+						: undefined
+				await this.applySceneUpdate(
+					sessionId,
+					elements,
+					databaseJson,
+					data.full === true,
+				)
+			} catch (err) {
+				this.notifyScenePersistError(sessionId, asScenePersistError(err))
+			}
 		}
 	}
 

@@ -95,6 +95,7 @@ export default function WhiteboardCanvas({
     elements: SceneElement[]
     appState: SceneAppState | null
   } | null>(null)
+  const persistErrorToastAtRef = useRef(0)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
 
@@ -443,6 +444,23 @@ export default function WhiteboardCanvas({
           return
         }
         lastSocketJsAt = Date.now()
+
+        if (data.type === 'wb:error') {
+          const message =
+            typeof data.message === 'string' && data.message.trim()
+              ? data.message
+              : 'This board is too large to save. The last change was not stored.'
+          const now = Date.now()
+          if (now - persistErrorToastAtRef.current >= 5000) {
+            persistErrorToastAtRef.current = now
+            apiRef.current?.setToast?.({
+              message,
+              duration: 8000,
+              closable: true,
+            })
+          }
+          return
+        }
 
         // PHASE 3.3
         if (handleRoleMessageRef.current(data)) return
