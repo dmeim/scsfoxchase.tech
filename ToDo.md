@@ -23,7 +23,8 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Hub Recents rename vs live title — **done** (hub calls `renameBoardActive` → PATCH `meta:title` then Owner Recents). Summer Checklist Manual still open.
 - Saved-board hub rename 403 — **done** (title/`classCanEdit` PATCH accepts Clerk Owner/Manager). Summer Checklist Manual still open.
 - Meta forwarding clobbers Clerk JWT with leftover host — **done** (skip JWT-shaped host; forward Authorization to the DO stub). Summer Checklist Manual still open.
-- Launch-blocker code wave — **done** except classroom Manuals. `sentinel` reviews remaining product risks on `fix/whiteboard-header-rename` (read-only).
+- Launch-blocker **code** wave — **done** on `bd86b12`. Sentinel: no remaining launch-blocking code defects. Do not open another code wave unless a Manual fails.
+- Classroom Manuals still open (run first): Class can edit join → draw; Summer Checklist title on private Viewer tabs; close-within-1s last stroke; Editor paste+reload; Follow Me after hibernation; video after claim; Viewer cannot mint/close a code; leftover host cannot steal Owner after Save.
 - Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible).
 - Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
 - Scene persist can drop work — **done** (no silent persist; `scene_json`; Editor toast). Manual reload-after-failure still open.
@@ -47,7 +48,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Scene persist: failed/oversize persist sends `wb:error` and does not broadcast; SQLite is one `scene_json` column. Classroom reload Manual still open.
 - Claim/save rewrites persisted `/whiteboard-player?owner=temp:` URLs in `scene_json` to `google:`. Temp R2 is still kept. Video Manuals still open.
 
-**Sentinel on `1d63c52`:** WARN — claim and leftover host were the remaining launch blockers in that area; both now have code landings in this wave.
+**Sentinel on `bd86b12`:** no remaining launch-blocking code defects. Residuals (leftover-host asset writes, first PUT may hit `temp:`, join-code Editor is cookie-only, tab-close flush best-effort) stay on existing Manuals. Do not open another code wave unless a Manual fails.
 
 **AFK decisions (do not reopen unless blocked):**
 
