@@ -4,7 +4,7 @@ Live document sync, media uploads, and where whiteboard data lives.
 
 ## Overview
 
-Each board UUID maps to one **Durable Object** (`WhiteboardBoard`). Clients open a **native WebSocket** (not `@tldraw/sync`). The DO persists plaintext Excalidraw `{ elements, appState }` from `serializeAsJSON(..., "database")` in SQLite table `excalidraw_scene`. Image/GIF bytes and MP4/WebM files go to **R2** keyed by Excalidraw `fileId`. Signed-in library indexes are JSON objects in the same bucket.
+Each board UUID maps to one **Durable Object** (`WhiteboardBoard`). Clients open a **native WebSocket** (not `@tldraw/sync`). The DO persists plaintext Excalidraw `{ elements, appState }` in SQLite table `excalidraw_scene` as one `scene_json` TEXT value. Clients include `databaseJson` from `serializeAsJSON(..., {}, "database")` so `files` is always `{}`; binaries live in R2, not in the scene JSON. Image/GIF bytes and MP4/WebM files go to **R2** keyed by Excalidraw `fileId`. Signed-in library indexes are JSON objects in the same bucket.
 
 Do not use `excalidraw-room`, Firebase, `oss-collab`, Liveblocks, or Yjs for this product.
 
@@ -15,8 +15,8 @@ Do not use `excalidraw-room`, Firebase, `oss-collab`, Liveblocks, or Yjs for thi
 `src/components/WhiteboardCanvas.tsx` + `src/lib/whiteboard-sync.ts`:
 
 1. `buildWhiteboardConnectUrl` → `/api/whiteboard/connect/{uuid}?sessionId=…`
-2. On change, debounce ~1s (`SCENE_FLUSH_MS`), send `scene:update` with elements whose `version` increased; periodically send a full set.
-3. Incoming `scene:sync` / `scene:update`: `restoreElements` + `reconcileElements`, then `updateScene({ captureUpdate: NEVER })`.
+2. On change, debounce ~1s (`SCENE_FLUSH_MS`), send `scene:update` with elements whose `version` increased; periodically send a full set. Each flush includes `databaseJson` from `serializeAsJSON(elements, appState, {}, "database")` (`files: {}`).
+3. Incoming `scene:sync` / `scene:update`: `restoreElements` + `reconcileElements`, then `updateScene({ captureUpdate: NEVER })`. Incoming `wb:error` shows an Excalidraw toast; that change was not stored.
 4. Client ping every 25s (`{"type":"ping"}`); DO auto-responds `pong` without waking JS.
 
 Connect URL query params:
@@ -43,12 +43,26 @@ The PWA service worker (`public/sw.js`) **never intercepts `/api/*`**, so this u
 
 `src/worker/WhiteboardBoard.ts`:
 
-- Storage: SQLite `excalidraw_scene` (`database_json` + `live_json`).
+- Storage: SQLite `excalidraw_scene` — one row (`id = 1`) with a single `scene_json` TEXT column (`{ elements, appState }`) plus `updated_at`.
+- Persist: `persistScene` UPSERTs `scene_json`. Caps from `src/lib/whiteboard-sync.ts`: `MAX_SCENE_ELEMENTS` (4000) and `MAX_SCENE_JSON_BYTES` (2_000_000, string length of the JSON). Incoming `scene:update` uses `parseSceneElements` (overflow throws). Stored reads use `parseStoredSceneElements` so an already-oversize board is not trimmed on load.
+- Fail-closed: oversize or SQLite failure throws `ScenePersistError`. The DO sends `wb:error` (`scene_too_large` or `persist_failed`) to the writer and other Editors and **does not** `broadcastScene` that update. The in-memory cache is written only after a successful UPSERT.
 - Merge: last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
 - Hibernation: WebSocket auto-response for ping/pong; session snapshots on socket attachments; resume on wake.
 - Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `roleCanEdit` is false.
 - Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner or already stored as Editor/Manager. There is no class-Editor flag yet — Owner/Manager set **Editor** on **People**.
 - Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
+
+Live schema (`SCENE_TABLE_SQL`):
+
+```sql
+CREATE TABLE IF NOT EXISTS excalidraw_scene (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  scene_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+)
+```
+
+Older Durable Object SQLite used `database_json` + `live_json` on the same row. That pair can exceed the platform per-row limit even when each value is under `MAX_SCENE_JSON_BYTES`. The constructor runs `migrateExcalidrawSceneTable`: copy `live_json` (else `{ elements, appState }` from `database_json`) into `scene_json` via a temporary `excalidraw_scene_v2` rename, then drop the dual-column table. Those old column names are not the live schema.
 
 Custom messages the DO sends to connected clients:
 
@@ -57,6 +71,7 @@ Custom messages the DO sends to connected clients:
 | `wb:hello` | `{ sessionId, role, canEdit, authToken, owner, … }` | Session identity for the manage panel |
 | `wb:participants` | `{ yourSessionId, yourRole, participants[] }` | People list |
 | `wb:role` | `{ role, canEdit }` | Role change for this session |
+| `wb:error` | `{ code, message }` | Persist failed (`scene_too_large` or `persist_failed`). Last change was not stored or broadcast |
 | `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Follow Me — lock follower cameras to the target |
 | `wb:sceneBounds` | `{ socketId, bounds }` | Leader viewport; voluntary Follow uses this until pan unfollows; Follow Me snaps to cached bounds |
 

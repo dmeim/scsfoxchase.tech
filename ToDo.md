@@ -24,14 +24,14 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
 - Scene persist can drop work — **done** (no silent persist; `scene_json`; Editor toast). Manual reload-after-failure still open.
 - Share-code joiners default to Viewer (class-can-edit) — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-sync.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`. Do not edit Canvas.
-- Docs: `sync-storage.md` dual JSON — `doc-smith` owns `docs/whiteboard/sync-storage.md`
+- Docs: `sync-storage.md` dual JSON — **done** (live schema is `scene_json`; persist fail-closed).
 - Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy update still open.
 
 **Just closed (code-verified; classroom manuals still open):**
 
 - Excalidraw library sidebar hidden via CSS; Chromebook visual still manual (canvas search is hidden too).
 - Client `isShareCode` matches eight-character server codes.
-- Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only until Editor on People. Historical spec left as history.
+- Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only until Editor on People. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
 - Follow Me survives DO hibernation in code: `getForceFollowState` + attachment voluntary Follow + client `resubscribeFollow`. Classroom ping/pong Manual still open.
 - Scene persist: failed/oversize persist sends `wb:error` and does not broadcast; SQLite is one `scene_json` column. Classroom reload Manual still open.
