@@ -101,6 +101,11 @@ export default function WhiteboardCanvas({
   const roles = useWhiteboardExcalidrawRoles({ boardId, apiRef, wsRef })
   const handleRoleMessageRef = useRef(roles.handleSocketMessage)
   handleRoleMessageRef.current = roles.handleSocketMessage
+  const onUserFollowRef = useRef(roles.onUserFollow)
+  onUserFollowRef.current = roles.onUserFollow
+  const reassertFollowRef = useRef(roles.reassertFollow)
+  reassertFollowRef.current = roles.reassertFollow
+  const unsubUserFollowRef = useRef<(() => void) | null>(null)
   const canEditRef = useRef(roles.canEdit)
   canEditRef.current = roles.canEdit
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -131,6 +136,13 @@ export default function WhiteboardCanvas({
       }
     }
   }, [roles.forceFollowLocked])
+
+  useEffect(() => {
+    return () => {
+      unsubUserFollowRef.current?.()
+      unsubUserFollowRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     ensureExcalidrawAssetPath()
@@ -424,6 +436,13 @@ export default function WhiteboardCanvas({
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       apiRef.current = api
+      unsubUserFollowRef.current?.()
+      unsubUserFollowRef.current = api.onUserFollow((payload) => {
+        onUserFollowRef.current(payload)
+      })
+      requestAnimationFrame(() => {
+        reassertFollowRef.current()
+      })
       const pending = pendingRemoteRef.current
       if (pending) {
         pendingRemoteRef.current = null
@@ -452,7 +471,14 @@ export default function WhiteboardCanvas({
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0 }}>
+    <div
+      ref={wrapRef}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        touchAction: roles.forceFollowLocked ? 'none' : undefined,
+      }}
+    >
       <Excalidraw
         excalidrawAPI={handleApi}
         theme={theme}
@@ -466,7 +492,6 @@ export default function WhiteboardCanvas({
         // PHASE 3.3
         viewModeEnabled={roles.viewModeEnabled}
         collaborators={roles.collaborators}
-        onUserFollow={roles.onUserFollow}
         onScrollChange={roles.onScrollChange}
       />
       {roles.forceFollowLocked ? (
@@ -475,9 +500,10 @@ export default function WhiteboardCanvas({
           style={{
             position: 'absolute',
             inset: 0,
-            zIndex: 6,
+            zIndex: 1,
             background: 'transparent',
             touchAction: 'none',
+            pointerEvents: 'none',
           }}
         />
       ) : null}

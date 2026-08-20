@@ -15,8 +15,8 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 **In flight (next wave):**
 
 - Board title is library-index-only — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`, `src/pages/board.astro`
-- Following overlay is glitchy — `worker` owns `src/lib/whiteboard-excalidraw-roles.ts`, `src/components/WhiteboardCanvas.tsx`
 - Student Editors cannot upload media on saved boards (+ leftover `local:*` accept path) — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
+- Last strokes vanish on tab close (flush only) — `worker` owns `src/components/WhiteboardCanvas.tsx`
 
 **Just closed (code-verified; classroom manuals still open):**
 
@@ -619,13 +619,13 @@ On every `wb:participants`, call `api.updateScene({ collaborators: map, captureU
 
 ### Tasks
 
-- [ ] In `src/lib/whiteboard-excalidraw-roles.ts`, on every `wb:participants`, call `api.updateScene({ collaborators: map, captureUpdate: NEVER })` with session ids that match `userToFollow.socketId`. The repo must actually populate Excalidraw’s App collaborators Map.
-- [ ] In `handleApi` (`WhiteboardCanvas.tsx` / roles hook), subscribe `api.onUserFollow(onUserFollow)` and unsubscribe on teardown. Remove reliance on the unused React `onUserFollow` prop.
-- [ ] Reassert follow after paint (`useEffect` / rAF), not only in the WebSocket handler. Queue `applyUserToFollow` if `!api`.
-- [ ] In `applyRemoteBounds`, always write `userToFollow` even when `alreadyFitted`. Optional: do not cover FollowMode (`.follow-mode`) with the z-index 6 lock sheet.
-- [ ] Do not treat this as Follow Me dies after Durable Object hibernation. Do not change `voluntaryFollow` / `forceFollowCache` here.
-- [ ] Grep for `updateScene`, `onUserFollow`, `reassertFollow`, and `collaborators=`. Confirm the React collaborators prop is not the only path.
-- [ ] Run `npm run build`.
+- [x] In `src/lib/whiteboard-excalidraw-roles.ts`, on every `wb:participants`, call `api.updateScene({ collaborators: map, captureUpdate: NEVER })` with session ids that match `userToFollow.socketId`. The repo must actually populate Excalidraw’s App collaborators Map.
+- [x] In `handleApi` (`WhiteboardCanvas.tsx` / roles hook), subscribe `api.onUserFollow(onUserFollow)` and unsubscribe on teardown. Remove reliance on the unused React `onUserFollow` prop.
+- [x] Reassert follow after paint (`useEffect` / rAF), not only in the WebSocket handler. Queue `applyUserToFollow` if `!api`.
+- [x] In `applyRemoteBounds`, always write `userToFollow` even when `alreadyFitted`. Optional: do not cover FollowMode (`.follow-mode`) with the z-index 6 lock sheet.
+- [x] Do not treat this as Follow Me dies after Durable Object hibernation. Do not change `voluntaryFollow` / `forceFollowCache` here.
+- [x] Grep for `updateScene`, `onUserFollow`, `reassertFollow`, and `collaborators=`. Confirm the React collaborators prop is not the only path.
+- [x] Run `npm run build`.
 - [ ] Manual: Following badge and green outline survive a refresh-free session and a role change; they return without a reload.
 
 ---
