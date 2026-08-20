@@ -18,7 +18,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Student Editors cannot upload media on saved boards — **done** (session PUT; Editors may still land on `temp:` until they know the `google:` prefix). Manual paste+reload open. `local:*` writes 403.
 - Last strokes vanish on tab close (flush only) — **done**. Classroom close-within-1s manual open.
 - Share Open Closed rotate not role-gated — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-codes.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`
-- Manager rename leftover (no Manager Recents as class title) — `worker` owns `src/scripts/whiteboard-library.ts`
+- Manager rename leftover (no Manager Recents as class title) — **done**. Manual Manager vs Owner Recents still open.
 - Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
 - Follow Me client resubscribe after socket gap — `worker` owns `src/components/WhiteboardCanvas.tsx`, `src/lib/whiteboard-excalidraw-roles.ts` (do not edit WhiteboardBoard.ts)
 
@@ -329,11 +329,11 @@ Owner/Manager Save should PATCH `meta:title` on the board (with session token or
 
 ### Tasks
 
-- [ ] Change `setBoardTitleActive` in `src/scripts/whiteboard-library.ts` so Owner/Manager Save PATCHes `meta:title` on the board (session token or host proof) and relies on the DO broadcast, not `upsertCloudBoard` as the Manager.
-- [ ] Do not write `library/{manager}/boards.json` as the class title. Optionally mirror into the Owner’s `boards.json` only.
-- [ ] If `meta:title` is not on the DO yet, add the PATCH here or land Board title is library-index-only first — do not ship Manager Save as an index upsert.
-- [ ] Grep for `upsertCloudBoard` / `setBoardTitleActive`. Confirm a Manager Save does not create a divergent Recents title on the Manager account as source of truth.
-- [ ] Run `npm run build`.
+- [x] Change `setBoardTitleActive` in `src/scripts/whiteboard-library.ts` so Owner/Manager Save PATCHes `meta:title` on the board (session token or host proof) and relies on the DO broadcast, not `upsertCloudBoard` as the Manager.
+- [x] Do not write `library/{manager}/boards.json` as the class title. Optionally mirror into the Owner’s `boards.json` only.
+- [x] If `meta:title` is not on the DO yet, add the PATCH here or land Board title is library-index-only first — do not ship Manager Save as an index upsert.
+- [x] Grep for `upsertCloudBoard` / `setBoardTitleActive`. Confirm a Manager Save does not create a divergent Recents title on the Manager account as source of truth.
+- [x] Run `npm run build`.
 - [ ] Manual: Manager renames; Owner Recents and guest tabs show the same name; Manager Recents is not the live title.
 
 ---

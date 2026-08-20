@@ -12,7 +12,13 @@ import {
   markBoardSavedToLibrary,
   upsertCloudBoard,
 } from '../lib/whiteboard-cloud';
-import { getActiveIdentity, isSignedIn, onAuthChange, whenAuthReady } from '../lib/whiteboard-identity';
+import {
+  getActiveIdentity,
+  getAuthHeaders,
+  isSignedIn,
+  onAuthChange,
+  whenAuthReady,
+} from '../lib/whiteboard-identity';
 
 /** @deprecated Phase 3.1 — local board library removed; key is cleared on load. */
 export const LIBRARY_KEY = 'scsfoxchase.whiteboard.library';
@@ -359,6 +365,40 @@ export async function touchBoardActive(
   return untitledEntry(boardId, title);
 }
 
+/**
+ * Signed-in GET so the matching Owner sees `cloudOwnerKey`. A Manager gets
+ * null on a saved board — that account must not upsert `boards.json`.
+ * `null` means unknown (fail open for hub Owner rename if meta is down).
+ */
+async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null> {
+  const ownerKey = getOwnerKey();
+  if (!ownerKey.startsWith('google:')) return false;
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(
+      `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+      { headers },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      cloudOwnerKey?: unknown;
+      savedToLibrary?: unknown;
+    };
+    if (typeof body.cloudOwnerKey === 'string') {
+      return body.cloudOwnerKey === ownerKey;
+    }
+    if (body.savedToLibrary === true) return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Optional Owner Recents / Library mirror. Live title is Durable Object
+ * `meta:title` (board Save PATCHes that). Does not write a Manager's
+ * `library/{manager}/boards.json` as the class title.
+ */
 export async function setBoardTitleActive(
   boardId: string,
   title: string,
@@ -374,7 +414,10 @@ export async function setBoardTitleActive(
     return claimBoardToLibrary(boardId, cleaned);
   }
   if (!existing) {
-    throw new Error('Sign in as the owner and Save to keep this board in your library.');
+    return untitledEntry(boardId, cleaned);
+  }
+  if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
+    return untitledEntry(boardId, cleaned);
   }
   return upsertEntryActive({
     id: boardId,
