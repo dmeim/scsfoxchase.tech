@@ -16,7 +16,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Unauthenticated asset GET and SVG XSS + Temp and local asset writes have no auth — `worker` owns `src/worker/assetRoutes.ts`
 - Share codes are short and unmetered — `worker` owns `src/worker/shareCode.ts`, `src/worker/codeRoutes.ts`, `src/scripts/whiteboard-hub.ts`, `docs/whiteboard/share-codes.md`
 - Unused tldraw.png — **done** (`public/images/tldraw.png` deleted; `tldraw-colors.png` left in place, unused)
-- tldraw constructor wipe needs no code change — `scout` confirm only
+- tldraw constructor wipe needs no code change — **done** (no product edit; do not bulk-run admin wipe)
 
 **AFK decisions (do not reopen unless blocked):**
 
@@ -874,7 +874,7 @@ Do **not** bulk-run `POST /api/whiteboard/admin/wipe-storage`. Leave leftover tl
 
 ### Tasks
 
-- [ ] Do not change the Durable Object constructor wipe-first path for this issue.
-- [ ] Do not bulk-run `POST /api/whiteboard/admin/wipe-storage`. If a known-dead ID must be cleaned, use that route with explicit hex IDs only.
-- [ ] Confirm new boards do not use `tldraw_*` tables (grep `WhiteboardBoard.ts` constructor / `deleteAll`).
-- [ ] No `npm run build` required unless someone edits code by mistake; revert that edit.
+- [x] Do not change the Durable Object constructor wipe-first path for this issue.
+- [x] Do not bulk-run `POST /api/whiteboard/admin/wipe-storage`. If a known-dead ID must be cleaned, use that route with explicit hex IDs only.
+- [x] Confirm new boards do not use `tldraw_*` tables (grep `WhiteboardBoard.ts` constructor / `deleteAll`).
+- [x] No `npm run build` required unless someone edits code by mistake; revert that edit.
