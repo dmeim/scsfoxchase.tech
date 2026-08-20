@@ -85,6 +85,7 @@ export type DatabaseScene = {
 export type OwnerHook = {
 	/** Scratch boards are ephemeral until Phase 3 claims a Google Owner. */
 	kind: 'ephemeral' | 'google'
+	/** `google:` prefix on can-edit hello; Viewers get null. */
 	cloudOwnerKey: string | null
 	isHost: boolean
 }
@@ -158,6 +159,7 @@ export type HelloMessage = {
 
 export type BoardPublicMeta = {
 	savedToLibrary: boolean
+	/** Can-edit live session or Clerk Owner/Manager/Editor. Unsigned GET: null. */
 	cloudOwnerKey: string | null
 	createdAt: string | null
 	unsavedExpiresAt: string | null

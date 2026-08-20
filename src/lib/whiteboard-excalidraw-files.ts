@@ -38,6 +38,10 @@ import {
 	type BoardAssetMeta,
 } from './whiteboard-assets'
 import { getActiveIdentity, getAuthHeaders } from './whiteboard-identity'
+import { getBoardSessionAuth } from './whiteboard-participants'
+
+/** Same event `whiteboard-excalidraw-roles` publishes after `wb:hello`. */
+const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
 
 const IMAGE_MIME = new Set([
 	'image/jpeg',
@@ -189,11 +193,19 @@ function viewportCenter(
 	}
 }
 
-/** Signed-in GET so the matching Owner can see cloudOwnerKey. */
-async function fetchBoardAssetMetaAsSigner(
+/**
+ * GET meta with live session and/or Clerk so Owner/Manager/Editor learn the
+ * board `google:` prefix. Unsigned GET still omits it.
+ */
+async function fetchBoardAssetMetaForCanvas(
 	boardId: string,
 ): Promise<BoardAssetMeta> {
-	const headers = await getAuthHeaders()
+	const headers: Record<string, string> = { ...(await getAuthHeaders()) }
+	const sessionAuth = getBoardSessionAuth(boardId)
+	if (sessionAuth) {
+		headers['X-Board-Session'] = sessionAuth.sessionId
+		headers['X-Board-Auth'] = sessionAuth.authToken
+	}
 	if (Object.keys(headers).length === 0) {
 		return fetchBoardAssetMeta(boardId)
 	}
@@ -213,6 +225,26 @@ async function fetchBoardAssetMetaAsSigner(
 		cloudOwnerKey:
 			typeof body.cloudOwnerKey === 'string' ? body.cloudOwnerKey : null,
 	}
+}
+
+function waitForBoardSession(boardId: string, timeoutMs: number): Promise<void> {
+	if (typeof window === 'undefined') return Promise.resolve()
+	if (getBoardSessionAuth(boardId)) return Promise.resolve()
+	return new Promise((resolve) => {
+		let settled = false
+		const finish = () => {
+			if (settled) return
+			settled = true
+			window.clearTimeout(timer)
+			window.removeEventListener(HELLO_EVENT, onHello)
+			resolve()
+		}
+		const onHello = () => {
+			if (getBoardSessionAuth(boardId)) finish()
+		}
+		const timer = window.setTimeout(finish, timeoutMs)
+		window.addEventListener(HELLO_EVENT, onHello)
+	})
 }
 
 function isGoogleOwnerKey(value: string | null | undefined): value is string {
@@ -306,6 +338,19 @@ export function useWhiteboardExcalidrawFiles(
 		return ownerKeyForBoardMeta(boardId, meta)
 	}, [apiRef, boardId])
 
+	const loadCanvasOwnerKey = useCallback(async (): Promise<string> => {
+		let ownerKey = resolveCanvasOwnerKey()
+		if (isGoogleOwnerKey(ownerKey)) return ownerKey
+		if (!metaRef.current.savedToLibrary) return ownerKey
+		if (!getBoardSessionAuth(boardId)) {
+			await waitForBoardSession(boardId, 2500)
+		}
+		const meta = await fetchBoardAssetMetaForCanvas(boardId)
+		metaRef.current = meta
+		rememberGoogleOwner(meta.cloudOwnerKey)
+		return resolveCanvasOwnerKey()
+	}, [boardId, resolveCanvasOwnerKey])
+
 	useEffect(() => {
 		if (!boardId) return
 		let cancelled = false
@@ -313,9 +358,7 @@ export function useWhiteboardExcalidrawFiles(
 
 		const refreshMeta = async () => {
 			const identity = getActiveIdentity()
-			const meta = identity
-				? await fetchBoardAssetMetaAsSigner(boardId)
-				: await fetchBoardAssetMeta(boardId)
+			const meta = await fetchBoardAssetMetaForCanvas(boardId)
 			if (cancelled) return
 			metaRef.current = meta
 			rememberGoogleOwner(meta.cloudOwnerKey)
@@ -367,17 +410,22 @@ export function useWhiteboardExcalidrawFiles(
 		const onFocus = () => {
 			void refreshMeta()
 		}
+		const onHello = () => {
+			void refreshMeta()
+		}
 		window.addEventListener('focus', onFocus)
+		window.addEventListener(HELLO_EVENT, onHello)
 		return () => {
 			cancelled = true
 			window.clearInterval(timer)
 			window.removeEventListener('focus', onFocus)
+			window.removeEventListener(HELLO_EVENT, onHello)
 		}
 	}, [apiRef, boardId])
 
 	const putImageFile = useCallback(
 		async (fileId: string, file: BinaryFileData) => {
-			const ownerKey = resolveCanvasOwnerKey()
+			const ownerKey = await loadCanvasOwnerKey()
 			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
 				prefixRegisteredRef.current = true
 				void registerTempAssetPrefix(boardId).catch(() => {
@@ -392,7 +440,7 @@ export function useWhiteboardExcalidrawFiles(
 				mimeType: file.mimeType,
 			})
 		},
-		[boardId, resolveCanvasOwnerKey],
+		[boardId, loadCanvasOwnerKey],
 	)
 
 	const failedAtRef = useRef(new Map<string, number>())
@@ -401,6 +449,12 @@ export function useWhiteboardExcalidrawFiles(
 		async (fileId: string) => {
 			const api = apiRef.current
 			if (!api) return false
+			if (
+				metaRef.current.savedToLibrary &&
+				!isGoogleOwnerKey(metaRef.current.cloudOwnerKey)
+			) {
+				await loadCanvasOwnerKey()
+			}
 			const found = await fetchCanvasBytes(
 				ownerKeysToTry(boardId, metaRef.current, googleOwnerRef.current),
 				fileId,
@@ -418,11 +472,17 @@ export function useWhiteboardExcalidrawFiles(
 			])
 			return true
 		},
-		[apiRef, boardId],
+		[apiRef, boardId, loadCanvasOwnerKey],
 	)
 
 	const hydrateVideo = useCallback(
 		async (fileId: string, bakedOwner: string) => {
+			if (
+				metaRef.current.savedToLibrary &&
+				!isGoogleOwnerKey(metaRef.current.cloudOwnerKey)
+			) {
+				await loadCanvasOwnerKey()
+			}
 			const foundOwner = await probeCanvasOwner(
 				ownerKeysToTry(
 					boardId,
@@ -440,7 +500,7 @@ export function useWhiteboardExcalidrawFiles(
 			}
 			return true
 		},
-		[boardId],
+		[boardId, loadCanvasOwnerKey],
 	)
 
 	const syncFiles = useCallback(
@@ -523,7 +583,7 @@ export function useWhiteboardExcalidrawFiles(
 		async (videoFiles: File[]) => {
 			const api = apiRef.current
 			if (!api || videoFiles.length === 0) return
-			const ownerKey = resolveCanvasOwnerKey()
+			const ownerKey = await loadCanvasOwnerKey()
 			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
 				prefixRegisteredRef.current = true
 				void registerTempAssetPrefix(boardId).catch(() => {
@@ -572,7 +632,7 @@ export function useWhiteboardExcalidrawFiles(
 				captureUpdate: CaptureUpdateAction.IMMEDIATELY,
 			})
 		},
-		[apiRef, boardId, resolveCanvasOwnerKey],
+		[apiRef, boardId, loadCanvasOwnerKey],
 	)
 
 	useEffect(() => {

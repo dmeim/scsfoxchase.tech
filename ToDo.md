@@ -15,16 +15,17 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 **In flight (next wave):**
 
 - Board title is library-index-only — **done** (`meta:title` on hello/PATCH; Viewer/Editor 403). Classroom Summer Checklist manual open.
-- Student Editors cannot upload media on saved boards — **done** (session PUT; Editors may still land on `temp:` until they know the `google:` prefix). Manual paste+reload open. `local:*` writes 403.
+- Student Editors cannot upload media on saved boards — **done** (session PUT; hello/meta reveal `google:` to can-edit). Manual paste+reload open. `local:*` writes 403.
 - Last strokes vanish on tab close (flush only) — **done**. Classroom close-within-1s manual open.
 - Share Open Closed rotate not role-gated — **done** (`handleCodeHttp` Owner/Manager 403; share tools hidden). Classroom Viewer-cannot-mint Manual open.
 - Manager rename leftover (no Manager Recents as class title) — **done**. Manual Manager vs Owner Recents still open.
-- Video player URLs after claim + temp media expiry — **done** (google-then-temp hydrate; keep temp; skip expiry while `savedToLibrary`). Manuals open. DO scene rewrite still leftover.
+- Video player URLs after claim + temp media expiry — **done** (google-then-temp hydrate; keep temp; skip expiry while `savedToLibrary`). Manuals open.
+- Rewrite persisted `owner=temp:` player URLs on the Durable Object — `worker` owns `src/worker/WhiteboardBoard.ts` (and `src/worker/assetRoutes.ts` only if claim must trigger rewrite). Do not edit Header/hub/docs.
 - Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible).
 - Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
 - Scene persist can drop work — **done** (no silent persist; `scene_json`; Editor toast). Manual reload-after-failure still open.
 - Share-code joiners default to Viewer (class-can-edit) — **done** (`meta:classCanEdit`; code cookie + flag → Editor; UUID stays Viewer). Manual still open.
-- Editor PUT still uses `temp:` on saved boards — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-sync.ts`, `src/lib/whiteboard-excalidraw-files.ts`. Reveal `google:` prefix to can-edit sessions. Do not edit Header/menu.
+- Editor PUT still uses `temp:` on saved boards — **done** (`wb:hello` + session GET meta reveal `google:` to Owner/Manager/Editor). Manual paste+reload still open.
 - Class-can-edit training copy — `worker` owns `src/components/Header.astro`, `src/scripts/whiteboard-hub.ts`, `docs/whiteboard/share-codes.md`, `docs/whiteboard/people-permissions.md`, `docs/whiteboard/hub-and-board.md`. Do not edit WhiteboardBoard.ts.
 - Docs: `sync-storage.md` dual JSON — **done** (live schema is `scene_json`; persist fail-closed).
 - Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy update still open.
@@ -35,7 +36,8 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Client `isShareCode` matches eight-character server codes.
 - Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only until Editor on People. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
-- Class-can-edit: share-code joiners land as Editor when the flag is on; UUID-only stays Viewer. Classroom Manual still open. Training copy still says the setting has not shipped.
+- Class-can-edit: share-code joiners land as Editor when the flag is on; UUID-only stays Viewer. Classroom Manual still open. Training copy still in flight.
+- Editor sessions learn `google:` on hello/meta so saved-board PUT is not `temp:`. Classroom paste+reload Manual still open.
 - Follow Me survives DO hibernation in code: `getForceFollowState` + attachment voluntary Follow + client `resubscribeFollow`. Classroom ping/pong Manual still open.
 - Scene persist: failed/oversize persist sends `wb:error` and does not broadcast; SQLite is one `scene_json` column. Classroom reload Manual still open.
 

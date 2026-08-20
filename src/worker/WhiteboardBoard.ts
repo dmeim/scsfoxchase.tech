@@ -740,7 +740,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		ws: WebSocket,
 		attachment: SocketAttachment,
 	): Promise<void> {
-		const revealOwnerKey = attachment.role === 'owner' || attachment.isHost
+		const revealOwnerKey = roleCanEdit(attachment.role)
 		const owner = await this.readOwnerHook(attachment.isHost, revealOwnerKey)
 		const savedToLibrary = await this.isSavedToLibrary()
 		sendJson(ws, {
@@ -969,6 +969,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return json(200, await this.readPublicMeta(true))
 	}
 
+	/**
+	 * `google:` prefix for canvas PUT. Unsigned GET and Viewer sessions stay
+	 * hidden. Live Owner/Manager/Editor (session token) or Clerk Owner /
+	 * stored Manager/Editor may see it. Scratch host proof still reveals.
+	 */
 	private async canRevealCloudOwnerKey(
 		request: Request,
 		url: URL,
@@ -977,11 +982,29 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		if (await this.assertHost(hostSecret)) {
 			return true
 		}
+		const actor = await this.resolveActorFromMeta(url, request, {})
+		if (actor && roleCanEdit(actor.role)) {
+			return true
+		}
 		const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
 		if (!clerkAuth) return false
+		return this.clerkMayRevealCloudOwnerKey(clerkAuth)
+	}
+
+	private async clerkMayRevealCloudOwnerKey(
+		clerkAuth: ClerkWhiteboardAuth,
+	): Promise<boolean> {
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		return Boolean(cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey)
+		if (cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey) {
+			return true
+		}
+		const stored = await this.readStoredRoles()
+		const storedRole =
+			stored[clerkAuth.accountId] ??
+			stored[clerkAuth.ownerKey] ??
+			stored[clerkAuth.clerkUserId]
+		return storedRole === 'manager' || storedRole === 'editor'
 	}
 
 	/**
