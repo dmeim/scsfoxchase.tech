@@ -10,7 +10,7 @@ import {
 	zoomToFitBounds,
 } from '@excalidraw/excalidraw'
 import type { Collaborator, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { getActiveIdentity } from './whiteboard-identity'
+import { getActiveIdentity, identityMatchIds } from './whiteboard-identity'
 import {
 	generateGuestDisplayName,
 	peopleListLabel,
@@ -148,6 +148,24 @@ function sceneCollaborators(
 		NonNullable<Collaborator['socketId']>,
 		Collaborator
 	>
+}
+
+function findSelfParticipant(
+	rows: ParticipantRow[],
+	sessionId: string,
+): ParticipantRow | undefined {
+	if (sessionId) {
+		const bySession = rows.find((row) => row.sessionId === sessionId)
+		if (bySession) return bySession
+	}
+	const identity = getActiveIdentity()
+	if (!identity) return undefined
+	const ids = new Set(identityMatchIds(identity))
+	return rows.find(
+		(row) =>
+			Boolean(row.userId) &&
+			(ids.has(row.userId) || ids.has(`google:${row.userId}`)),
+	)
 }
 
 export function useWhiteboardExcalidrawRoles(opts: {
@@ -483,7 +501,9 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		(data: Record<string, unknown>): boolean => {
 			if (data.type === 'wb:hello') {
 				const sessionId =
-					typeof data.sessionId === 'string' ? data.sessionId : ''
+					typeof data.sessionId === 'string' && data.sessionId
+						? data.sessionId
+						: sessionIdRef.current
 				const nextRole: WhiteboardRole = isWhiteboardRole(data.role)
 					? data.role
 					: data.isHost
@@ -491,7 +511,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 						: 'viewer'
 				const authToken =
 					typeof data.authToken === 'string' ? data.authToken : ''
-				sessionIdRef.current = sessionId
+				if (sessionId) sessionIdRef.current = sessionId
 				roleRef.current = nextRole
 				setRole(nextRole)
 				setCanEdit(roleCanEdit(nextRole))
@@ -560,17 +580,32 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					.map(parseParticipantRow)
 					.filter((row): row is ParticipantRow => Boolean(row))
 				peopleRef.current = rows
-				const yourSessionId =
-					typeof data.yourSessionId === 'string'
+				const incomingSessionId =
+					typeof data.yourSessionId === 'string' && data.yourSessionId
 						? data.yourSessionId
-						: sessionIdRef.current
-				sessionIdRef.current = yourSessionId
-				const self = rows.find((row) => row.sessionId === yourSessionId)
+						: ''
+				if (incomingSessionId) {
+					sessionIdRef.current = incomingSessionId
+				}
+				const yourSessionId = sessionIdRef.current
+				const self = findSelfParticipant(rows, yourSessionId)
 				if (self) {
 					userIdRef.current = self.userId || userIdRef.current
-					roleRef.current = self.role
-					setRole(self.role)
-					setCanEdit(roleCanEdit(self.role))
+				}
+				const fromPayload = isWhiteboardRole(data.yourRole)
+					? data.yourRole
+					: undefined
+				const fromSelf = self?.role
+				const nextRole =
+					[fromSelf, fromPayload].find(
+						(r): r is WhiteboardRole => Boolean(r) && roleCanEdit(r),
+					) ??
+					fromPayload ??
+					fromSelf
+				if (nextRole) {
+					roleRef.current = nextRole
+					setRole(nextRole)
+					setCanEdit(roleCanEdit(nextRole))
 				}
 				const map = collaboratorsFromPeople(rows, yourSessionId)
 				setCollaborators(map)
@@ -586,7 +621,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				publishParticipants(
 					rows,
 					yourSessionId,
-					self?.role ?? roleRef.current,
+					nextRole ?? self?.role ?? roleRef.current,
 				)
 				setForceFollowLocked(Boolean(forcedTarget()))
 				refreshFollowedBy()
@@ -667,13 +702,26 @@ export function useWhiteboardExcalidrawRoles(opts: {
 
 	useEffect(() => {
 		if (!helloReceived) return
-		const api = apiRef.current
-		if (!api) return
-		const locked = !roleCanEdit(role)
-		api.updateScene({
-			appState: { viewModeEnabled: locked },
-			captureUpdate: CaptureUpdateAction.NEVER,
-		})
+		let cancelled = false
+		let raf = 0
+		const applyViewMode = () => {
+			if (cancelled) return
+			const api = apiRef.current
+			if (!api) {
+				raf = window.requestAnimationFrame(applyViewMode)
+				return
+			}
+			const locked = !roleCanEdit(role)
+			api.updateScene({
+				appState: { viewModeEnabled: locked },
+				captureUpdate: CaptureUpdateAction.NEVER,
+			})
+		}
+		applyViewMode()
+		return () => {
+			cancelled = true
+			if (raf) window.cancelAnimationFrame(raf)
+		}
 	}, [apiRef, helloReceived, role])
 
 	useEffect(() => {

@@ -14,7 +14,7 @@ import type {
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
-import { waitForSessionToken, whenAuthReady } from '../lib/whiteboard-identity'
+import { isSignedIn, waitForSessionToken, whenAuthReady } from '../lib/whiteboard-identity'
 import {
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
@@ -380,7 +380,16 @@ export default function WhiteboardCanvas({
 
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
-      const sessionToken = (await waitForSessionToken()) ?? ''
+      const sessionToken = isSignedIn()
+        ? await waitForSessionToken(20, 100, { require: true })
+        : ((await waitForSessionToken()) ?? '')
+      if (cancelled) return
+      if (isSignedIn() && !sessionToken) {
+        reconnectTimer = window.setTimeout(() => {
+          void connect()
+        }, 500)
+        return
+      }
       const hostSecret = getHostSecret(boardId)
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
@@ -396,10 +405,14 @@ export default function WhiteboardCanvas({
         attempt = 0
         clearTimers()
         if (ws.readyState === WebSocket.OPEN) {
+          if (isSignedIn() && !sessionToken) {
+            ws.close(4001, 'missing session token')
+            return
+          }
           ws.send(
             JSON.stringify({
               type: 'wb:auth',
-              token: sessionToken,
+              ...(sessionToken ? { token: sessionToken } : {}),
               ...(hostSecret ? { hostSecret } : {}),
             }),
           )
@@ -592,6 +605,7 @@ export default function WhiteboardCanvas({
     >
       {roles.helloReceived ? (
         <Excalidraw
+          key={roles.canEdit ? 'edit' : 'view'}
           excalidrawAPI={handleApi}
           theme={theme}
           onChange={handleChange}

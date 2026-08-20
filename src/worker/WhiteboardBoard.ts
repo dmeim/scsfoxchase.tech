@@ -675,26 +675,29 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return Boolean(existing && existing === hash)
 	}
 
-	private async hasGoogleCloudOwner(): Promise<boolean> {
-		const key =
-			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		return Boolean(key && key.startsWith('google:'))
-	}
-
 	/**
 	 * Scratch Owner proof only. After a Google claim, leftover host secrets
-	 * must not count as Owner (shared Chromebook). `mint` is first-connect
+	 * must not count as Owner for a *different* Google account (shared
+	 * Chromebook). Same Clerk owner may still use leftover host after an
+	 * in-flight Recents claim sets `cloudOwnerKey`. `mint` is first-connect
 	 * only — HTTP handlers must not mint a hash.
 	 */
 	private async hostProvesScratchOwner(
 		hostSecret: string | null,
-		opts: { mint: boolean },
+		opts: { mint: boolean; clerkAuth?: ClerkWhiteboardAuth | null },
 	): Promise<boolean> {
 		const ok = opts.mint
 			? await this.resolveHost(hostSecret)
 			: await this.assertHost(hostSecret)
 		if (!ok) return false
-		if (await this.hasGoogleCloudOwner()) return false
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (cloudOwnerKey && cloudOwnerKey.startsWith('google:')) {
+			return Boolean(
+				opts.clerkAuth &&
+					this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey),
+			)
+		}
 		return true
 	}
 
@@ -769,14 +772,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		const headerHost = this.connectHostSecretFromHeader(request)
-		const isHost = await this.hostProvesScratchOwner(headerHost, { mint: true })
+		const clerkAuth = await tryClerkWhiteboardAuth(request, this.env)
+		const isHost = await this.hostProvesScratchOwner(headerHost, {
+			mint: true,
+			clerkAuth,
+		})
 		const guestUserId = sanitizeUserId(url.searchParams.get('userId'))
 		let displayName = sanitizeDisplayName(url.searchParams.get('displayName'))
 		if (!displayName) {
 			displayName = generateGuestDisplayName(guestUserId || sessionId)
 		}
 
-		const clerkAuth = await tryClerkWhiteboardAuth(request, this.env)
 		// Always wait for first-message `wb:auth` so scratch host proof can
 		// arrive off the query string (browsers cannot set WS headers).
 		const pendingClerkAuth = true
@@ -865,9 +871,16 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	): Promise<SocketAttachment> {
 		let clerkAuth: ClerkWhiteboardAuth | null =
 			attachment.connectClerkAuth ?? null
-		if (data.type === 'wb:auth' && typeof data.token === 'string') {
+		const rawToken =
+			data.type === 'wb:auth' && 'token' in data ? data.token : undefined
+		if (typeof rawToken === 'string' && !rawToken.trim()) {
+			// Signed-in clients must retry with a real JWT. Do not hello as
+			// Viewer because `wb:auth.token` was "". Guests omit `token`.
+			return attachment
+		}
+		if (typeof rawToken === 'string' && rawToken.trim()) {
 			const fromToken = await verifyClerkWhiteboardToken(
-				data.token,
+				rawToken,
 				this.env,
 				attachment.connectOrigin,
 			)
@@ -880,7 +893,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				: ''
 		const isHost =
 			attachment.isHost ||
-			(await this.hostProvesScratchOwner(hostSecret, { mint: true }))
+			(await this.hostProvesScratchOwner(hostSecret, {
+				mint: true,
+				clerkAuth,
+			}))
 
 		const guestUserId = sanitizeUserId(attachment.meta.userId)
 		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
@@ -1517,15 +1533,26 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				`google:${auth.accountId}`,
 				`google:${auth.clerkUserId}`,
 			]),
-		].filter((key) => key.startsWith('google:'))
+		].filter((key) => key.startsWith('google:') && key !== 'google:')
 	}
 
+	/** Recents/DO may store `google:{sub}` while the JWT has `google:{clerkUserId}` (or the reverse). */
 	private clerkMatchesCloudOwner(
 		auth: ClerkWhiteboardAuth,
 		cloudOwnerKey: string | null,
 	): boolean {
 		if (!cloudOwnerKey) return false
-		return this.clerkOwnerKeys(auth).includes(cloudOwnerKey)
+		if (this.clerkOwnerKeys(auth).includes(cloudOwnerKey)) return true
+		const suffix = cloudOwnerKey.startsWith('google:')
+			? cloudOwnerKey.slice('google:'.length)
+			: cloudOwnerKey
+		if (!suffix) return false
+		return (
+			auth.accountId === suffix ||
+			auth.clerkUserId === suffix ||
+			auth.accountId === cloudOwnerKey ||
+			auth.clerkUserId === cloudOwnerKey
+		)
 	}
 
 	private async clerkOwnsLibraryIndex(
@@ -1605,6 +1632,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				return storedRole
 			}
 			if (!cloudOwnerKey && opts.isHost) return 'owner'
+			// Group Edit Off must not lock the Google Owner. UUID-only guests
+			// (no Clerk match, no host) stay Viewer via share-code joiner.
 			return this.roleForShareCodeJoiner(opts.joinedViaShareCode)
 		}
 

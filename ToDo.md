@@ -1,3 +1,33 @@
+# Current job — Owner View only + title (2026-08-20)
+
+Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/whiteboard-header-rename` (commit and push this branch; never push `main`). User is AFK. Do not reopen the launch-blocker list below unless a finding proves a checked item is the live defect.
+
+**User-reproduced after `9dfd2a3` deploy (`a93d3a34-…`):** create board → Save new name (UI says saved) → Whiteboard Library shows wrong/Untitled name → reopen still **View only**. Canvas shows **Connecting** briefly, then never unlocks. People can still list the signed-in user as **Owner**. Same on a new board and Summer Checklist. Regression lives in the last few whiteboard PRs on this branch (host-secret create, owner backfill, Group Edit, hello/viewMode lock).
+
+**Screenshots (open these paths, do not paste pixels into parent):**
+- `/Users/dimitri/.cursor/projects/Users-dimitri-Library-Mobile-Documents-com-apple-CloudDocs-Code-scsfoxchase-tech/assets/2026-08-20_19.05.02_2x-8c1444d8-bea9-45b4-a2f8-98efe3f7d3e9.png`
+- `/Users/dimitri/.cursor/projects/Users-dimitri-Library-Mobile-Documents-com-apple-CloudDocs-Code-scsfoxchase-tech/assets/2026-08-20_19.05.48_2x-4577f673-1c47-451e-af6c-c63098bcdc5d.png`
+
+## Tasks
+
+- [x] Map last few PRs/commits (PR #10 merged; `7279cc3` + `9dfd2a3` post-PR). View-only primary `9dfd2a3`; Recents-at-create primary `7279cc3`.
+- [x] Find why a signed-in Owner stays Viewer after Connecting (scout in flight).
+  - Overlay is React `role` after hello, not People. Connecting then View only ⇒ hello arrived as viewer, or participants never `setRole(owner)` (`yourSessionId` empty overwrite). Server: empty JWT / claim clearing host / `google:{sub}` vs `google:{clerkUserId}`.
+- [x] Find why Save name does not stick on Recents and/or live `meta:title` (scout in flight).
+  - Live PATCH 403 = same Viewer socket as P0. Recents Untitled is independent: create never writes `meta:title`; `setBoardTitleActive` can return `untitledEntry` without throw; hello `touchBoardActive` can PUT Untitled and race a later Save.
+- [x] **P0 — Signed-in Owner must get tools** (reviewed: pass with nits)
+  - Empty JWT stays Connecting; both Google key shapes; host survives same-Clerk claim; guests omit token; remount `key={canEdit}`.
+  - Nits not blocking: require-token wait can poll until token; `wb:title` still `publishHello`s (P1 touch should not PUT Untitled).
+- [x] **P1 — Save name sticks on live room and Owner Recents** (reviewed: pass with nits)
+  - Clerk JWT on shared `patchLiveBoardTitle`; library hint only after Recents PUT; no fake `untitledEntry` success; untitled touch does not PUT Recents title.
+  - Nits not blocking: optional `{ require: true }` on PATCH token wait; claim swallows seed PATCH errors.
+- [x] Adversarial review + `npm run build` (writers exit 0; reviewers pass with nits; no critical/major).
+- [x] Commit and push `fix/whiteboard-header-rename`. Deploy Worker `scsfoxchase-tech`.
+
+**Do not:** put host on WS query; trust query `userId` as Google Owner; grant Owner via Group Edit; persist `viewModeEnabled: true`; let leftover host rewrite `cloudOwnerKey`; reopen the launch-blocker list.
+
+---
+
 # Whiteboard launch ToDo
 
 Whiteboard is not classroom-ready until the launch blockers in this list are fixed. Recents and Library are a signed-in **index** (`library/{ownerKey}/boards.json` in R2), not the live document. Live-board identity is a **client hint** on the WebSocket query string (`userId` in `buildWhiteboardConnectUrl`); it is not a verified Clerk session. Leftover tldraw SQLite tables are **not** the launch risk (see tldraw constructor wipe needs no code change).

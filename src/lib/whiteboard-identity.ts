@@ -154,18 +154,46 @@ export async function getSessionToken(): Promise<string | null> {
 	}
 }
 
-/** Signed-in connect must not race Clerk `getToken()` — empty token → Viewer hello. */
+function nonEmptyToken(value: string | null | undefined): string | null {
+	const token = value?.trim() ?? ''
+	return token || null
+}
+
+/**
+ * Signed-in connect must not race Clerk `getToken()` — empty token → Viewer hello.
+ * Pass `{ require: true }` from the canvas so a signed-in socket never proceeds
+ * with `token: ""` (stays Connecting until a real JWT or sign-out).
+ */
 export async function waitForSessionToken(
 	tries = 20,
 	delayMs = 100,
+	opts?: { require?: boolean },
 ): Promise<string | null> {
-	for (let i = 0; i < tries; i++) {
-		const token = await getSessionToken()
+	const requireWhileSignedIn = opts?.require === true
+	let i = 0
+	while (true) {
+		const token = nonEmptyToken(await getSessionToken())
 		if (token) return token
 		if (!isSignedIn()) return null
+		if (!requireWhileSignedIn && i >= tries) return null
+		i += 1
 		await new Promise((resolve) => setTimeout(resolve, delayMs))
 	}
-	return getSessionToken()
+}
+
+/** Account ids / owner keys that may appear on Recents, DO meta, or hello. */
+export function identityMatchIds(identity: WhiteboardIdentity): string[] {
+	return [
+		...new Set(
+			[
+				identity.accountId,
+				identity.clerkUserId,
+				identity.ownerKey,
+				googleOwnerKey(identity.accountId),
+				googleOwnerKey(identity.clerkUserId),
+			].filter((id) => Boolean(id) && id !== 'google:'),
+		),
+	]
 }
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {

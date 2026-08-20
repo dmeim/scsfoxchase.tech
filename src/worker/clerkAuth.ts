@@ -53,6 +53,8 @@ function authorizedParties(request: Request): string[] {
 	const parties = new Set<string>([
 		'https://scsfoxchase.tech',
 		'https://www.scsfoxchase.tech',
+		// Custom Clerk Frontend API — session JWTs may set azp to this host.
+		'https://clerk.scsfoxchase.tech',
 		'http://localhost:4321',
 		'http://127.0.0.1:4321',
 	])

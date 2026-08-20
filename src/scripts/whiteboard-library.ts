@@ -18,6 +18,7 @@ import {
   getAuthHeaders,
   isSignedIn,
   onAuthChange,
+  waitForSessionToken,
   whenAuthReady,
 } from '../lib/whiteboard-identity';
 
@@ -107,6 +108,11 @@ function readScratchTitle(boardId: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Creating-browser default name until Recents / `meta:title` exist. */
+export function getScratchBoardTitle(boardId: string): string | null {
+  return readScratchTitle(boardId);
 }
 
 function untitledEntry(
@@ -280,6 +286,11 @@ export async function claimBoardToLibrary(
     lastAccessedAt: now,
     previewDataUrl: existing?.previewDataUrl,
   };
+  try {
+    await patchLiveBoardTitle(boardId, next.title);
+  } catch {
+    // Recents can still write; hello/Save retries live `meta:title`.
+  }
   const saved = await upsertCloudBoard(next, { hostSecret });
   try {
     await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
@@ -350,10 +361,16 @@ export async function touchBoardActive(
   const existing = await getEntryActive(boardId);
   const hostSecret = getHostSecret(boardId);
   if (existing) {
+    if (title === undefined) {
+      // Hello / page-load must not PUT existing.title (often Untitled) over a
+      // concurrent Owner Save. lastAccessedAt updates when a title is provided.
+      scheduleSavedToLibrary(boardId, hostSecret);
+      return existing;
+    }
     const next = await upsertCloudBoard(
       {
         ...existing,
-        title: title ?? existing.title,
+        title,
         lastAccessedAt: new Date().toISOString(),
       },
       { hostSecret },
@@ -376,6 +393,7 @@ async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null>
   const ownerKey = getOwnerKey();
   if (!ownerKey.startsWith('google:')) return false;
   try {
+    if (isSignedIn()) await waitForSessionToken();
     const headers = await getAuthHeaders();
     const res = await fetch(
       `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
@@ -384,12 +402,11 @@ async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null>
     if (!res.ok) return null;
     const body = (await res.json()) as {
       cloudOwnerKey?: unknown;
-      savedToLibrary?: unknown;
     };
     if (typeof body.cloudOwnerKey === 'string') {
       return body.cloudOwnerKey === ownerKey;
     }
-    if (body.savedToLibrary === true) return false;
+    // Hidden key is unknown (Owner GET and guest GET can look the same).
     return null;
   } catch {
     return null;
@@ -400,8 +417,9 @@ async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null>
  * Same live `meta:title` PATCH as the manage panel: session token and/or
  * scratch host proof, plus Clerk so an Owner on the hub (no open socket)
  * can still rename. Guests receive `wb:title` from the Durable Object.
+ * Host proof stays on `X-Board-Host`, never the WebSocket query string.
  */
-async function patchLiveBoardTitle(
+export async function patchLiveBoardTitle(
   boardId: string,
   title: string,
 ): Promise<string> {
@@ -410,7 +428,6 @@ async function patchLiveBoardTitle(
   };
   const hostSecret = getHostSecret(boardId);
   if (hostSecret) {
-    headers.Authorization = `Bearer ${hostSecret}`;
     headers['X-Board-Host'] = hostSecret;
   }
   const sessionAuth = getBoardSessionAuth(boardId);
@@ -418,9 +435,15 @@ async function patchLiveBoardTitle(
     headers['X-Board-Session'] = sessionAuth.sessionId;
     headers['X-Board-Auth'] = sessionAuth.authToken;
   }
-  const clerkHeaders = await getAuthHeaders();
-  if (clerkHeaders.Authorization) {
-    headers.Authorization = clerkHeaders.Authorization;
+  if (isSignedIn()) {
+    const token = await waitForSessionToken();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    } else if (hostSecret) {
+      headers.Authorization = `Bearer ${hostSecret}`;
+    }
+  } else if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`;
   }
   const body: Record<string, string> = { title };
   if (sessionAuth) {
@@ -502,10 +525,10 @@ export async function setBoardTitleActive(
     return claimBoardToLibrary(boardId, cleaned);
   }
   if (!existing) {
-    return untitledEntry(boardId, cleaned);
+    throw new Error('This board is not in your library yet.');
   }
   if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
-    return untitledEntry(boardId, cleaned);
+    throw new Error('Only the owner library stores this name.');
   }
   return upsertEntryActive({
     id: boardId,

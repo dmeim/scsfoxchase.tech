@@ -18,12 +18,13 @@ import { assignableRolesFor } from '../lib/whiteboard-sync'
 import {
   getEntryActive,
   getHostSecret,
+  getScratchBoardTitle,
+  patchLiveBoardTitle,
   readBoardIdFromPath,
   setBoardTitleActive,
 } from './whiteboard-library'
 
 const DEFAULT_LIVE_TITLE = 'Untitled board'
-const MAX_BOARD_TITLE_LENGTH = 80
 const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
 const JOIN_CODE_COOKIE_MAX_AGE = 12 * 60 * 60
 const JOIN_CODE_STORAGE_PREFIX = 'scsfoxchase.whiteboard.joinCode.'
@@ -108,56 +109,6 @@ async function readLiveBoardTitle(boardId: string): Promise<string | null> {
   } catch {
     return null
   }
-}
-
-async function patchLiveBoardTitle(
-  boardId: string,
-  title: string,
-): Promise<string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-  const hostSecret = getHostSecret(boardId)
-  if (hostSecret) {
-    headers.Authorization = `Bearer ${hostSecret}`
-    headers['X-Board-Host'] = hostSecret
-  }
-  const sessionAuth = getBoardSessionAuth(boardId)
-  if (sessionAuth) {
-    headers['X-Board-Session'] = sessionAuth.sessionId
-    headers['X-Board-Auth'] = sessionAuth.authToken
-  }
-  const body: Record<string, string> = { title }
-  if (sessionAuth) {
-    body.sessionId = sessionAuth.sessionId
-    body.authToken = sessionAuth.authToken
-  }
-  const res = await fetch(
-    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
-    {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify(body),
-    },
-  )
-  let payload: { title?: unknown; error?: unknown } = {}
-  try {
-    payload = (await res.json()) as typeof payload
-  } catch {
-    // ignore
-  }
-  if (!res.ok) {
-    const message =
-      typeof payload.error === 'string' && payload.error
-        ? payload.error
-        : 'Could not save the name. Check your connection and try again.'
-    throw new Error(message)
-  }
-  const next =
-    typeof payload.title === 'string' && payload.title.trim()
-      ? payload.title.trim()
-      : title.trim()
-  return next.slice(0, MAX_BOARD_TITLE_LENGTH)
 }
 
 async function readClassCanEdit(boardId: string): Promise<boolean | null> {
@@ -372,7 +323,8 @@ function initWhiteboardMenu() {
       await whenAuthReady()
       if (yourRole !== 'owner') return
       const entry = await getEntryActive(boardId)
-      const seed = entry?.title?.trim() || ''
+      const seed =
+        entry?.title?.trim() || getScratchBoardTitle(boardId)?.trim() || ''
       if (!seed || isPlaceholderTitle(seed)) return
       const next = await patchLiveBoardTitle(boardId, seed)
       if (!titleDirty) applyTitle(next)
@@ -854,7 +806,7 @@ function initWhiteboardMenu() {
             await setBoardTitleActive(boardId, nextTitleLive)
             mirroredToLibrary = isSignedIn()
           } catch {
-            // Recents is an optional Owner index; the live room already has the name.
+            // Recents PUT failed; do not claim the library-saved hint.
           }
         }
         setHint(
