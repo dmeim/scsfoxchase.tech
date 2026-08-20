@@ -16,10 +16,10 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 
 - Board title is library-index-only — **done** (`meta:title` on hello/PATCH; Viewer/Editor 403). Classroom Summer Checklist manual open.
 - Student Editors cannot upload media on saved boards — **done** (session PUT; Editors may still land on `temp:` until they know the `google:` prefix). Manual paste+reload open. `local:*` writes 403.
-- Last strokes vanish on tab close (flush only) — `worker` owns `src/components/WhiteboardCanvas.tsx`
+- Last strokes vanish on tab close (flush only) — **done**. Classroom close-within-1s manual open.
 - Share Open Closed rotate not role-gated — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-codes.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`
 - Manager rename leftover (no Manager Recents as class title) — `worker` owns `src/scripts/whiteboard-library.ts`
-- Video player URLs after claim + temp media expiry — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts` (do not edit WhiteboardBoard.ts)
+- Follow Me client resubscribe after socket gap — `worker` owns `src/components/WhiteboardCanvas.tsx`, `src/lib/whiteboard-excalidraw-roles.ts` (do not edit WhiteboardBoard.ts)
 
 **Just closed (code-verified; classroom manuals still open):**
 
@@ -532,11 +532,11 @@ Flush pending strokes on `pagehide`/`visibilitychange` and before WS close. Do n
 
 ### Tasks
 
-- [ ] In `src/components/WhiteboardCanvas.tsx`, flush `pendingFlushRef` on `pagehide` / `visibilitychange` and before WebSocket close. Do not `clearTimeout` the `SCENE_FLUSH_MS` (1000) timer on unmount without sending.
-- [ ] Optionally persist immediately on disconnect so work done while the socket is down is not lost.
+- [x] In `src/components/WhiteboardCanvas.tsx`, flush `pendingFlushRef` on `pagehide` / `visibilitychange` and before WebSocket close. Do not `clearTimeout` the `SCENE_FLUSH_MS` (1000) timer on unmount without sending.
+- [x] Optionally persist immediately on disconnect so work done while the socket is down is not lost.
 - [x] Keep Save copy honest in `whiteboard-menu.ts`: “Saved to your Google library.” is the index, not `persistScene`. Do not imply Save checkpointed the canvas.
-- [ ] Grep for `SCENE_FLUSH_MS`, `pendingFlushRef`, and unmount cleanup. Confirm a close cannot drop the last debounce window.
-- [ ] Run `npm run build`.
+- [x] Grep for `SCENE_FLUSH_MS`, `pendingFlushRef`, and unmount cleanup. Confirm a close cannot drop the last debounce window.
+- [x] Run `npm run build`.
 - [ ] Manual: draw, close the tab within ~1s, reopen; the last stroke is on the board. Save without drawing does not claim the scene was stored.
 
 ---

@@ -230,14 +230,14 @@ export default function WhiteboardCanvas({
       elements: readonly OrderedExcalidrawElement[],
       appState: AppState,
       forceFull: boolean,
-    ) => {
+    ): boolean => {
       const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      if (applyingRemoteRef.current) return
-      if (!canEditRef.current) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false
+      if (applyingRemoteRef.current) return false
+      if (!canEditRef.current) return false
 
       const version = getSceneVersion(elements)
-      if (!forceFull && version === lastSceneVersionRef.current) return
+      if (!forceFull && version === lastSceneVersionRef.current) return true
 
       const asScene = elements as unknown as SceneElement[]
       const dirty = elementsWithIncreasedVersion(
@@ -246,14 +246,12 @@ export default function WhiteboardCanvas({
       )
       if (!forceFull && dirty.length === 0) {
         lastSceneVersionRef.current = version
-        return
+        return true
       }
 
       fullSyncCounterRef.current += 1
       const full = forceFull || fullSyncCounterRef.current % 15 === 0
       const payload = full ? asScene : dirty
-      rememberElementVersions(payload, lastElementVersionsRef.current)
-      lastSceneVersionRef.current = version
 
       let databaseJson: string | undefined
       try {
@@ -262,24 +260,52 @@ export default function WhiteboardCanvas({
         databaseJson = undefined
       }
 
-      ws.send(
-        JSON.stringify({
-          type: 'scene:update',
-          elements: payload,
-          full,
-          databaseJson,
-        }),
-      )
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'scene:update',
+            elements: payload,
+            full,
+            databaseJson,
+          }),
+        )
+      } catch {
+        return false
+      }
+
+      rememberElementVersions(payload, lastElementVersionsRef.current)
+      lastSceneVersionRef.current = version
+      return true
     },
     [],
   )
 
-  const flushPending = useCallback(() => {
-    const pending = pendingFlushRef.current
-    pendingFlushRef.current = null
-    if (!pending) return
-    sendSceneUpdate(pending.elements, pending.appState, false)
-  }, [sendSceneUpdate])
+  const flushPending = useCallback(
+    (forceFull = false) => {
+      const pending = pendingFlushRef.current
+      if (!pending) return
+      const sent = sendSceneUpdate(
+        pending.elements,
+        pending.appState,
+        forceFull,
+      )
+      if (sent) pendingFlushRef.current = null
+    },
+    [sendSceneUpdate],
+  )
+
+  const flushNow = useCallback(
+    (forceFull = false) => {
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+      }
+      flushPending(forceFull)
+    },
+    [flushPending],
+  )
+  const flushNowRef = useRef(flushNow)
+  flushNowRef.current = flushNow
 
   const handleChange = useCallback(
     (
@@ -302,6 +328,21 @@ export default function WhiteboardCanvas({
     },
     [flushPending, media.syncFiles],
   )
+
+  useEffect(() => {
+    const persist = () => {
+      flushNowRef.current(true)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') persist()
+    }
+    window.addEventListener('pagehide', persist)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', persist)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   useEffect(() => {
     if (!boardId) return
@@ -367,6 +408,7 @@ export default function WhiteboardCanvas({
             true,
           )
         }, 30_000)
+        flushNowRef.current(true)
         if (apiRef.current) {
           ws.send(JSON.stringify({ type: 'scene:request' }))
         }
@@ -403,7 +445,24 @@ export default function WhiteboardCanvas({
 
       ws.addEventListener('close', () => {
         clearTimers()
-        if (wsRef.current === ws) wsRef.current = null
+        if (wsRef.current === ws) {
+          const api = apiRef.current
+          if (
+            api &&
+            canEditRef.current &&
+            !pendingFlushRef.current &&
+            !applyingRemoteRef.current
+          ) {
+            const elements = api.getSceneElementsIncludingDeleted()
+            if (getSceneVersion(elements) !== lastSceneVersionRef.current) {
+              pendingFlushRef.current = {
+                elements,
+                appState: api.getAppState(),
+              }
+            }
+          }
+          wsRef.current = null
+        }
         if (cancelled) return
         const delay = Math.min(10_000, 500 * 2 ** attempt)
         attempt += 1
@@ -419,10 +478,7 @@ export default function WhiteboardCanvas({
       cancelled = true
       clearTimers()
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
-      if (flushTimerRef.current != null) {
-        window.clearTimeout(flushTimerRef.current)
-        flushTimerRef.current = null
-      }
+      flushNowRef.current(true)
       const ws = wsRef.current
       wsRef.current = null
       try {
