@@ -14,6 +14,7 @@ import {
 	MAX_SCENE_ELEMENTS,
 	MAX_SCENE_JSON_BYTES,
 	META_BOARD_ID_KEY,
+	META_CLASS_CAN_EDIT_KEY,
 	META_CLOUD_OWNER_KEY,
 	META_CREATED_AT_KEY,
 	META_SAVED_TO_LIBRARY_KEY,
@@ -32,6 +33,7 @@ import {
 	roleCanEdit,
 	sceneTooLargeError,
 	type AssignableRole,
+	type BoardPublicMeta,
 	type OwnerHook,
 	type SceneAppState,
 	type SceneElement,
@@ -46,12 +48,14 @@ import {
 import {
 	isExpiredIso,
 	kvCodeKey,
+	normalizeShareCode,
 	sampleShareCode,
 	SHARE_CODE_TTL_MS,
 	SHARE_CODE_TTL_SECONDS,
 } from './shareCode'
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
+const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
 const FORCE_FOLLOW_KEY = 'meta:forceFollow'
 const META_TITLE_KEY = 'meta:title'
 const MAX_BOARD_TITLE_LENGTH = 80
@@ -217,6 +221,8 @@ interface SocketAttachment {
 	connectClerkAuth?: ClerkWhiteboardAuth
 	/** Voluntary Follow target; survives hibernation with the socket. */
 	followTargetSessionId?: string
+	/** Presented the active share code on connect (cookie). Not a stored role. */
+	joinedViaShareCode?: boolean
 }
 
 // PHASE 3.3
@@ -352,7 +358,34 @@ function normalizeAttachment(
 			raw.followTargetSessionId
 				? raw.followTargetSessionId
 				: undefined,
+		joinedViaShareCode: Boolean(raw?.joinedViaShareCode),
 	}
+}
+
+function readCookieValue(header: string | null, name: string): string {
+	if (!header || !name) return ''
+	for (const part of header.split(';')) {
+		const idx = part.indexOf('=')
+		if (idx < 0) continue
+		if (part.slice(0, idx).trim() !== name) continue
+		try {
+			return decodeURIComponent(part.slice(idx + 1).trim())
+		} catch {
+			return part.slice(idx + 1).trim()
+		}
+	}
+	return ''
+}
+
+function joinCodeFromConnectRequest(request: Request, boardId: string): string {
+	return (
+		normalizeShareCode(
+			readCookieValue(
+				request.headers.get('Cookie'),
+				`${JOIN_CODE_COOKIE_PREFIX}${boardId}`,
+			),
+		) ?? ''
+	)
 }
 
 function sendJson(ws: WebSocket, payload: unknown): void {
@@ -652,10 +685,14 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		if (clerkAuth) {
 			displayName = sanitizeDisplayName(clerkAuth.displayName) || displayName
 		}
+		const joinedViaShareCode = await this.presentedJoinCodeIsActive(
+			joinCodeFromConnectRequest(request, boardId),
+		)
 		const role = await this.resolveConnectRole({
 			clerkAuth,
 			guestUserId,
 			isHost,
+			joinedViaShareCode,
 		})
 		const canEdit = roleCanEdit(role)
 		const authToken = crypto.randomUUID()
@@ -688,6 +725,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			pendingClerkAuth,
 			connectOrigin: request.headers.get('Origin') ?? '',
 			connectClerkAuth: clerkAuth ?? undefined,
+			joinedViaShareCode,
 		}
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
@@ -713,6 +751,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			savedToLibrary,
 			owner,
 			title: await this.readBoardTitle(),
+			classCanEdit: await this.readClassCanEdit(),
 			role: attachment.role,
 			authToken: attachment.authToken,
 		})
@@ -749,10 +788,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			displayName =
 				sanitizeDisplayName(clerkAuth.displayName) || displayName
 		}
+		const joinedViaShareCode = Boolean(attachment.joinedViaShareCode)
 		const role = await this.resolveConnectRole({
 			clerkAuth,
 			guestUserId,
 			isHost,
+			joinedViaShareCode,
 		})
 		const next: SocketAttachment = {
 			...attachment,
@@ -761,6 +802,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			canEdit: roleCanEdit(role),
 			pendingClerkAuth: false,
 			connectClerkAuth: undefined,
+			joinedViaShareCode,
 			meta: {
 				...attachment.meta,
 				userId,
@@ -798,6 +840,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			savedToLibrary?: unknown
 			cloudOwnerKey?: unknown
 			tempAssetPrefix?: unknown
+			classCanEdit?: unknown
 		}
 		try {
 			body = (await request.json()) as typeof body
@@ -806,28 +849,37 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		const hasTitle = 'title' in body
+		const hasClassCanEdit = typeof body.classCanEdit === 'boolean'
 		const hasLifetimeFields =
 			typeof body.savedToLibrary === 'boolean' ||
 			'cloudOwnerKey' in body ||
 			'tempAssetPrefix' in body
 
-		if (hasTitle) {
+		if (hasTitle || hasClassCanEdit) {
 			const actor = await this.resolveActorFromMeta(url, request, body)
 			if (!actor || (actor.role !== 'owner' && actor.role !== 'manager')) {
 				return json(403, {
-					error: 'Only the Owner or a Manager can rename this board.',
+					error: hasTitle
+						? 'Only the Owner or a Manager can rename this board.'
+						: 'Only the Owner or a Manager can change class can edit.',
 				})
 			}
-			const nextTitle = sanitizeBoardTitle(body.title)
-			if (!nextTitle) {
-				return json(400, { error: 'Enter a board name' })
+			if (hasTitle) {
+				const nextTitle = sanitizeBoardTitle(body.title)
+				if (!nextTitle) {
+					return json(400, { error: 'Enter a board name' })
+				}
+				await this.ctx.storage.put(META_TITLE_KEY, nextTitle)
+				this.broadcastTitle(nextTitle)
 			}
-			await this.ctx.storage.put(META_TITLE_KEY, nextTitle)
-			this.broadcastTitle(nextTitle)
+			if (hasClassCanEdit) {
+				await this.setClassCanEdit(body.classCanEdit === true)
+				await this.syncLiveRolesForClassCanEdit()
+			}
 		}
 
 		if (!hasLifetimeFields) {
-			if (hasTitle) {
+			if (hasTitle || hasClassCanEdit) {
 				await this.ensureBoardLifetime(boardId)
 				return json(200, await this.readPublicMeta(true))
 			}
@@ -951,14 +1003,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 	}
 
-	private async readPublicMeta(revealCloudOwnerKey: boolean): Promise<{
-		savedToLibrary: boolean
-		cloudOwnerKey: string | null
-		createdAt: string | null
-		unsavedExpiresAt: string | null
-		title: string
-		owner: OwnerHook
-	}> {
+	private async readPublicMeta(revealCloudOwnerKey: boolean): Promise<BoardPublicMeta> {
 		const savedToLibrary = await this.isSavedToLibrary()
 		const storedKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
@@ -972,6 +1017,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				null,
 			title: await this.readBoardTitle(),
 			owner: await this.readOwnerHook(false, revealCloudOwnerKey),
+			classCanEdit: await this.readClassCanEdit(),
 		}
 	}
 
@@ -1247,6 +1293,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		clerkAuth: ClerkWhiteboardAuth | null
 		guestUserId: string
 		isHost: boolean
+		joinedViaShareCode: boolean
 	}): Promise<WhiteboardRole> {
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
@@ -1268,7 +1315,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				return storedRole
 			}
 			if (!cloudOwnerKey && opts.isHost) return 'owner'
-			return 'viewer'
+			return this.roleForShareCodeJoiner(opts.joinedViaShareCode)
 		}
 
 		if (!cloudOwnerKey && opts.isHost) return 'owner'
@@ -1281,7 +1328,79 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				return role
 			}
 		}
+		return this.roleForShareCodeJoiner(opts.joinedViaShareCode)
+	}
+
+	private async roleForShareCodeJoiner(
+		joinedViaShareCode: boolean,
+	): Promise<WhiteboardRole> {
+		if (joinedViaShareCode && (await this.readClassCanEdit())) {
+			return 'editor'
+		}
 		return 'viewer'
+	}
+
+	private async readClassCanEdit(): Promise<boolean> {
+		return (await this.ctx.storage.get<boolean>(META_CLASS_CAN_EDIT_KEY)) === true
+	}
+
+	private async setClassCanEdit(enabled: boolean): Promise<void> {
+		if (enabled) {
+			await this.ctx.storage.put(META_CLASS_CAN_EDIT_KEY, true)
+			return
+		}
+		await this.ctx.storage.delete(META_CLASS_CAN_EDIT_KEY)
+	}
+
+	private async presentedJoinCodeIsActive(code: string): Promise<boolean> {
+		if (!code) return false
+		const active = await this.readActiveCode()
+		return Boolean(active && active.code === code)
+	}
+
+	/**
+	 * Promote/demote live code-joiners when class-can-edit changes.
+	 * Does not write `meta:roles` — stored Viewer/Editor still wins on reconnect.
+	 */
+	private async syncLiveRolesForClassCanEdit(): Promise<void> {
+		this.hydrateSockets()
+		const enabled = await this.readClassCanEdit()
+		const stored = await this.readStoredRoles()
+		let changed = false
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const prev = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			if (prev.role === 'owner' || prev.role === 'manager' || prev.isHost) {
+				continue
+			}
+			const userId = prev.meta.userId
+			const storedRole = userId ? stored[userId] : undefined
+			if (
+				storedRole === 'manager' ||
+				storedRole === 'editor' ||
+				storedRole === 'viewer'
+			) {
+				continue
+			}
+			const nextRole: WhiteboardRole =
+				enabled && prev.joinedViaShareCode ? 'editor' : 'viewer'
+			if (nextRole === prev.role) continue
+			const next: SocketAttachment = {
+				...prev,
+				role: nextRole,
+				canEdit: roleCanEdit(nextRole),
+			}
+			ws.serializeAttachment(next)
+			sendJson(ws, {
+				type: 'wb:role',
+				role: nextRole,
+				canEdit: next.canEdit,
+			})
+			changed = true
+		}
+		if (changed) this.broadcastParticipants()
 	}
 
 	private async readStoredRoles(): Promise<StoredRoles> {

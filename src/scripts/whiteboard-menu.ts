@@ -24,6 +24,71 @@ import {
 
 const DEFAULT_LIVE_TITLE = 'Untitled board'
 const MAX_BOARD_TITLE_LENGTH = 80
+const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
+const JOIN_CODE_COOKIE_MAX_AGE = 12 * 60 * 60
+const JOIN_CODE_STORAGE_PREFIX = 'scsfoxchase.whiteboard.joinCode.'
+const JOIN_CODE_RE = /^([A-Z][0-9]){4}$/
+
+function writeJoinCodeCookie(boardId: string, code: string) {
+  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `${JOIN_CODE_COOKIE_PREFIX}${boardId}=${encodeURIComponent(code)}; Path=/; Max-Age=${JOIN_CODE_COOKIE_MAX_AGE}; SameSite=Lax${secure}`
+}
+
+function rememberJoinCode(boardId: string, code: string) {
+  const normalized = code.trim().toUpperCase()
+  if (!boardId || !JOIN_CODE_RE.test(normalized)) return
+  try {
+    sessionStorage.setItem(`${JOIN_CODE_STORAGE_PREFIX}${boardId}`, normalized)
+  } catch {
+    // Private mode may block sessionStorage; cookie is enough for connect.
+  }
+  writeJoinCodeCookie(boardId, normalized)
+}
+
+function restoreJoinCodeCookie() {
+  const boardId = readBoardIdFromPath()
+  if (!boardId) return
+  try {
+    const code = sessionStorage.getItem(`${JOIN_CODE_STORAGE_PREFIX}${boardId}`)
+    if (code) writeJoinCodeCookie(boardId, code)
+  } catch {
+    // ignore
+  }
+}
+
+function installJoinCodeCapture() {
+  const flagged = window as Window & { __scsfoxchaseJoinCodeCapture?: boolean }
+  if (flagged.__scsfoxchaseJoinCodeCapture) return
+  flagged.__scsfoxchaseJoinCodeCapture = true
+  const orig = window.fetch.bind(window)
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const res = await orig(input, init)
+    try {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input instanceof Request
+              ? input.url
+              : String(input)
+      const match = url.match(/\/api\/whiteboard\/join\/([^/?#]+)/i)
+      if (match?.[1] && res.ok) {
+        const code = decodeURIComponent(match[1])
+        const body = (await res.clone().json()) as { id?: unknown }
+        if (typeof body.id === 'string' && body.id) {
+          rememberJoinCode(body.id, code)
+        }
+      }
+    } catch {
+      // Join lookup still returns to the caller.
+    }
+    return res
+  }
+}
+
+installJoinCodeCapture()
+restoreJoinCodeCookie()
 
 function isPlaceholderTitle(title: string): boolean {
   const cleaned = title.trim()
@@ -95,6 +160,65 @@ async function patchLiveBoardTitle(
   return next.slice(0, MAX_BOARD_TITLE_LENGTH)
 }
 
+async function readClassCanEdit(boardId: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(
+      `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    )
+    if (!res.ok) return null
+    const body = (await res.json()) as { classCanEdit?: unknown }
+    return body.classCanEdit === true
+  } catch {
+    return null
+  }
+}
+
+async function patchClassCanEdit(
+  boardId: string,
+  classCanEdit: boolean,
+): Promise<boolean> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  const hostSecret = getHostSecret(boardId)
+  if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`
+    headers['X-Board-Host'] = hostSecret
+  }
+  const sessionAuth = getBoardSessionAuth(boardId)
+  if (sessionAuth) {
+    headers['X-Board-Session'] = sessionAuth.sessionId
+    headers['X-Board-Auth'] = sessionAuth.authToken
+  }
+  const body: Record<string, unknown> = { classCanEdit }
+  if (sessionAuth) {
+    body.sessionId = sessionAuth.sessionId
+    body.authToken = sessionAuth.authToken
+  }
+  const res = await fetch(
+    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    },
+  )
+  let payload: { classCanEdit?: unknown; error?: unknown } = {}
+  try {
+    payload = (await res.json()) as typeof payload
+  } catch {
+    // ignore
+  }
+  if (!res.ok) {
+    const message =
+      typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : 'Could not update class can edit.'
+    throw new Error(message)
+  }
+  return payload.classCanEdit === true
+}
+
 const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
 const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
@@ -151,6 +275,12 @@ function initWhiteboardMenu() {
   const forceFollowTarget = root.querySelector<HTMLSelectElement>(
     '[data-wb-force-follow-target]',
   )
+  const classCanEditToggle = root.querySelector<HTMLInputElement>(
+    '[data-wb-class-can-edit-toggle]',
+  )
+  const classCanEditState = root.querySelector<HTMLElement>(
+    '[data-wb-class-can-edit-state]',
+  )
 
   if (!toggle || !panel) return
 
@@ -172,6 +302,8 @@ function initWhiteboardMenu() {
   let forceFollowBusy = false
   let forceFollowOn = false
   let forceFollowTargetUserId = ''
+  let classCanEditOn = false
+  let classCanEditBusy = false
   const canForceFollow = () => yourRole === 'owner' || yourRole === 'manager'
   const canRenameBoard = () => canForceFollow()
   const canManageShare = () => canForceFollow()
@@ -210,9 +342,16 @@ function initWhiteboardMenu() {
     }
   }
 
+  const renderClassCanEditUi = (on: boolean) => {
+    classCanEditOn = on
+    if (classCanEditToggle) classCanEditToggle.checked = on
+    if (classCanEditState) classCanEditState.textContent = on ? 'On' : 'Off'
+  }
+
   if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
   renderNameFormUi()
   renderShareAdminUi()
+  renderClassCanEditUi(classCanEditOn)
 
   const applyTitle = (title: string) => {
     const cleaned = title.trim() || DEFAULT_LIVE_TITLE
@@ -404,6 +543,8 @@ function initWhiteboardMenu() {
     } catch {
       setShareHint('Could not load share code status.')
     }
+    const classCanEdit = await readClassCanEdit(boardId)
+    if (classCanEdit !== null) renderClassCanEditUi(classCanEdit)
   }
 
   const copyText = async (
@@ -756,6 +897,31 @@ function initWhiteboardMenu() {
         )
       } finally {
         shareBusy = false
+      }
+    })()
+  })
+
+  classCanEditToggle?.addEventListener('change', () => {
+    if (!boardId || classCanEditBusy || !canManageShare()) {
+      if (classCanEditToggle) classCanEditToggle.checked = classCanEditOn
+      return
+    }
+    classCanEditBusy = true
+    setShareHint(null)
+    const wantOn = classCanEditToggle.checked
+    void (async () => {
+      try {
+        const next = await patchClassCanEdit(boardId, wantOn)
+        renderClassCanEditUi(next)
+      } catch (err) {
+        renderClassCanEditUi(classCanEditOn)
+        setShareHint(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not update class can edit.',
+        )
+      } finally {
+        classCanEditBusy = false
       }
     })()
   })

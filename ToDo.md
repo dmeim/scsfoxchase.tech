@@ -23,7 +23,9 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Follow Me client resubscribe after socket gap — **done** (`resubscribeFollow` on open/reconnect, ping/pong gap, tab-visible).
 - Follow Me hibernation (Durable Object) — **done** (`getForceFollowState` in `relaySceneBounds`; voluntary Follow on attachments; `wb:forceFollow` rebroadcast on wake). Manual after hibernation still open.
 - Scene persist can drop work — **done** (no silent persist; `scene_json`; Editor toast). Manual reload-after-failure still open.
-- Share-code joiners default to Viewer (class-can-edit) — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-sync.ts`, `src/scripts/whiteboard-menu.ts`, `src/components/Header.astro`. Do not edit Canvas.
+- Share-code joiners default to Viewer (class-can-edit) — **done** (`meta:classCanEdit`; code cookie + flag → Editor; UUID stays Viewer). Manual still open.
+- Editor PUT still uses `temp:` on saved boards — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/lib/whiteboard-sync.ts`, `src/lib/whiteboard-excalidraw-files.ts`. Reveal `google:` prefix to can-edit sessions. Do not edit Header/menu.
+- Class-can-edit training copy — `worker` owns `src/components/Header.astro`, `src/scripts/whiteboard-hub.ts`, `docs/whiteboard/share-codes.md`, `docs/whiteboard/people-permissions.md`, `docs/whiteboard/hub-and-board.md`. Do not edit WhiteboardBoard.ts.
 - Docs: `sync-storage.md` dual JSON — **done** (live schema is `scene_json`; persist fail-closed).
 - Share / join-code docs vs Owner-Manager gate — **done**. Class-can-edit copy update still open.
 
@@ -33,6 +35,7 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 - Client `isShareCode` matches eight-character server codes.
 - Docs: `A1B2C3D4` + host proof off the WS URL. Share Open/Closed is Owner/Manager (Viewer 403). Join is view-only until Editor on People. Historical spec left as history. `sync-storage.md` is one `scene_json` column + persist fail-closed.
 - Claim, host-secret Owner rewrite, library etags/TTL, hub Assets hidden, guest visit UUID, unused Recents preview, honest Save copy.
+- Class-can-edit: share-code joiners land as Editor when the flag is on; UUID-only stays Viewer. Classroom Manual still open. Training copy still says the setting has not shipped.
 - Follow Me survives DO hibernation in code: `getForceFollowState` + attachment voluntary Follow + client `resubscribeFollow`. Classroom ping/pong Manual still open.
 - Scene persist: failed/oversize persist sends `wb:error` and does not broadcast; SQLite is one `scene_json` column. Classroom reload Manual still open.
 
@@ -599,12 +602,12 @@ Add an Owner/Manager setting: joiners of the active code get **Editor** (or a �
 
 ### Tasks
 
-- [ ] Add an Owner/Manager setting on the Durable Object (joiners of the active code get Editor, or a “class can edit” flag). Wire it through `resolveConnectRole` in `src/worker/WhiteboardBoard.ts`.
-- [ ] Keep default Viewer for public UUID links if that remains the safety model. Join still returns a UUID; role is decided on connect.
-- [ ] Expose the setting in the manage panel to Owner/Manager only (same gate as Follow Me / share admin once those are role-gated).
-- [ ] Do not fold training copy into this change; that is Guests default Viewer is also a training issue.
-- [ ] Grep for `resolveConnectRole` and join handling. Confirm a code joiner can land as Editor when the flag is on, and Viewer when it is off.
-- [ ] Run `npm run build`.
+- [x] Add an Owner/Manager setting on the Durable Object (joiners of the active code get Editor, or a “class can edit” flag). Wire it through `resolveConnectRole` in `src/worker/WhiteboardBoard.ts`.
+- [x] Keep default Viewer for public UUID links if that remains the safety model. Join still returns a UUID; role is decided on connect.
+- [x] Expose the setting in the manage panel to Owner/Manager only (same gate as Follow Me / share admin once those are role-gated).
+- [x] Do not fold training copy into this change; that is Guests default Viewer is also a training issue.
+- [x] Grep for `resolveConnectRole` and join handling. Confirm a code joiner can land as Editor when the flag is on, and Viewer when it is off.
+- [x] Run `npm run build`.
 - [ ] Manual: teacher turns on class-can-edit, students join with the code, they can draw without per-person People clicks.
 
 ---

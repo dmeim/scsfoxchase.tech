@@ -61,6 +61,8 @@ export const META_TEMP_ASSET_PREFIX_KEY = 'meta:tempAssetPrefix'
 export const META_UNSAVED_EXPIRES_AT_KEY = 'meta:unsavedExpiresAt'
 export const META_CREATED_AT_KEY = 'meta:createdAt'
 export const META_BOARD_ID_KEY = 'meta:boardId'
+/** Owner/Manager: joiners of the active share code land as Editor. */
+export const META_CLASS_CAN_EDIT_KEY = 'meta:classCanEdit'
 
 export type SceneElement = {
 	id: string
@@ -147,9 +149,21 @@ export type HelloMessage = {
 	owner: OwnerHook
 	/** Live room name. Recents/Library is only an index of this value. */
 	title: string
+	/** Joiners of the active share code land as Editor when true. */
+	classCanEdit: boolean
 	// PHASE 3.3
 	role: WhiteboardRole
 	authToken: string
+}
+
+export type BoardPublicMeta = {
+	savedToLibrary: boolean
+	cloudOwnerKey: string | null
+	createdAt: string | null
+	unsavedExpiresAt: string | null
+	title: string
+	owner: OwnerHook
+	classCanEdit: boolean
 }
 
 /** First WebSocket message: Clerk JWT and optional scratch host proof. Never put these on the query string. */
