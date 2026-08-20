@@ -23,6 +23,7 @@ import {
 	isBoardUuid,
 	readBoardIdFromPath,
 } from '../scripts/whiteboard-library'
+import { getBoardSessionAuth } from './whiteboard-participants'
 
 type WhiteboardAssetStore = {
 	upload: (asset: { id?: string }, file: File) => Promise<{ src: string }>
@@ -170,7 +171,7 @@ export async function removeAsset(assetId: string): Promise<boolean> {
 	try {
 		await fetch(assetResolveUrl(entry.ownerKey, entry.id), {
 			method: 'DELETE',
-			headers: await getAuthHeaders(),
+			headers: await assetWriteHeaders(entry.ownerKey),
 		})
 	} catch {
 		// Index already updated; orphaned R2 object is acceptable
@@ -240,7 +241,7 @@ export async function removeAssetActive(assetId: string): Promise<boolean> {
 		try {
 			await fetch(assetResolveUrl(entry.ownerKey, entry.id), {
 				method: 'DELETE',
-				headers: await getAuthHeaders(),
+				headers: await assetWriteHeaders(entry.ownerKey),
 			})
 		} catch {
 			// Index already updated
@@ -293,12 +294,11 @@ export const r2AssetStore: WhiteboardAssetStore = {
 			.trim()
 			.toLowerCase()
 
-		const authHeaders = await getAuthHeaders()
 		const res = await fetch(url, {
 			method: 'PUT',
 			headers: {
 				'Content-Type': mimeType,
-				...authHeaders,
+				...(await assetWriteHeaders(ownerKey)),
 			},
 			body: file,
 		})
@@ -403,6 +403,28 @@ function isOwnerKeyShape(value: string): boolean {
 	return /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/.test(value)
 }
 
+/** Host secret and/or live can-edit session for Worker PUT/DELETE on temp:* / local:*. */
+async function assetWriteHeaders(
+	ownerKey: string,
+): Promise<Record<string, string>> {
+	const headers: Record<string, string> = {}
+	if (ownerKey.startsWith('google:')) {
+		Object.assign(headers, await getAuthHeaders())
+	}
+	const boardId = readBoardIdFromPath()
+	if (boardId && isBoardUuid(boardId)) {
+		headers['X-Board-Id'] = boardId
+		const hostSecret = getHostSecret(boardId)
+		if (hostSecret) headers['X-Board-Host'] = hostSecret
+		const sessionAuth = getBoardSessionAuth(boardId)
+		if (sessionAuth) {
+			headers['X-Board-Session'] = sessionAuth.sessionId
+			headers['X-Board-Auth'] = sessionAuth.authToken
+		}
+	}
+	return headers
+}
+
 export async function fetchBoardAssetMeta(
 	boardId: string,
 ): Promise<BoardAssetMeta> {
@@ -448,9 +470,7 @@ export async function uploadCanvasBytes(opts: {
 	const url = assetResolveUrl(opts.ownerKey, opts.fileId)
 	const headers: Record<string, string> = {
 		'Content-Type': opts.mimeType,
-	}
-	if (opts.ownerKey.startsWith('google:')) {
-		Object.assign(headers, await getAuthHeaders())
+		...(await assetWriteHeaders(opts.ownerKey)),
 	}
 	const res = await fetch(url, {
 		method: 'PUT',

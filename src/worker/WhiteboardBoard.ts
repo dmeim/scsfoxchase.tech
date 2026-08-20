@@ -22,6 +22,7 @@ import {
 	canAssignRole,
 	isAssignableRole,
 	isWhiteboardRole,
+	isGuestConnectUserId,
 	mergeSceneElements,
 	parseDatabaseScene,
 	parseSceneElements,
@@ -34,6 +35,11 @@ import {
 	type SceneElement,
 	type WhiteboardRole,
 } from '../lib/whiteboard-sync'
+import {
+	tryClerkWhiteboardAuth,
+	verifyClerkWhiteboardToken,
+	type ClerkWhiteboardAuth,
+} from './clerkAuth'
 import {
 	isExpiredIso,
 	kvCodeKey,
@@ -102,6 +108,9 @@ interface SocketAttachment {
 	role: WhiteboardRole
 	authToken: string
 	meta: SessionMeta
+	/** Waiting for first-message Clerk proof (`wb:auth`). */
+	pendingClerkAuth?: boolean
+	connectOrigin?: string
 }
 
 // PHASE 3.3
@@ -153,7 +162,17 @@ function sanitizeDisplayName(raw: string | null): string {
 
 function sanitizeUserId(raw: string | null): string {
 	if (!raw) return ''
-	return raw.trim().slice(0, 128)
+	const value = raw.trim().slice(0, 128)
+	if (!value || /^google:/i.test(value) || !isGuestConnectUserId(value)) {
+		return ''
+	}
+	return value
+}
+
+function looksLikeJwt(raw: string | null): boolean {
+	if (!raw) return false
+	const parts = raw.trim().split('.')
+	return parts.length === 3 && raw.trim().length > 40
 }
 
 function sanitizeOwnerKey(raw: string | null | undefined): string | null {
@@ -200,6 +219,9 @@ function normalizeAttachment(
 			userId: meta.userId ?? '',
 			isHost: Boolean(meta.isHost || isHost),
 		},
+		pendingClerkAuth: Boolean(raw?.pendingClerkAuth),
+		connectOrigin:
+			typeof raw?.connectOrigin === 'string' ? raw.connectOrigin : '',
 	}
 }
 
@@ -283,6 +305,51 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		})
 	}
 
+	/**
+	 * Asset PUT/DELETE gate used by assetRoutes. Accepts the creating host
+	 * secret or a live can-edit WebSocket session. Does not mint a host hash.
+	 */
+	async assertAssetWriteAccess(opts: {
+		hostSecret?: string | null
+		sessionId?: string | null
+		authToken?: string | null
+	}): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+		this.hydrateSockets()
+		const hostSecret =
+			typeof opts.hostSecret === 'string' ? opts.hostSecret.trim() : ''
+		if (hostSecret && (await this.assertHost(hostSecret))) {
+			return { ok: true }
+		}
+		const sessionId =
+			typeof opts.sessionId === 'string' ? opts.sessionId.trim() : ''
+		const authToken =
+			typeof opts.authToken === 'string' ? opts.authToken.trim() : ''
+		if (sessionId && authToken) {
+			const ws = this.sessionIdToWs.get(sessionId)
+			if (ws) {
+				const attachment = normalizeAttachment(
+					ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+					sessionId,
+				)
+				if (
+					attachment.authToken &&
+					attachment.authToken === authToken &&
+					(attachment.canEdit || roleCanEdit(attachment.role))
+				) {
+					return { ok: true }
+				}
+			}
+		}
+		const presented = Boolean(hostSecret || (sessionId && authToken))
+		return {
+			ok: false,
+			status: presented ? 403 : 401,
+			error: presented
+				? "Not allowed to write this board's assets"
+				: 'Host secret or editor session required',
+		}
+	}
+
 	/** Rebuild the session map after hibernation. */
 	private hydrateSockets(): void {
 		if (this.socketsHydrated) return
@@ -301,7 +368,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	 * verify on later connects. Creating browser is ephemeral Owner.
 	 */
 	private async resolveHost(hostSecret: string | null): Promise<boolean> {
-		if (!hostSecret) return false
+		if (!hostSecret || looksLikeJwt(hostSecret)) return false
 		const hash = await sha256Hex(hostSecret)
 		const existing = await this.ctx.storage.get<string>(HOST_SECRET_HASH_KEY)
 		if (!existing) {
@@ -312,7 +379,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private async assertHost(hostSecret: string | null): Promise<boolean> {
-		if (!hostSecret) return false
+		if (!hostSecret || looksLikeJwt(hostSecret)) return false
 		const hash = await sha256Hex(hostSecret)
 		const existing = await this.ctx.storage.get<string>(HOST_SECRET_HASH_KEY)
 		return Boolean(existing && existing === hash)
@@ -382,13 +449,23 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		const hostSecret = url.searchParams.get('hostSecret')
 		const isHost = await this.resolveHost(hostSecret)
-		const userId = sanitizeUserId(url.searchParams.get('userId'))
+		const guestUserId = sanitizeUserId(url.searchParams.get('userId'))
 		let displayName = sanitizeDisplayName(url.searchParams.get('displayName'))
 		if (!displayName) {
-			displayName = generateGuestDisplayName(userId || sessionId)
+			displayName = generateGuestDisplayName(guestUserId || sessionId)
 		}
-		// PHASE 3.3: default Viewer; Owner from Google cloud owner or scratch host secret.
-		const role = await this.resolveConnectRole(userId, isHost)
+
+		const clerkAuth = await tryClerkWhiteboardAuth(request, this.env)
+		const pendingClerkAuth = !clerkAuth
+		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
+		if (clerkAuth) {
+			displayName = sanitizeDisplayName(clerkAuth.displayName) || displayName
+		}
+		const role = await this.resolveConnectRole({
+			clerkAuth,
+			guestUserId,
+			isHost,
+		})
 		const canEdit = roleCanEdit(role)
 		const authToken = crypto.randomUUID()
 		const meta: SessionMeta = {
@@ -417,31 +494,86 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			role,
 			authToken,
 			meta,
+			pendingClerkAuth,
+			connectOrigin: request.headers.get('Origin') ?? '',
 		}
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
 
 		await this.ensureBoardLifetime(boardId)
-		const owner = await this.readOwnerHook(isHost)
+		await this.sendFullScene(serverWebSocket)
+		if (!pendingClerkAuth) {
+			await this.sendConnectHello(serverWebSocket, attachment)
+			this.broadcastParticipants()
+			void this.broadcastForceFollow()
+			void this.refreshFollowedFlags()
+		}
+
+		return new Response(null, { status: 101, webSocket: clientWebSocket })
+	}
+
+	private async sendConnectHello(
+		ws: WebSocket,
+		attachment: SocketAttachment,
+	): Promise<void> {
+		const revealOwnerKey = attachment.role === 'owner' || attachment.isHost
+		const owner = await this.readOwnerHook(attachment.isHost, revealOwnerKey)
 		const savedToLibrary = await this.isSavedToLibrary()
-		sendJson(serverWebSocket, {
+		sendJson(ws, {
 			type: 'wb:hello',
-			sessionId,
-			isHost,
-			canEdit,
+			sessionId: attachment.sessionId,
+			isHost: attachment.isHost,
+			canEdit: attachment.canEdit,
 			savedToLibrary,
 			owner,
-			// PHASE 3.3
-			role,
-			authToken,
+			role: attachment.role,
+			authToken: attachment.authToken,
 		})
-		await this.sendFullScene(serverWebSocket)
+	}
 
+	private async finishPendingConnectAuth(
+		ws: WebSocket,
+		attachment: SocketAttachment,
+		data: Record<string, unknown>,
+	): Promise<SocketAttachment> {
+		let clerkAuth: ClerkWhiteboardAuth | null = null
+		if (data.type === 'wb:auth' && typeof data.token === 'string') {
+			clerkAuth = await verifyClerkWhiteboardToken(
+				data.token,
+				this.env,
+				attachment.connectOrigin,
+			)
+		}
+
+		const guestUserId = sanitizeUserId(attachment.meta.userId)
+		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
+		let displayName = attachment.meta.displayName
+		if (clerkAuth) {
+			displayName =
+				sanitizeDisplayName(clerkAuth.displayName) || displayName
+		}
+		const role = await this.resolveConnectRole({
+			clerkAuth,
+			guestUserId,
+			isHost: attachment.isHost,
+		})
+		const next: SocketAttachment = {
+			...attachment,
+			role,
+			canEdit: roleCanEdit(role),
+			pendingClerkAuth: false,
+			meta: {
+				...attachment.meta,
+				userId,
+				displayName,
+			},
+		}
+		ws.serializeAttachment(next)
+		await this.sendConnectHello(ws, next)
 		this.broadcastParticipants()
 		void this.broadcastForceFollow()
 		void this.refreshFollowedFlags()
-
-		return new Response(null, { status: 101, webSocket: clientWebSocket })
+		return next
 	}
 
 	private async handleMetaHttp(
@@ -451,7 +583,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	): Promise<Response> {
 		if (request.method === 'GET') {
 			await this.ensureBoardLifetime(boardId)
-			return json(200, await this.readPublicMeta())
+			const reveal = await this.canRevealCloudOwnerKey(request, url)
+			return json(200, await this.readPublicMeta(reveal))
 		}
 
 		if (request.method !== 'PATCH') {
@@ -510,10 +643,44 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		await this.scheduleNextAlarm()
-		return json(200, await this.readPublicMeta())
+		return json(200, await this.readPublicMeta(true))
 	}
 
-	private async readPublicMeta(): Promise<{
+	private async canRevealCloudOwnerKey(
+		request: Request,
+		url: URL,
+	): Promise<boolean> {
+		const hostSecret = url.searchParams.get('hostSecret')
+		if (await this.assertHost(hostSecret)) {
+			return true
+		}
+		const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+		if (!clerkAuth) return false
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		return Boolean(cloudOwnerKey && cloudOwnerKey === clerkAuth.ownerKey)
+	}
+
+	/**
+	 * Worker meta forwarding copies Authorization Bearer into `hostSecret`.
+	 * Treat JWT-shaped values as Clerk proof, not as a host secret.
+	 */
+	private async tryClerkFromMetaRequest(
+		request: Request,
+		url: URL,
+	): Promise<ClerkWhiteboardAuth | null> {
+		const fromRequest = await tryClerkWhiteboardAuth(request, this.env)
+		if (fromRequest) return fromRequest
+		const forwarded = url.searchParams.get('hostSecret')
+		if (!forwarded || !looksLikeJwt(forwarded)) return null
+		return verifyClerkWhiteboardToken(
+			forwarded,
+			this.env,
+			request.headers.get('Origin'),
+		)
+	}
+
+	private async readPublicMeta(revealCloudOwnerKey: boolean): Promise<{
 		savedToLibrary: boolean
 		cloudOwnerKey: string | null
 		createdAt: string | null
@@ -521,8 +688,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		owner: OwnerHook
 	}> {
 		const savedToLibrary = await this.isSavedToLibrary()
-		const cloudOwnerKey =
+		const storedKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		const cloudOwnerKey = revealCloudOwnerKey ? storedKey : null
 		return {
 			savedToLibrary,
 			cloudOwnerKey,
@@ -530,19 +698,22 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			unsavedExpiresAt:
 				(await this.ctx.storage.get<string>(META_UNSAVED_EXPIRES_AT_KEY)) ??
 				null,
-			owner: await this.readOwnerHook(false),
+			owner: await this.readOwnerHook(false, revealCloudOwnerKey),
 		}
 	}
 
-	private async readOwnerHook(isHost: boolean): Promise<OwnerHook> {
-		const cloudOwnerKey =
+	private async readOwnerHook(
+		isHost: boolean,
+		revealCloudOwnerKey = isHost,
+	): Promise<OwnerHook> {
+		const storedKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
 		const saved = await this.isSavedToLibrary()
 		const google =
-			saved && typeof cloudOwnerKey === 'string' && cloudOwnerKey.startsWith('google:')
+			saved && typeof storedKey === 'string' && storedKey.startsWith('google:')
 		return {
 			kind: google ? 'google' : 'ephemeral',
-			cloudOwnerKey,
+			cloudOwnerKey: revealCloudOwnerKey ? storedKey : null,
 			isHost,
 		}
 	}
@@ -706,17 +877,40 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	// PHASE 3.3 — roles + follow (do not replace the Phase 2 scene store above)
-	private async resolveConnectRole(
-		userId: string,
-		isHost: boolean,
-	): Promise<WhiteboardRole> {
+	private async resolveConnectRole(opts: {
+		clerkAuth: ClerkWhiteboardAuth | null
+		guestUserId: string
+		isHost: boolean
+	}): Promise<WhiteboardRole> {
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		if (userId && cloudOwnerKey === `google:${userId}`) return 'owner'
-		if (!cloudOwnerKey && isHost) return 'owner'
-		if (userId) {
+
+		if (opts.clerkAuth) {
+			if (cloudOwnerKey && cloudOwnerKey === opts.clerkAuth.ownerKey) {
+				return 'owner'
+			}
 			const stored = await this.readStoredRoles()
-			const role = stored[userId]
+			const storedRole =
+				stored[opts.clerkAuth.accountId] ??
+				stored[opts.clerkAuth.ownerKey] ??
+				stored[opts.clerkAuth.clerkUserId]
+			if (
+				storedRole === 'manager' ||
+				storedRole === 'editor' ||
+				storedRole === 'viewer'
+			) {
+				return storedRole
+			}
+			if (!cloudOwnerKey && opts.isHost) return 'owner'
+			return 'viewer'
+		}
+
+		if (!cloudOwnerKey && opts.isHost) return 'owner'
+
+		const guestUserId = opts.guestUserId
+		if (guestUserId && isGuestConnectUserId(guestUserId)) {
+			const stored = await this.readStoredRoles()
+			const role = stored[guestUserId]
 			if (role === 'manager' || role === 'editor' || role === 'viewer') {
 				return role
 			}
@@ -1007,6 +1201,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 			sessionId,
 		)
+		if (attachment.pendingClerkAuth) return null
 		return {
 			sessionId,
 			userId: attachment.meta.userId,
@@ -1024,6 +1219,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
 			)
+			if (attachment.pendingClerkAuth) continue
 			rows.push({
 				sessionId,
 				userId: attachment.meta.userId,
@@ -1336,7 +1532,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 		if (!parsed || typeof parsed !== 'object') return
 		const data = parsed as Record<string, unknown>
+		const attachment = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			sessionId,
+		)
+		if (attachment.pendingClerkAuth) {
+			await this.finishPendingConnectAuth(ws, attachment, data)
+			if (data.type === 'wb:auth') return
+		}
 		const type = data.type
+
+		if (type === 'wb:auth') return
 
 		if (type === 'scene:request') {
 			await this.sendFullScene(ws)

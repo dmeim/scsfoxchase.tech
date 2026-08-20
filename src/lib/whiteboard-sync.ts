@@ -113,6 +113,22 @@ export type HelloMessage = {
 	authToken: string
 }
 
+/** First WebSocket message: Clerk session JWT. Never put this on the query string. */
+export type ConnectAuthMessage = {
+	type: 'wb:auth'
+	token?: string
+}
+
+/** Guest connect `userId` is a device-install UUID only — never a Google account id. */
+export const GUEST_CONNECT_USER_ID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function isGuestConnectUserId(value: string): boolean {
+	const id = value.trim()
+	if (!id || /^google:/i.test(id)) return false
+	return GUEST_CONNECT_USER_ID_RE.test(id)
+}
+
 export type FollowSubscribeMessage = {
 	type: 'wb:follow'
 	targetUserId: string | null
@@ -282,7 +298,10 @@ export function buildWhiteboardConnectUrl(
 	url.searchParams.set('sessionId', opts.sessionId)
 	if (opts.hostSecret) url.searchParams.set('hostSecret', opts.hostSecret)
 	if (opts.displayName) url.searchParams.set('displayName', opts.displayName)
-	if (opts.userId) url.searchParams.set('userId', opts.userId)
+	const guestUserId = opts.userId.trim()
+	if (guestUserId && isGuestConnectUserId(guestUserId)) {
+		url.searchParams.set('userId', guestUserId)
+	}
 	return url.toString()
 }
 

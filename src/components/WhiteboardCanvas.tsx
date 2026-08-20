@@ -14,7 +14,7 @@ import type {
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
-import { whenAuthReady } from '../lib/whiteboard-identity'
+import { getSessionToken, whenAuthReady } from '../lib/whiteboard-identity'
 import {
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
@@ -317,12 +317,13 @@ export default function WhiteboardCanvas({
 
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
+      const sessionToken = (await getSessionToken()) ?? ''
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
         sessionId,
         hostSecret: getHostSecret(boardId),
         displayName: identity.displayName,
-        userId: identity.userId,
+        userId: sessionToken ? '' : identity.userId,
       })
 
       const ws = new WebSocket(uri)
@@ -331,6 +332,9 @@ export default function WhiteboardCanvas({
       ws.addEventListener('open', () => {
         attempt = 0
         clearTimers()
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'wb:auth', token: sessionToken }))
+        }
         pingTimer = window.setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send('{"type":"ping"}')

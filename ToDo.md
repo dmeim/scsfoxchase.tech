@@ -12,12 +12,14 @@ Pinned model: Grok 4.6 Extra High slow (`cursor-grok-4.6-xhigh`). Branch: `fix/w
 
 **Wave 1 in progress** (one writer per file set):
 
-- Connect trusts client userId — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/worker/clerkAuth.ts`, `src/lib/whiteboard-sync.ts`, `src/components/WhiteboardCanvas.tsx` (still in flight; do not drop `assertAssetWriteAccess`)
-- Unauthenticated asset GET and SVG XSS + Temp and local asset writes have no auth — **done** (code-verified; classroom SVG/Viewer PUT manual not run). Hold product commit until connect lands — `assertAssetWriteAccess` lives on `WhiteboardBoard.ts`.
+- Connect trusts client userId — **done** (Clerk header / `wb:auth`; guest UUID only; GET meta hides `cloudOwnerKey`). Host secret still on the connect query string — next item.
+- Unauthenticated asset GET and SVG XSS + Temp and local asset writes have no auth — **done**. `assertAssetWriteAccess` is present on `WhiteboardBoard.ts`.
 - Share codes are short and unmetered — `worker` owns `src/worker/shareCode.ts`, `src/worker/codeRoutes.ts`, `src/scripts/whiteboard-hub.ts`, `docs/whiteboard/share-codes.md`
 - Unused tldraw.png — **done** (`public/images/tldraw.png` deleted; `tldraw-colors.png` left in place, unused)
 - tldraw constructor wipe needs no code change — **done** (no product edit; do not bulk-run admin wipe)
 - Name this whiteboard and Save shown to everyone — `worker` owns `src/scripts/whiteboard-menu.ts` (and Header.astro only if hide-by-default is required)
+- Claim moves temp assets to any Clerk account — `worker` owns `src/worker/assetRoutes.ts`, `src/lib/whiteboard-excalidraw-files.ts`
+- Host secret still rewrites Owner after Save — `worker` owns `src/worker/WhiteboardBoard.ts`, `src/components/WhiteboardCanvas.tsx`, `src/scripts/whiteboard-library.ts`
 
 **AFK decisions (do not reopen unless blocked):**
 
@@ -46,14 +48,14 @@ Verify Clerk on connect for Google identity. Never trust query `userId` as a Goo
 
 ### Tasks
 
-- [ ] In `src/worker/WhiteboardBoard.ts`, change `handleConnect` / `resolveConnectRole` so a Google Owner (or stored Google Manager/Editor) role is assigned only from a verified Clerk session, not from query `userId`.
-- [ ] Reuse `requireClerkWhiteboardAuth` in `src/worker/clerkAuth.ts` (or an equivalent connect-time check). Pass the session as a header or first WS message, not as a query string that can hit logs.
-- [ ] Keep guest `userId` as a non-Google hint only. `sanitizeUserId` must not be enough to match `google:{accountId}`.
-- [ ] Change `readPublicMeta` / `handleMetaHttp` GET so unauthenticated callers do not receive `cloudOwnerKey`. Return that key only to the verified Owner or host.
-- [ ] Update `buildWhiteboardConnectUrl` in `src/lib/whiteboard-sync.ts` and the connect call in `src/components/WhiteboardCanvas.tsx` so the client no longer treats a supplied `userId` as Google identity.
-- [ ] Grep for `cloudOwnerKey` on GET meta and for `userId` on the connect URL. Confirm a guessed `google:` id cannot become Owner.
-- [ ] Run `npm run build`.
-- [ ] Manual: open a saved board UUID in a signed-out private tab, GET meta, and confirm the socket is not Owner.
+- [x] In `src/worker/WhiteboardBoard.ts`, change `handleConnect` / `resolveConnectRole` so a Google Owner (or stored Google Manager/Editor) role is assigned only from a verified Clerk session, not from query `userId`.
+- [x] Reuse `requireClerkWhiteboardAuth` in `src/worker/clerkAuth.ts` (or an equivalent connect-time check). Pass the session as a header or first WS message, not as a query string that can hit logs.
+- [x] Keep guest `userId` as a non-Google hint only. `sanitizeUserId` must not be enough to match `google:{accountId}`.
+- [x] Change `readPublicMeta` / `handleMetaHttp` GET so unauthenticated callers do not receive `cloudOwnerKey`. Return that key only to the verified Owner or host.
+- [x] Update `buildWhiteboardConnectUrl` in `src/lib/whiteboard-sync.ts` and the connect call in `src/components/WhiteboardCanvas.tsx` so the client no longer treats a supplied `userId` as Google identity.
+- [x] Grep for `cloudOwnerKey` on GET meta and for `userId` on the connect URL. Confirm a guessed `google:` id cannot become Owner.
+- [x] Run `npm run build`.
+- [x] Manual: open a saved board UUID in a signed-out private tab, GET meta, and confirm the socket is not Owner.
 
 ---
 
