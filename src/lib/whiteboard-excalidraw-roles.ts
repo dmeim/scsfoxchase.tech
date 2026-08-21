@@ -10,7 +10,7 @@ import {
 	zoomToFitBounds,
 } from '@excalidraw/excalidraw'
 import type { Collaborator, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { getActiveIdentity } from './whiteboard-identity'
+import { getActiveIdentity, identityMatchIds } from './whiteboard-identity'
 import {
 	generateGuestDisplayName,
 	peopleListLabel,
@@ -150,6 +150,24 @@ function sceneCollaborators(
 	>
 }
 
+function findSelfParticipant(
+	rows: ParticipantRow[],
+	sessionId: string,
+): ParticipantRow | undefined {
+	if (sessionId) {
+		const bySession = rows.find((row) => row.sessionId === sessionId)
+		if (bySession) return bySession
+	}
+	const identity = getActiveIdentity()
+	if (!identity) return undefined
+	const ids = new Set(identityMatchIds(identity))
+	return rows.find(
+		(row) =>
+			Boolean(row.userId) &&
+			(ids.has(row.userId) || ids.has(`google:${row.userId}`)),
+	)
+}
+
 export function useWhiteboardExcalidrawRoles(opts: {
 	boardId: string
 	apiRef: RefObject<ExcalidrawImperativeAPI | null>
@@ -158,6 +176,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	const { boardId, apiRef, wsRef } = opts
 	const [role, setRole] = useState<WhiteboardRole>('viewer')
 	const [canEdit, setCanEdit] = useState(false)
+	const [helloReceived, setHelloReceived] = useState(false)
 	const [collaborators, setCollaborators] = useState<Map<string, Collaborator>>(
 		() => new Map(),
 	)
@@ -482,22 +501,21 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		(data: Record<string, unknown>): boolean => {
 			if (data.type === 'wb:hello') {
 				const sessionId =
-					typeof data.sessionId === 'string' ? data.sessionId : ''
+					typeof data.sessionId === 'string' && data.sessionId
+						? data.sessionId
+						: sessionIdRef.current
 				const nextRole: WhiteboardRole = isWhiteboardRole(data.role)
 					? data.role
 					: data.isHost
 						? 'owner'
 						: 'viewer'
-				const canEditNext =
-					typeof data.canEdit === 'boolean'
-						? data.canEdit
-						: roleCanEdit(nextRole)
 				const authToken =
 					typeof data.authToken === 'string' ? data.authToken : ''
-				sessionIdRef.current = sessionId
+				if (sessionId) sessionIdRef.current = sessionId
 				roleRef.current = nextRole
 				setRole(nextRole)
-				setCanEdit(canEditNext)
+				setCanEdit(roleCanEdit(nextRole))
+				setHelloReceived(true)
 				if (boardId && sessionId && authToken) {
 					rememberBoardSessionAuth(boardId, {
 						sessionId,
@@ -508,7 +526,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				publishHello({
 					sessionId,
 					role: nextRole,
-					canEdit: canEditNext,
+					canEdit: roleCanEdit(nextRole),
 					authToken,
 					title: typeof data.title === 'string' ? data.title : undefined,
 				})
@@ -530,7 +548,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			if (isRolePayload(data)) {
 				roleRef.current = data.role
 				setRole(data.role)
-				setCanEdit(data.canEdit ?? roleCanEdit(data.role))
+				setCanEdit(roleCanEdit(data.role))
 				if (boardId) {
 					const prev = {
 						sessionId: sessionIdRef.current,
@@ -562,17 +580,32 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					.map(parseParticipantRow)
 					.filter((row): row is ParticipantRow => Boolean(row))
 				peopleRef.current = rows
-				const yourSessionId =
-					typeof data.yourSessionId === 'string'
+				const incomingSessionId =
+					typeof data.yourSessionId === 'string' && data.yourSessionId
 						? data.yourSessionId
-						: sessionIdRef.current
-				sessionIdRef.current = yourSessionId
-				const self = rows.find((row) => row.sessionId === yourSessionId)
+						: ''
+				if (incomingSessionId) {
+					sessionIdRef.current = incomingSessionId
+				}
+				const yourSessionId = sessionIdRef.current
+				const self = findSelfParticipant(rows, yourSessionId)
 				if (self) {
 					userIdRef.current = self.userId || userIdRef.current
-					roleRef.current = self.role
-					setRole(self.role)
-					setCanEdit(self.canEdit)
+				}
+				const fromPayload = isWhiteboardRole(data.yourRole)
+					? data.yourRole
+					: undefined
+				const fromSelf = self?.role
+				const nextRole =
+					[fromSelf, fromPayload].find(
+						(r): r is WhiteboardRole => Boolean(r) && roleCanEdit(r),
+					) ??
+					fromPayload ??
+					fromSelf
+				if (nextRole) {
+					roleRef.current = nextRole
+					setRole(nextRole)
+					setCanEdit(roleCanEdit(nextRole))
 				}
 				const map = collaboratorsFromPeople(rows, yourSessionId)
 				setCollaborators(map)
@@ -588,7 +621,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				publishParticipants(
 					rows,
 					yourSessionId,
-					self?.role ?? roleRef.current,
+					nextRole ?? self?.role ?? roleRef.current,
 				)
 				setForceFollowLocked(Boolean(forcedTarget()))
 				refreshFollowedBy()
@@ -668,6 +701,30 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	}, [effectiveFollow, findPerson, setVoluntaryFollow])
 
 	useEffect(() => {
+		if (!helloReceived) return
+		let cancelled = false
+		let raf = 0
+		const applyViewMode = () => {
+			if (cancelled) return
+			const api = apiRef.current
+			if (!api) {
+				raf = window.requestAnimationFrame(applyViewMode)
+				return
+			}
+			const locked = !roleCanEdit(role)
+			api.updateScene({
+				appState: { viewModeEnabled: locked },
+				captureUpdate: CaptureUpdateAction.NEVER,
+			})
+		}
+		applyViewMode()
+		return () => {
+			cancelled = true
+			if (raf) window.cancelAnimationFrame(raf)
+		}
+	}, [apiRef, helloReceived, role])
+
+	useEffect(() => {
 		scheduleReassertAfterPaint()
 	}, [collaborators, role, canEdit, forceFollowLocked, scheduleReassertAfterPaint])
 
@@ -686,7 +743,8 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	return {
 		role,
 		canEdit,
-		viewModeEnabled: role === 'viewer' || !canEdit,
+		helloReceived,
+		viewModeEnabled: !roleCanEdit(role),
 		forceFollowLocked,
 		displayName,
 		collaborators,

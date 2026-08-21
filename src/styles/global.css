@@ -362,13 +362,15 @@ a.whiteboard-toggle:hover {
 .whiteboard-menu--manage {
     width: min(320px, calc(100vw - 24px));
     padding: 12px;
+    max-height: min(72vh, 640px);
+    overflow-y: auto;
 }
 
 .whiteboard-menu--manage.is-sharing {
     width: min(420px, calc(100vw - 24px));
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1400px) {
     .whiteboard-menu--manage.is-sharing {
         width: min(640px, calc(100vw - 32px));
     }
@@ -675,7 +677,7 @@ a.whiteboard-toggle:hover {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    max-height: 180px;
+    max-height: min(240px, 36vh);
     overflow-y: auto;
 }
 

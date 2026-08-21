@@ -75,6 +75,13 @@ body.whiteboard-hub-page {
   color: var(--secondary-color);
 }
 
+.wb-create {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .wb-join {
   display: flex;
   flex: 1;
@@ -631,6 +638,7 @@ body.board-page .excalidraw .sidebar {
     flex-direction: column;
   }
 
+  .wb-create,
   .wb-create-btn,
   .wb-join {
     width: 100%;

@@ -174,6 +174,99 @@ function sortByAccessed<T extends { lastAccessedAt: string }>(
 	)
 }
 
+/**
+ * Index keys this Clerk session may have written under. When the Google sub
+ * lookup failed in the past, entries were saved under `google:{clerkUserId}`
+ * instead of `google:{sub}`. GET must merge both so boards do not "vanish"
+ * when identity resolution flips; missing rows are migrated into the
+ * canonical key.
+ */
+function candidateOwnerKeys(auth: {
+	ownerKey: string
+	clerkUserId: string
+}): string[] {
+	return [...new Set([auth.ownerKey, `google:${auth.clerkUserId}`])]
+}
+
+async function readMergedBoards(
+	bucket: R2Bucket,
+	auth: { ownerKey: string; clerkUserId: string },
+): Promise<BoardEntry[]> {
+	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
+	const { entries } = await readJsonArray(
+		bucket,
+		boardsObjectKey(canonical!),
+		isBoardEntry,
+	)
+	let merged = entries
+	for (const key of legacyKeys) {
+		const legacy = await readJsonArray(
+			bucket,
+			boardsObjectKey(key),
+			isBoardEntry,
+		)
+		if (legacy.entries.length === 0) continue
+		const known = new Set(merged.map((entry) => entry.id))
+		const missing = legacy.entries.filter((entry) => !known.has(entry.id))
+		if (missing.length === 0) continue
+		merged = [...merged, ...missing]
+		// Best-effort migration into the canonical index; legacy file stays.
+		await mutateJsonArray(
+			bucket,
+			boardsObjectKey(canonical!),
+			isBoardEntry,
+			(boards) => {
+				let next = boards
+				for (const entry of missing) next = upsertBoardEntry(next, entry)
+				return next
+			},
+		)
+	}
+	return merged
+}
+
+async function readMergedAssets(
+	bucket: R2Bucket,
+	auth: { ownerKey: string; clerkUserId: string },
+): Promise<AssetEntry[]> {
+	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
+	const { entries } = await readJsonArray(
+		bucket,
+		assetsObjectKey(canonical!),
+		isAssetEntry,
+	)
+	let merged = entries
+	for (const key of legacyKeys) {
+		const legacy = await readJsonArray(
+			bucket,
+			assetsObjectKey(key),
+			isAssetEntry,
+		)
+		if (legacy.entries.length === 0) continue
+		const known = new Set(merged.map((entry) => entry.id))
+		merged = [
+			...merged,
+			...legacy.entries.filter((entry) => !known.has(entry.id)),
+		]
+	}
+	return merged
+}
+
+/** Recents/Library membership for this Clerk ownerKey (R2 index, not DO Owner). */
+export async function libraryIndexContainsBoard(
+	env: Env,
+	ownerKey: string,
+	boardId: string,
+): Promise<boolean> {
+	if (!ownerKey || !boardId || !env.WHITEBOARD_ASSETS) return false
+	const { entries } = await readJsonArray(
+		env.WHITEBOARD_ASSETS,
+		boardsObjectKey(ownerKey),
+		isBoardEntry,
+	)
+	return entries.some((entry) => entry.id === boardId)
+}
+
 function boardMetaUrl(request: Request, boardId: string): URL {
 	const url = new URL(request.url)
 	url.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
@@ -211,6 +304,48 @@ async function readSavedToLibrary(
 }
 
 /**
+ * Hub Recents PUT after host is cleared. GET meta reveals `cloudOwnerKey`
+ * only to the matching Owner — so this is not "any signed-in user + UUID".
+ */
+async function clerkRequestOwnsSavedBoard(
+	env: Env,
+	request: Request,
+	boardId: string,
+	ownerKey: string,
+): Promise<boolean> {
+	const id = env.WHITEBOARDS.idFromName(boardId)
+	const stub = env.WHITEBOARDS.get(id)
+	const res = await stub.fetch(
+		new Request(boardMetaUrl(request, boardId).toString(), {
+			method: 'GET',
+			headers: patchHeaders(request),
+		}),
+	)
+	if (!res.ok) return false
+	try {
+		const body = (await res.json()) as {
+			savedToLibrary?: unknown
+			cloudOwnerKey?: unknown
+		}
+		if (body.savedToLibrary !== true) return false
+		if (typeof body.cloudOwnerKey !== 'string' || !body.cloudOwnerKey) {
+			return false
+		}
+		if (body.cloudOwnerKey === ownerKey) return true
+		const suffix = body.cloudOwnerKey.startsWith('google:')
+			? body.cloudOwnerKey.slice('google:'.length)
+			: body.cloudOwnerKey
+		return (
+			ownerKey === `google:${suffix}` ||
+			ownerKey === suffix ||
+			`google:${ownerKey}` === body.cloudOwnerKey
+		)
+	} catch {
+		return false
+	}
+}
+
+/**
  * Lift the 24h scratch TTL on the Durable Object. Fails closed unless
  * `savedToLibrary` is true — the library PUT must not succeed as durable
  * while the unsaved alarm is still armed. PATCH 403s until the creating
@@ -225,8 +360,15 @@ async function tryMarkSavedToLibrary(
 	const hostSecret = request.headers.get('X-Board-Host')?.trim()
 	if (!hostSecret) {
 		try {
-			if (await readSavedToLibrary(env, request, boardId)) {
+			if (await clerkRequestOwnsSavedBoard(env, request, boardId, ownerKey)) {
 				return { ok: true }
+			}
+			if (await readSavedToLibrary(env, request, boardId)) {
+				return {
+					ok: false,
+					status: 403,
+					error: 'Only the Owner can add this saved board to your library.',
+				}
 			}
 		} catch {
 			// Fall through to fail closed.
@@ -381,11 +523,7 @@ export async function handleLibraryRequest(
 
 	if (boardsList) {
 		if (request.method === 'GET') {
-			const { entries } = await readJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				isBoardEntry,
-			)
+			const entries = await readMergedBoards(bucket, authResult.auth)
 			return json(200, { boards: sortByAccessed(entries), ownerKey }, request)
 		}
 		if (request.method === 'PUT') {
@@ -437,18 +575,22 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid board id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const written = await mutateJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				isBoardEntry,
-				(boards) => boards.filter((entry) => entry.id !== boardId),
-			)
-			if (!written.ok) {
-				return json(
-					409,
-					{ error: 'Library index conflict, retry' },
-					request,
+			// Remove from every candidate key or a merged legacy row would
+			// resurrect the board on the next GET.
+			for (const key of candidateOwnerKeys(authResult.auth)) {
+				const written = await mutateJsonArray(
+					bucket,
+					boardsObjectKey(key),
+					isBoardEntry,
+					(boards) => boards.filter((entry) => entry.id !== boardId),
 				)
+				if (!written.ok) {
+					return json(
+						409,
+						{ error: 'Library index conflict, retry' },
+						request,
+					)
+				}
 			}
 			return json(200, { ok: true }, request)
 		}
@@ -457,11 +599,7 @@ export async function handleLibraryRequest(
 
 	if (assetsList) {
 		if (request.method === 'GET') {
-			const { entries } = await readJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				isAssetEntry,
-			)
+			const entries = await readMergedAssets(bucket, authResult.auth)
 			return json(200, { assets: sortByAccessed(entries), ownerKey }, request)
 		}
 		if (request.method === 'PUT') {
@@ -512,18 +650,20 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid asset id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const written = await mutateJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				isAssetEntry,
-				(assets) => assets.filter((entry) => entry.id !== assetId),
-			)
-			if (!written.ok) {
-				return json(
-					409,
-					{ error: 'Library index conflict, retry' },
-					request,
+			for (const key of candidateOwnerKeys(authResult.auth)) {
+				const written = await mutateJsonArray(
+					bucket,
+					assetsObjectKey(key),
+					isAssetEntry,
+					(assets) => assets.filter((entry) => entry.id !== assetId),
 				)
+				if (!written.ok) {
+					return json(
+						409,
+						{ error: 'Library index conflict, retry' },
+						request,
+					)
+				}
 			}
 			return json(200, { ok: true }, request)
 		}

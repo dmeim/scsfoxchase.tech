@@ -47,7 +47,7 @@ Product resource family for whiteboards: **`scsfoxchase-tech_whiteboards`**.
 | `ASSETS` | Workers Assets | `./dist/client` | Prerendered pages and static files |
 | `WHITEBOARDS` | Durable Object | Class `WhiteboardBoard` (SQLite) | Per-board sync room; `idFromName(uuid)` |
 | `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` | Media blobs + cloud library JSON indexes |
-| `WHITEBOARD_CODES` | KV | Share-code namespace | `code:{A1B2C3D4}` → board UUID (TTL 12h) |
+| `WHITEBOARD_CODES` | KV | Share-code namespace | `code:{1A2B}` → board UUID (TTL 12h) |
 
 **R2 naming:** Bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling keeps the underscore.
 
@@ -91,13 +91,13 @@ Everything else falls through to the Astro asset handler.
 
 - **Scratch (signed out create):** live Durable Object; ephemeral Owner via host secret; canvas files under `temp:{boardId}` (24h). Not in a library.
 - **Signed in (Google via Clerk):** owner key `google:{accountId}` (Google OAuth `sub` preferred, else Clerk user id); Recents / Library / Assets from R2 `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json`. Signed-in create autosaves; that account is Owner.
-- Join by code/link/UUID works without an account. Share-code joiners land as **Viewer** unless **Class can edit** is On (then they land as **Editor**). UUID-only stays **Viewer**. Join does not write Recents.
+- Join by code/link/UUID works without an account. Share-code joiners land as **Viewer** unless **Group Edit** is On (then they land as **Editor**). UUID-only stays **Viewer**. Join does not write Recents.
 - UI: `@clerk/react` header island (`ClerkAuth.tsx`). Worker auth helpers live in `worker/clerkAuth.ts`. Canvas: `WhiteboardCanvas.tsx` (Excalidraw 0.18.1).
 
 ### Asset and share-code storage
 
 - R2 object keys for media: `assets/{ownerKey}/{assetId}` (`google:` when saved; `temp:{boardId}` when unsaved)
-- Share codes: KV `code:{A1B2C3D4}` → board id (12h TTL, eight-character letter-digit); DO stores `activeCode` and alarm-driven Open/Closed cleanup. Join is view-only unless Class can edit is On (share-code joiners land as Editor) or Owner/Manager sets Editor on People. UUID-only stays Viewer.
+- Share codes: KV `code:{1A2B}` → board id (12h TTL, four-character digit-letter); DO stores `activeCode` and alarm-driven Open/Closed cleanup. Join is view-only unless Group Edit is On (share-code joiners land as Editor) or Owner/Manager sets Editor on People. UUID-only stays Viewer.
 - Same-origin video player: `/whiteboard-player` (Worker sets `X-Frame-Options: SAMEORIGIN`)
 
 ## PWA service worker boundary

@@ -135,7 +135,7 @@ Asset API (capability URLs; no public list):
 
 Share codes (Phase 5):
 
-- KV key: `code:{A1B2C3D4}` → `{ boardId, exp }` with `expirationTtl` 12h (eight-character letter-digit)
+- KV key: `code:{1A2B}` → `{ boardId, exp }` with `expirationTtl` 12h (four-character digit-letter)
 - DO metadata: `activeCode` + `codeExpiresAt` + alarm cleanup
 - `GET /api/whiteboard/join/{code}` → `{ id }` or 404
 - `GET|POST|DELETE /api/whiteboard/boards/{uuid}/code` — status / mint-or-keep (optional `?rotate=1`) / revoke

@@ -16,8 +16,10 @@ import { getBoardSessionAuth } from '../lib/whiteboard-participants';
 import {
   getActiveIdentity,
   getAuthHeaders,
+  identityMatchIds,
   isSignedIn,
   onAuthChange,
+  waitForSessionToken,
   whenAuthReady,
 } from '../lib/whiteboard-identity';
 
@@ -77,8 +79,8 @@ export function getOwnerKey(): string {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-/** Eight-character letter-digit code (server `SHARE_CODE_RE`). */
-const SHARE_CODE_RE = /^([A-Z][0-9]){4}$/;
+/** Four-character digit-letter code, `1A2B` form (server `SHARE_CODE_RE`). */
+const SHARE_CODE_RE = /^([0-9][A-Z]){2}$/;
 const MAX_BOARD_TITLE_LENGTH = 80;
 
 export function isBoardUuid(value: string): boolean {
@@ -107,6 +109,11 @@ function readScratchTitle(boardId: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Creating-browser default name until Recents / `meta:title` exist. */
+export function getScratchBoardTitle(boardId: string): string | null {
+  return readScratchTitle(boardId);
 }
 
 function untitledEntry(
@@ -280,6 +287,11 @@ export async function claimBoardToLibrary(
     lastAccessedAt: now,
     previewDataUrl: existing?.previewDataUrl,
   };
+  try {
+    await patchLiveBoardTitle(boardId, next.title);
+  } catch {
+    // Recents can still write; hello/Save retries live `meta:title`.
+  }
   const saved = await upsertCloudBoard(next, { hostSecret });
   try {
     await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
@@ -350,10 +362,16 @@ export async function touchBoardActive(
   const existing = await getEntryActive(boardId);
   const hostSecret = getHostSecret(boardId);
   if (existing) {
+    if (title === undefined) {
+      // Hello / page-load must not PUT existing.title (often Untitled) over a
+      // concurrent Owner Save. lastAccessedAt updates when a title is provided.
+      scheduleSavedToLibrary(boardId, hostSecret);
+      return existing;
+    }
     const next = await upsertCloudBoard(
       {
         ...existing,
-        title: title ?? existing.title,
+        title,
         lastAccessedAt: new Date().toISOString(),
       },
       { hostSecret },
@@ -373,9 +391,10 @@ export async function touchBoardActive(
  * `null` means unknown (fail open for hub Owner rename if meta is down).
  */
 async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null> {
-  const ownerKey = getOwnerKey();
-  if (!ownerKey.startsWith('google:')) return false;
+  const identity = getActiveIdentity();
+  if (!identity) return false;
   try {
+    if (isSignedIn()) await waitForSessionToken();
     const headers = await getAuthHeaders();
     const res = await fetch(
       `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
@@ -384,12 +403,13 @@ async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null>
     if (!res.ok) return null;
     const body = (await res.json()) as {
       cloudOwnerKey?: unknown;
-      savedToLibrary?: unknown;
     };
     if (typeof body.cloudOwnerKey === 'string') {
-      return body.cloudOwnerKey === ownerKey;
+      // DO meta may hold google:{sub} while this session resolved
+      // google:{clerkUserId} (or the reverse). Both are the same person.
+      return identityMatchIds(identity).includes(body.cloudOwnerKey);
     }
-    if (body.savedToLibrary === true) return false;
+    // Hidden key is unknown (Owner GET and guest GET can look the same).
     return null;
   } catch {
     return null;
@@ -400,8 +420,9 @@ async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null>
  * Same live `meta:title` PATCH as the manage panel: session token and/or
  * scratch host proof, plus Clerk so an Owner on the hub (no open socket)
  * can still rename. Guests receive `wb:title` from the Durable Object.
+ * Host proof stays on `X-Board-Host`, never the WebSocket query string.
  */
-async function patchLiveBoardTitle(
+export async function patchLiveBoardTitle(
   boardId: string,
   title: string,
 ): Promise<string> {
@@ -410,7 +431,6 @@ async function patchLiveBoardTitle(
   };
   const hostSecret = getHostSecret(boardId);
   if (hostSecret) {
-    headers.Authorization = `Bearer ${hostSecret}`;
     headers['X-Board-Host'] = hostSecret;
   }
   const sessionAuth = getBoardSessionAuth(boardId);
@@ -418,9 +438,15 @@ async function patchLiveBoardTitle(
     headers['X-Board-Session'] = sessionAuth.sessionId;
     headers['X-Board-Auth'] = sessionAuth.authToken;
   }
-  const clerkHeaders = await getAuthHeaders();
-  if (clerkHeaders.Authorization) {
-    headers.Authorization = clerkHeaders.Authorization;
+  if (isSignedIn()) {
+    const token = await waitForSessionToken();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    } else if (hostSecret) {
+      headers.Authorization = `Bearer ${hostSecret}`;
+    }
+  } else if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`;
   }
   const body: Record<string, string> = { title };
   if (sessionAuth) {
@@ -469,10 +495,8 @@ export async function renameBoardActive(
     rememberScratchTitle(boardId, cleaned);
     return untitledEntry(boardId, cleaned);
   }
-  const hostSecret = getHostSecret(boardId);
-  if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
-    return untitledEntry(boardId, cleaned);
-  }
+  // The Durable Object decides who may rename (Owner/Manager, 403 otherwise).
+  // Guessing that here produced silent no-ops that still reported success.
   const liveTitle = await patchLiveBoardTitle(boardId, cleaned);
   try {
     return await setBoardTitleActive(boardId, liveTitle);
@@ -502,10 +526,10 @@ export async function setBoardTitleActive(
     return claimBoardToLibrary(boardId, cleaned);
   }
   if (!existing) {
-    return untitledEntry(boardId, cleaned);
+    throw new Error('This board is not in your library yet.');
   }
   if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
-    return untitledEntry(boardId, cleaned);
+    throw new Error('Only the owner library stores this name.');
   }
   return upsertEntryActive({
     id: boardId,
@@ -514,6 +538,11 @@ export async function setBoardTitleActive(
   });
 }
 
+/**
+ * Mint a scratch board and navigate. Recents is written after the first
+ * WebSocket (host hash). A library PUT before connect 403s “Host secret
+ * required.” Signed-in claim runs from the board page on `wb:hello`.
+ */
 export async function createBoardActive(title = defaultBoardTitle()): Promise<{
   id: string;
   hostSecret: string;
@@ -529,12 +558,7 @@ export async function createBoardActive(title = defaultBoardTitle()): Promise<{
     title,
     lastAccessedAt: now,
   };
-  if (!isSignedIn()) {
-    return { id, hostSecret, entry: draft };
-  }
-  const entry = await upsertCloudBoard(draft, { hostSecret });
-  scheduleSavedToLibrary(id, hostSecret);
-  return { id, hostSecret, entry };
+  return { id, hostSecret, entry: draft };
 }
 
 /** Remove from the signed-in cloud library. No-op when signed out. */
@@ -612,21 +636,23 @@ export function formatAccessedDate(iso: string): string {
 }
 
 /**
- * Board-page hook: if this browser created a scratch board and the user signs
- * in, claim Owner + cloud library without waiting on Phase 3.3 People UI.
+ * Board-page hook: after `wb:hello` the host hash exists, so signed-in create
+ * can write Recents. Opening a Recents row retries touch once `savedToLibrary`
+ * is backfilled. Page-load touch before connect is expected to fail closed.
  */
 function bindBoardPageScratchClaim(): void {
   if (typeof window === 'undefined') return;
   const boardId = readBoardIdFromPath();
   if (!boardId) return;
   const tryClaim = () => {
-    if (!isSignedIn() || !getHostSecret(boardId)) return;
-    void claimBoardToLibrary(boardId).catch(() => {
-      // PATCH may 403 until the first WebSocket connect stores the host hash.
+    if (!isSignedIn()) return;
+    void touchBoardActive(boardId).catch(() => {
+      // PUT waits on first WebSocket host hash / savedToLibrary backfill.
     });
   };
   void whenAuthReady().then(tryClaim);
   onAuthChange(tryClaim);
+  window.addEventListener('scsfoxchase:whiteboard-hello', tryClaim);
 }
 
 bindBoardPageScratchClaim();

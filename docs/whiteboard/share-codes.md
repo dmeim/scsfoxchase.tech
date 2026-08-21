@@ -2,15 +2,15 @@
 
 Short join codes for classroom boards: Open / Closed, Copy, New, hub join, and KV + Durable Object expiry.
 
-Treat live share codes as **secrets**. Anyone who can read an Open code can join the board. They land as **Viewer** unless **Class can edit** is On (then share-code joiners can draw) or an Owner/Manager sets **Editor** on **People**. UUID-only links stay **Viewer**. Do not write a code on a hallway-facing board or otherwise project it where passers-by can photograph it. Prefer the board link (`/board/{uuid}`) for anything that stays on screen.
+Treat live share codes as **secrets**. Anyone who can read an Open code can join the board. They land as **Viewer** unless **Group Edit** is On (then share-code joiners can draw) or an Owner/Manager sets **Editor** on **People**. UUID-only links stay **Viewer**. Do not write a code on a hallway-facing board or otherwise project it where passers-by can photograph it. Prefer the board link (`/board/{uuid}`) for anything that stays on screen.
 
 ## Overview
 
-A share code is an eight-character token: **letter, digit** four times (`A1B2C3D4` form, `([A-Z][0-9]){4}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) **drops the KV mapping** so `GET /api/whiteboard/join/:code` cannot start a new session.
+A share code is a four-character token: **digit, letter** twice (`1A2B` form, `([0-9][A-Z]){2}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) **drops the KV mapping** so `GET /api/whiteboard/join/:code` cannot start a new session.
 
 **Owner or Manager** only can Open, Closed, rotate, or copy the code. Editor and Viewer get **403** (`Only the Owner or a Manager can manage the share code.`). Proof is a live session token, scratch host secret, or Clerk matching `cloudOwnerKey`. Leftover host secret on a Google-owned board is **not** enough. Knowing the board UUID is **not** share-admin proof.
 
-Join lookup (`GET /api/whiteboard/join/:code`) stays **unauthenticated** (rate-limited). A code only **opens** the board; role is decided on connect. Join is **view-only** unless **Class can edit** is On (share-code joiners land as **Editor**) or an Owner or Manager sets **Editor** on **People**. UUID-only stays **Viewer**. Opening a code does not by itself mean students can draw.
+Join lookup (`GET /api/whiteboard/join/:code`) stays **unauthenticated** (rate-limited). A code only **opens** the board; role is decided on connect. Join is **view-only** unless **Group Edit** is On (share-code joiners land as **Editor**) or an Owner or Manager sets **Editor** on **People**. UUID-only stays **Viewer**. Opening a code does not by itself mean students can draw.
 
 **Closed does not revoke the UUID.** UUID access remains a separate capability: `/board/{uuid}` still loads the canvas after Closed until connect-time auth exists (see the “Connect trusts client userId” launch item). Closed only stops *new* joins that still need the short code.
 
@@ -18,15 +18,15 @@ Join lookup (`GET /api/whiteboard/join/:code`) stays **unauthenticated** (rate-l
 
 | Property | Value |
 |----------|--------|
-| Pattern | Eight characters — letter-digit four times (`A1B2C3D4` form) |
+| Pattern | Four characters — digit-letter twice (`1A2B` form) |
 | Normalization | Trim + uppercase |
 | TTL | **12 hours** (`SHARE_CODE_TTL_SECONDS` / `SHARE_CODE_TTL_MS` in `src/worker/shareCode.ts`) |
-| KV key | `code:{A1B2C3D4}` |
+| KV key | `code:{1A2B}` |
 | KV value | JSON `{ boardId, exp }` with `expirationTtl` matching the TTL |
 
 Helpers: `normalizeShareCode`, `sampleShareCode`, `kvCodeKey` in `src/worker/shareCode.ts`.
 
-Existing four-character codes in KV (from before this format change) no longer parse. Teachers need **Open** / **New code** after deploy so students get an eight-character code.
+Existing codes in KV from before this format change (eight-character `A1B2C3D4` era) no longer parse. Teachers need **Open** / **New code** after deploy so students get a `1A2B`-form code.
 
 ## Storage model
 
@@ -55,7 +55,7 @@ GET /api/whiteboard/join/:code
 **404:** code missing, expired, malformed, or bad board id — message: *That code isn't available…*  
 **429:** join rate limit (see below) — *Too many join attempts. Wait a moment and try again.*
 
-Used by the hub when the join field looks like a share code (`lookupShareCode` in `src/lib/whiteboard-codes.ts`). The hub treats codes as eight-character letter-digit tokens (`src/scripts/whiteboard-hub.ts`).
+Used by the hub when the join field looks like a share code (`lookupShareCode` in `src/lib/whiteboard-codes.ts`). The hub treats codes as 1A2B-form tokens (`src/scripts/whiteboard-hub.ts`).
 
 ### Board code state
 
@@ -79,7 +79,7 @@ DELETE /api/whiteboard/boards/:uuid/code          # closed
 **GET / POST success shape:**
 
 ```json
-{ "code": "<eight-character-code>", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
+{ "code": "<1A2B-form-code>", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
 ```
 
 **Closed / after DELETE:**
@@ -113,15 +113,13 @@ Allocation retries random samples (up to 24) until a free KV key is found.
 On `/board/{uuid}`, header manage panel (`Header.astro` + `whiteboard-menu.ts`). Share Open / Closed, click-to-copy, **New Code**, and **Copy Link** are **Owner/Manager only** (`canManageShare`). Editor and Viewer do not see those controls.
 
 - Left column **Share** switch (Open / Closed) — `openBoardShareCode` / `closeBoardShareCode`
-- Left column **Class can edit** switch (Owner/Manager; `meta:classCanEdit`) — Off by default. On = joiners of the active share code land as Editor. UUID-only stays Viewer.
-- Hint: *Join is view-only unless Class can edit is On, or you set Editor on People.*
-- When Open, right column shows:
+- Left column **Group Edit** switch (Owner/Manager; `meta:classCanEdit`) — Off by default. On = joiners of the active share code land as Editor. UUID-only stays Viewer.
+- Hint: *Share-code joiners can draw when Group Edit is on. UUID links stay view-only unless you set Editor on People.*
+- When Open, the tools column shows:
   - Share code **button** (not an input) with clipboard icon — click / Enter / Space to copy
   - **New Code** — rotate (`?rotate=1`)
   - **Copy Link** — permanent `{origin}/board/{uuid}` URL
   - Expiry line updated about every 30s (`formatShareExpiry` → “Codes expire in 11h 42m. A new code is needed to share again.”)
-  - Hint: *A join code is view-only unless Class can edit is On. UUID links stay Viewer. You can also set Editor on People.*
-  - Static hint: bookmark the board page to return later
   - **People** (roles + Follow) — see [people-permissions.md](./people-permissions.md)
 
 Keep the code off hallway-facing displays; use **Copy Link** when the URL can stay on screen. Copying the link does not grant draw access.
@@ -129,11 +127,11 @@ Keep the code off hallway-facing displays; use **Copy Link** when the URL can st
 ## Hub join flow
 
 1. User enters code (or link/UUID) on `/whiteboard`.
-2. Hub classifies as `code` (eight-character letter-digit) or `board`.
+2. Hub classifies as `code` (four-character digit-letter) or `board`.
 3. For codes: `GET /api/whiteboard/join/:code` → UUID.
 4. Navigate to `/board/{uuid}`. Join does **not** write Recents/Library.
 
-Joining does **not** make the user Owner. Scratch Owner stays with the creating browser (host secret). Saved boards use the Google Owner. Join is **view-only** unless **Class can edit** is On or an Owner or Manager sets **Editor** on **People** — a join code alone does not mean students can draw. UUID-only stays **Viewer**. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
+Joining does **not** make the user Owner. Scratch Owner stays with the creating browser (host secret). Saved boards use the Google Owner. Join is **view-only** unless **Group Edit** is On or an Owner or Manager sets **Editor** on **People** — a join code alone does not mean students can draw. UUID-only stays **Viewer**. See [hub-and-board.md](./hub-and-board.md) and [people-permissions.md](./people-permissions.md).
 
 ## Key files
 
