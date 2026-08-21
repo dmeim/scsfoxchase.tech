@@ -218,8 +218,6 @@ interface SocketAttachment {
 	/** Waiting for first-message Clerk / host proof (`wb:auth`). */
 	pendingClerkAuth?: boolean
 	connectOrigin?: string
-	/** Cookie Clerk from the upgrade request; first-message token wins. */
-	connectClerkAuth?: ClerkWhiteboardAuth
 	/** Voluntary Follow target; survives hibernation with the socket. */
 	followTargetSessionId?: string
 	/** Presented the active share code on connect (cookie). Not a stored role. */
@@ -361,16 +359,6 @@ function rewriteTempPlayerUrlsInElements(
 	return { elements: next, rewritten }
 }
 
-function isClerkWhiteboardAuth(value: unknown): value is ClerkWhiteboardAuth {
-	if (!value || typeof value !== 'object') return false
-	const row = value as Partial<ClerkWhiteboardAuth>
-	return (
-		typeof row.accountId === 'string' &&
-		typeof row.ownerKey === 'string' &&
-		typeof row.clerkUserId === 'string'
-	)
-}
-
 /** Normalize attachments from older deploys that lacked canEdit/meta/role. */
 function normalizeAttachment(
 	raw: Partial<SocketAttachment> | null | undefined,
@@ -403,9 +391,6 @@ function normalizeAttachment(
 		pendingClerkAuth: Boolean(raw?.pendingClerkAuth),
 		connectOrigin:
 			typeof raw?.connectOrigin === 'string' ? raw.connectOrigin : '',
-		connectClerkAuth: isClerkWhiteboardAuth(raw?.connectClerkAuth)
-			? raw.connectClerkAuth
-			: undefined,
 		followTargetSessionId:
 			typeof raw?.followTargetSessionId === 'string' &&
 			raw.followTargetSessionId
@@ -830,7 +815,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			meta,
 			pendingClerkAuth,
 			connectOrigin: request.headers.get('Origin') ?? '',
-			connectClerkAuth: undefined,
 			joinedViaShareCode,
 			boardId,
 		}
@@ -874,8 +858,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		data: Record<string, unknown>,
 		opts: { mintHost: boolean },
 	): Promise<SocketAttachment | null> {
-		let clerkAuth: ClerkWhiteboardAuth | null =
-			attachment.connectClerkAuth ?? null
+		// Identity comes only from this message. Clerk is never resolved during
+		// the upgrade, so there is nothing carried over from connect.
+		let clerkAuth: ClerkWhiteboardAuth | null = null
 		const rawToken = 'token' in data ? data.token : undefined
 		const token = typeof rawToken === 'string' ? rawToken.trim() : ''
 		if (token) {
@@ -926,7 +911,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			role,
 			canEdit: roleCanEdit(role),
 			pendingClerkAuth: false,
-			connectClerkAuth: undefined,
 			joinedViaShareCode,
 			boardId,
 			meta: {
