@@ -776,30 +776,25 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		// Authorization headers on a WebSocket, and a slow Clerk BAPI call
 		// here blocks the 101 handshake and the initial scene:sync. Role is
 		// decided at first-message `wb:auth` (finishPendingConnectAuth).
-		const clerkAuth: ClerkWhiteboardAuth | null = null
 		const isHost = await this.hostProvesScratchOwner(headerHost, {
 			mint: true,
-			clerkAuth,
+			clerkAuth: null,
 		})
 		const guestUserId = sanitizeUserId(url.searchParams.get('userId'))
-		let displayName = sanitizeDisplayName(url.searchParams.get('displayName'))
-		if (!displayName) {
-			displayName = generateGuestDisplayName(guestUserId || sessionId)
-		}
+		const displayName =
+			sanitizeDisplayName(url.searchParams.get('displayName')) ||
+			generateGuestDisplayName(guestUserId || sessionId)
 
 		// Always wait for first-message `wb:auth` so scratch host proof can
 		// arrive off the query string (browsers cannot set WS headers).
 		const pendingClerkAuth = true
-		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
-		if (clerkAuth) {
-			displayName = sanitizeDisplayName(clerkAuth.displayName) || displayName
-		}
+		const userId = guestUserId
 		const joinedViaShareCode = await this.presentedJoinCodeIsActive(
 			joinCodeFromConnectRequest(request, boardId),
 		)
 		await this.ensureBoardLifetime(boardId)
 		const role = await this.resolveConnectRole({
-			clerkAuth,
+			clerkAuth: null,
 			guestUserId,
 			isHost,
 			joinedViaShareCode,
@@ -835,7 +830,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			meta,
 			pendingClerkAuth,
 			connectOrigin: request.headers.get('Origin') ?? '',
-			connectClerkAuth: clerkAuth ?? undefined,
+			connectClerkAuth: undefined,
 			joinedViaShareCode,
 			boardId,
 		}
@@ -877,6 +872,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private async resolveAuthMessage(
 		attachment: SocketAttachment,
 		data: Record<string, unknown>,
+		opts: { mintHost: boolean },
 	): Promise<SocketAttachment | null> {
 		let clerkAuth: ClerkWhiteboardAuth | null =
 			attachment.connectClerkAuth ?? null
@@ -897,7 +893,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const isHost =
 			attachment.isHost ||
 			(await this.hostProvesScratchOwner(hostSecret, {
-				mint: true,
+				mint: opts.mintHost,
 				clerkAuth,
 			}))
 
@@ -947,8 +943,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		attachment: SocketAttachment,
 		data: Record<string, unknown>,
 	): Promise<SocketAttachment> {
-		const next = await this.resolveAuthMessage(attachment, data)
+		const next = await this.resolveAuthMessage(attachment, data, {
+			mintHost: true,
+		})
 		if (!next) return attachment
+		// Another `wb:auth` may have greeted this socket while the Clerk
+		// verification above was in flight. One hello per socket.
+		const current = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			attachment.sessionId,
+		)
+		if (!current.pendingClerkAuth) return current
 		ws.serializeAttachment(next)
 		await this.sendConnectHello(ws, next)
 		this.broadcastParticipants()
@@ -972,11 +977,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const hostSecret =
 			typeof data.hostSecret === 'string' ? data.hostSecret.trim() : ''
 		if (!token && !hostSecret) return
-		const next = await this.resolveAuthMessage(attachment, data)
+		// `mintHost: false` — a greeted socket must not be able to plant the
+		// host hash on a board that has none, which would lock the real
+		// creator's leftover secret out for good.
+		const next = await this.resolveAuthMessage(attachment, data, {
+			mintHost: false,
+		})
 		if (!next) return
-		const upgraded = roleCanEdit(next.role) && !roleCanEdit(attachment.role)
-		const identityChanged = next.meta.userId !== attachment.meta.userId
-		if (!upgraded && !identityChanged) return
+		// Upgrades only. Demotions belong to the People PATCH and the Group Edit
+		// resync; letting a re-auth carry one means any frame that fails to
+		// resolve Clerk can strip a session that is already authenticated.
+		if (!roleCanEdit(next.role) || roleCanEdit(attachment.role)) return
 		ws.serializeAttachment(next)
 		sendJson(ws, {
 			type: 'wb:role',

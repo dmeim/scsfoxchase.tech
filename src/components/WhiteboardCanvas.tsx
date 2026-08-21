@@ -53,8 +53,10 @@ declare global {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-/** How often to re-check Clerk for a JWT after a tokenless `wb:auth`. */
+/** Backoff for re-checking Clerk after a `wb:auth` the server did not accept. */
 const AUTH_RETRY_MS = 1000
+const AUTH_RETRY_MAX_MS = 10_000
+const AUTH_RETRY_GIVE_UP_MS = 60_000
 
 function readBoardIdFromLocation(): string | undefined {
   if (typeof window === 'undefined') return undefined
@@ -115,6 +117,12 @@ export default function WhiteboardCanvas({
    * being marked as delivered by version bookkeeping.
    */
   const authSentRef = useRef(false)
+  /**
+   * True once the server has greeted the *current* socket. `roles.helloReceived`
+   * is sticky for the page, so it cannot tell a reconnect whether this socket's
+   * `wb:auth` was accepted.
+   */
+  const helloOnSocketRef = useRef(false)
   const persistErrorToastAtRef = useRef(0)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
@@ -349,6 +357,8 @@ export default function WhiteboardCanvas({
       media.syncFiles(elements, files)
       if (applyingRemoteRef.current) return
       if (!canEditRef.current) return
+      // Nothing this instance holds is trustworthy until a server scene lands.
+      if (!sceneHydratedRef.current) return
       const version = getSceneVersion(elements)
       if (version === lastSceneVersionRef.current) return
       pendingFlushRef.current = { elements, appState }
@@ -383,12 +393,15 @@ export default function WhiteboardCanvas({
     let resyncTimer: number | null = null
     let reconnectTimer: number | null = null
     let authRetryTimer: number | null = null
+    let authFetchInFlight = false
+    let authStartedAt = 0
+    let lastAuthTokenSent = ''
     let attempt = 0
     let lastSocketJsAt = 0
 
     const clearAuthRetry = () => {
       if (authRetryTimer == null) return
-      window.clearInterval(authRetryTimer)
+      window.clearTimeout(authRetryTimer)
       authRetryTimer = null
     }
 
@@ -404,10 +417,12 @@ export default function WhiteboardCanvas({
     }
 
     /**
-     * Send one `wb:auth` frame. `signedIn` without a token tells the server to
-     * keep the socket pending instead of greeting a real Owner as Viewer —
-     * the server cannot otherwise tell "Clerk is still loading" apart from
-     * "this is a guest".
+     * Send one `wb:auth` frame. `signedIn` always reflects this tab's own view
+     * of Clerk, even when a token is attached: the server cannot otherwise
+     * tell "this token failed to verify" apart from "this is a guest", and
+     * would greet a real Owner as Viewer. Only a frame the server can act on
+     * unlocks outgoing scene updates — it drops everything until a socket is
+     * greeted, and silently dropped sends would still be marked delivered.
      */
     const sendAuthFrame = (ws: WebSocket, token: string) => {
       if (ws.readyState !== WebSocket.OPEN) return
@@ -418,10 +433,11 @@ export default function WhiteboardCanvas({
           type: 'wb:auth',
           ...(token ? { token } : {}),
           ...(hostSecret ? { hostSecret } : {}),
-          ...(!token && signedIn ? { signedIn: true } : {}),
+          ...(signedIn ? { signedIn: true } : {}),
         }),
       )
-      authSentRef.current = true
+      lastAuthTokenSent = token
+      if (token || !signedIn) authSentRef.current = true
       // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
       resubscribeFollowRef.current()
       // Push anything drawn while the socket was down / auth was pending.
@@ -429,11 +445,51 @@ export default function WhiteboardCanvas({
     }
 
     /**
-     * Send `wb:auth` as soon as Clerk has settled, then keep retrying in the
-     * background until a real JWT exists. Auth never blocks the socket or the
-     * canvas: the server sends the full scene on connect, and a late token
-     * upgrades the role in place via `wb:role`.
+     * Send `wb:auth` as soon as Clerk has settled, then keep retrying until the
+     * server greets this socket. Auth never blocks the socket or the canvas:
+     * the server sends the full scene on connect, and a token accepted later
+     * upgrades the role in place via `wb:role`. Retries back off and give up
+     * rather than polling Clerk once a second forever — a classroom of stuck
+     * tabs doing that is how boards started taking a minute to load.
      */
+    const scheduleAuthRetry = (ws: WebSocket, delay: number) => {
+      authRetryTimer = window.setTimeout(() => {
+        authRetryTimer = null
+        if (cancelled || wsRef.current !== ws || helloOnSocketRef.current) return
+        if (!isSignedIn()) {
+          sendAuthFrame(ws, '')
+          return
+        }
+        if (Date.now() - authStartedAt > AUTH_RETRY_GIVE_UP_MS) {
+          apiRef.current?.setToast?.({
+            message:
+              'Sign-in is taking too long. Reload the page to edit this board.',
+            duration: 10000,
+            closable: true,
+          })
+          return
+        }
+        if (authFetchInFlight) {
+          scheduleAuthRetry(ws, delay)
+          return
+        }
+        authFetchInFlight = true
+        void getSessionToken()
+          .then((value) => {
+            const token = value?.trim() ?? ''
+            if (cancelled || wsRef.current !== ws) return
+            if (token && token !== lastAuthTokenSent) sendAuthFrame(ws, token)
+          })
+          .finally(() => {
+            authFetchInFlight = false
+            if (cancelled || wsRef.current !== ws || helloOnSocketRef.current) {
+              return
+            }
+            scheduleAuthRetry(ws, Math.min(delay * 2, AUTH_RETRY_MAX_MS))
+          })
+      }, delay)
+    }
+
     const sendConnectAuth = async (ws: WebSocket) => {
       await whenAuthReady()
       if (cancelled || wsRef.current !== ws) return
@@ -441,29 +497,10 @@ export default function WhiteboardCanvas({
         ? ((await waitForSessionToken(6, 100))?.trim() ?? '')
         : ''
       if (cancelled || wsRef.current !== ws) return
+      authStartedAt = Date.now()
       sendAuthFrame(ws, first)
-      if (first || !isSignedIn()) return
-
-      authRetryTimer = window.setInterval(() => {
-        if (cancelled || wsRef.current !== ws) {
-          if (authRetryTimer != null) window.clearInterval(authRetryTimer)
-          authRetryTimer = null
-          return
-        }
-        if (!isSignedIn()) {
-          if (authRetryTimer != null) window.clearInterval(authRetryTimer)
-          authRetryTimer = null
-          sendAuthFrame(ws, '')
-          return
-        }
-        void getSessionToken().then((value) => {
-          const token = value?.trim() ?? ''
-          if (!token || cancelled || wsRef.current !== ws) return
-          if (authRetryTimer != null) window.clearInterval(authRetryTimer)
-          authRetryTimer = null
-          sendAuthFrame(ws, token)
-        })
-      }, AUTH_RETRY_MS)
+      if (!isSignedIn()) return
+      scheduleAuthRetry(ws, AUTH_RETRY_MS)
     }
 
     const connect = () => {
@@ -481,6 +518,8 @@ export default function WhiteboardCanvas({
       })
 
       authSentRef.current = false
+      helloOnSocketRef.current = false
+      lastAuthTokenSent = ''
       clearAuthRetry()
       const ws = new WebSocket(uri)
       wsRef.current = ws
@@ -531,6 +570,12 @@ export default function WhiteboardCanvas({
           return
         }
         lastSocketJsAt = Date.now()
+
+        if (data.type === 'wb:hello') {
+          helloOnSocketRef.current = true
+          authSentRef.current = true
+          clearAuthRetry()
+        }
 
         if (data.type === 'wb:error') {
           const message =
@@ -637,6 +682,11 @@ export default function WhiteboardCanvas({
         window.clearTimeout(flushTimerRef.current)
         flushTimerRef.current = null
       }
+      // Version bookkeeping belongs to the old instance. Left in place, the new
+      // empty instance's first onChange looks like a real edit and queues an
+      // empty snapshot that a later forceFull flush would push as the scene.
+      lastSceneVersionRef.current = 0
+      lastElementVersionsRef.current.clear()
       unsubUserFollowRef.current?.()
       unsubUserFollowRef.current = api.onUserFollow((payload) => {
         onUserFollowRef.current(payload)
