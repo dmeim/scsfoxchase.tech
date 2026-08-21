@@ -259,7 +259,10 @@ type ClerkLikeUser = {
  */
 export function identityFromClerkUser(user: ClerkLikeUser): WhiteboardIdentity {
 	const google = user.externalAccounts?.find(
-		(account) => account.provider === 'google',
+		(account) => {
+			const provider = (account.provider || '').toLowerCase()
+			return provider === 'google' || provider === 'oauth_google'
+		},
 	)
 	const googleSub =
 		(google?.providerUserId || google?.externalId || '').trim() || null

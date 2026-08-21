@@ -1570,9 +1570,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	/**
 	 * Recents is an R2 index, not Owner proof — except when the DO has no
-	 * Google owner yet (pre-claim library PUT). Then Clerk + boards.json
-	 * membership backfills `cloudOwnerKey`. Also rewrite google:{clerkUserId}
-	 * → google:{sub}. Does not let leftover host steal an existing owner.
+	 * owner yet (pre-claim library PUT). Then Clerk + boards.json membership
+	 * backfills `cloudOwnerKey`. Also rewrite google:{clerkUserId} →
+	 * google:{sub}. Does not overwrite an existing Google owner.
 	 */
 	private async syncCloudOwnerFromClerk(
 		auth: ClerkWhiteboardAuth,

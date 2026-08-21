@@ -226,6 +226,48 @@ async function readSavedToLibrary(
 }
 
 /**
+ * Hub Recents PUT after host is cleared. GET meta reveals `cloudOwnerKey`
+ * only to the matching Owner — so this is not "any signed-in user + UUID".
+ */
+async function clerkRequestOwnsSavedBoard(
+	env: Env,
+	request: Request,
+	boardId: string,
+	ownerKey: string,
+): Promise<boolean> {
+	const id = env.WHITEBOARDS.idFromName(boardId)
+	const stub = env.WHITEBOARDS.get(id)
+	const res = await stub.fetch(
+		new Request(boardMetaUrl(request, boardId).toString(), {
+			method: 'GET',
+			headers: patchHeaders(request),
+		}),
+	)
+	if (!res.ok) return false
+	try {
+		const body = (await res.json()) as {
+			savedToLibrary?: unknown
+			cloudOwnerKey?: unknown
+		}
+		if (body.savedToLibrary !== true) return false
+		if (typeof body.cloudOwnerKey !== 'string' || !body.cloudOwnerKey) {
+			return false
+		}
+		if (body.cloudOwnerKey === ownerKey) return true
+		const suffix = body.cloudOwnerKey.startsWith('google:')
+			? body.cloudOwnerKey.slice('google:'.length)
+			: body.cloudOwnerKey
+		return (
+			ownerKey === `google:${suffix}` ||
+			ownerKey === suffix ||
+			`google:${ownerKey}` === body.cloudOwnerKey
+		)
+	} catch {
+		return false
+	}
+}
+
+/**
  * Lift the 24h scratch TTL on the Durable Object. Fails closed unless
  * `savedToLibrary` is true — the library PUT must not succeed as durable
  * while the unsaved alarm is still armed. PATCH 403s until the creating
@@ -240,8 +282,15 @@ async function tryMarkSavedToLibrary(
 	const hostSecret = request.headers.get('X-Board-Host')?.trim()
 	if (!hostSecret) {
 		try {
-			if (await readSavedToLibrary(env, request, boardId)) {
+			if (await clerkRequestOwnsSavedBoard(env, request, boardId, ownerKey)) {
 				return { ok: true }
+			}
+			if (await readSavedToLibrary(env, request, boardId)) {
+				return {
+					ok: false,
+					status: 403,
+					error: 'Only the Owner can add this saved board to your library.',
+				}
 			}
 		} catch {
 			// Fall through to fail closed.
