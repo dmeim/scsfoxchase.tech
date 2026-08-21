@@ -4,7 +4,7 @@ Live document sync, media uploads, and where whiteboard data lives.
 
 ## Overview
 
-Each board UUID maps to one **Durable Object** (`WhiteboardBoard`). Clients open a **native WebSocket** (not `@tldraw/sync`). The DO persists plaintext Excalidraw `{ elements, appState }` from `serializeAsJSON(..., "database")` in SQLite table `excalidraw_scene`. Image/GIF bytes and MP4/WebM files go to **R2** keyed by Excalidraw `fileId`. Signed-in library indexes are JSON objects in the same bucket.
+Each board UUID maps to one **Durable Object** (`WhiteboardBoard`). Clients open a **native WebSocket** (not `@tldraw/sync`). The DO persists plaintext Excalidraw `{ elements, appState }` in SQLite table `excalidraw_scene` as one `scene_json` TEXT value. Clients include `databaseJson` from `serializeAsJSON(..., {}, "database")` so `files` is always `{}`; binaries live in R2, not in the scene JSON. Image/GIF bytes and MP4/WebM files go to **R2** keyed by Excalidraw `fileId`. Signed-in library indexes are JSON objects in the same bucket.
 
 Do not use `excalidraw-room`, Firebase, `oss-collab`, Liveblocks, or Yjs for this product.
 
@@ -15,8 +15,8 @@ Do not use `excalidraw-room`, Firebase, `oss-collab`, Liveblocks, or Yjs for thi
 `src/components/WhiteboardCanvas.tsx` + `src/lib/whiteboard-sync.ts`:
 
 1. `buildWhiteboardConnectUrl` → `/api/whiteboard/connect/{uuid}?sessionId=…`
-2. On change, debounce ~1s (`SCENE_FLUSH_MS`), send `scene:update` with elements whose `version` increased; periodically send a full set.
-3. Incoming `scene:sync` / `scene:update`: `restoreElements` + `reconcileElements`, then `updateScene({ captureUpdate: NEVER })`.
+2. On change, debounce ~1s (`SCENE_FLUSH_MS`), send `scene:update` with elements whose `version` increased; periodically send a full set. Each flush includes `databaseJson` from `serializeAsJSON(elements, appState, {}, "database")` (`files: {}`).
+3. Incoming `scene:sync` / `scene:update`: `restoreElements` + `reconcileElements`, then `updateScene({ captureUpdate: NEVER })`. Incoming `wb:error` shows an Excalidraw toast; that change was not stored.
 4. Client ping every 25s (`{"type":"ping"}`); DO auto-responds `pong` without waking JS.
 
 Connect URL query params:
@@ -24,9 +24,10 @@ Connect URL query params:
 | Param | Purpose |
 |-------|---------|
 | `sessionId` | Required; stored in `sessionStorage` per board so refresh keeps the same session |
-| `hostSecret` | Present when this browser created the board → ephemeral Owner on scratch boards |
 | `displayName` | Google full name, or a generated guest name |
-| `userId` | Google account id, or `deviceInstallId` for guests (Follow target) |
+| `userId` | Guest device-install UUID only (Follow target). Signed-in identity is not put on the query string |
+
+Scratch **host proof** (`hostSecret`) and Clerk JWT are the first WebSocket message (`wb:auth`). The Durable Object also accepts `X-Board-Host` on the upgrade request. Do not put `hostSecret` on the connect query string (access logs). HTTP privileged calls still send host proof as `X-Board-Host` / `Authorization: Bearer`, not as a WebSocket URL param.
 
 ### Worker routing
 
@@ -42,11 +43,26 @@ The PWA service worker (`public/sw.js`) **never intercepts `/api/*`**, so this u
 
 `src/worker/WhiteboardBoard.ts`:
 
-- Storage: SQLite `excalidraw_scene` (`database_json` + `live_json`).
+- Storage: SQLite `excalidraw_scene` — one row (`id = 1`) with a single `scene_json` TEXT column (`{ elements, appState }`) plus `updated_at`.
+- Persist: `persistScene` UPSERTs `scene_json`. Caps from `src/lib/whiteboard-sync.ts`: `MAX_SCENE_ELEMENTS` (4000) and `MAX_SCENE_JSON_BYTES` (2_000_000, string length of the JSON). Incoming `scene:update` uses `parseSceneElements` (overflow throws). Stored reads use `parseStoredSceneElements` so an already-oversize board is not trimmed on load.
+- Fail-closed: oversize or SQLite failure throws `ScenePersistError`. The DO sends `wb:error` (`scene_too_large` or `persist_failed`) to the writer and other Editors and **does not** `broadcastScene` that update. The in-memory cache is written only after a successful UPSERT.
 - Merge: last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
 - Hibernation: WebSocket auto-response for ping/pong; session snapshots on socket attachments; resume on wake.
 - Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `roleCanEdit` is false.
+- Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner, already stored as Editor/Manager, or they join with the active share code while **Group Edit** is On (`meta:classCanEdit`) — then they land as **Editor**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
 - Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
+
+Live schema (`SCENE_TABLE_SQL`):
+
+```sql
+CREATE TABLE IF NOT EXISTS excalidraw_scene (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  scene_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+)
+```
+
+Older Durable Object SQLite used `database_json` + `live_json` on the same row. That pair can exceed the platform per-row limit even when each value is under `MAX_SCENE_JSON_BYTES`. The constructor runs `migrateExcalidrawSceneTable`: copy `live_json` (else `{ elements, appState }` from `database_json`) into `scene_json` via a temporary `excalidraw_scene_v2` rename, then drop the dual-column table. Those old column names are not the live schema.
 
 Custom messages the DO sends to connected clients:
 
@@ -55,6 +71,7 @@ Custom messages the DO sends to connected clients:
 | `wb:hello` | `{ sessionId, role, canEdit, authToken, owner, … }` | Session identity for the manage panel |
 | `wb:participants` | `{ yourSessionId, yourRole, participants[] }` | People list |
 | `wb:role` | `{ role, canEdit }` | Role change for this session |
+| `wb:error` | `{ code, message }` | Persist failed (`scene_too_large` or `persist_failed`). Last change was not stored or broadcast |
 | `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Follow Me — lock follower cameras to the target |
 | `wb:sceneBounds` | `{ socketId, bounds }` | Leader viewport; voluntary Follow uses this until pan unfollows; Follow Me snaps to cached bounds |
 
@@ -73,7 +90,7 @@ Owner keys on canvas files:
 | Signed-in **saved** board | `google:{accountId}` |
 | Unsaved / signed-out scratch | `temp:{boardId}` (24h) |
 
-`local:{deviceInstallId}` is still accepted by the asset API for leftover hub uploads; the live canvas path uses `temp:` / `google:`.
+Canvas files use `temp:` / `google:` only (`assets/{ownerKey}/{fileId}`). The Worker still accepts `local:*` keys for leftover objects; that prefix is not a live hub upload path. PUT/DELETE on `temp:*` / `local:*` require a host secret or a live can-edit session.
 
 ### HTTP API
 
@@ -81,7 +98,7 @@ Owner keys on canvas files:
 
 | Method | Auth | Behavior |
 |--------|------|----------|
-| `PUT` | `google:*` requires Clerk session whose `ownerKey` matches; `temp:*` / `local:*` are capability-URL (unguessable UUIDs) | Upload body (max **8 MB**) |
+| `PUT` | `google:*` requires Clerk session whose `ownerKey` matches; `temp:*` / `local:*` require host secret or a live can-edit session | Upload body (max **8 MB**) |
 | `GET` / `HEAD` | Public if key known | Stream object; long cache. Expired `temp:*` objects 404 |
 | `DELETE` | Same write rules as PUT | Delete object |
 | `POST /api/whiteboard/assets/claim` | Clerk | Move `temp:{boardId}` → `google:{id}` after Save |
@@ -101,11 +118,11 @@ Player page: `src/pages/whiteboard-player.astro`. Worker sets `X-Frame-Options: 
 
 ### Hub Assets index (metadata)
 
-Separate from R2 binaries. **Signed-in cloud only** — Recents/Assets/Library are hidden when signed out.
+Separate from R2 binaries. Canvas PUT writes the object only; it does **not** upsert `assets.json`. The hub **Assets** strip is hidden until that index write exists, so it is not presented as a class media library.
 
-- R2 JSON `library/{ownerKey}/assets.json` via `/api/whiteboard/library/assets`
+- R2 JSON `library/{ownerKey}/assets.json` via `/api/whiteboard/library/assets` (API still exists for leftover rows)
 - Index entries include `id`, `title`, `mimeType`, `r2Key`, `ownerKey`, timestamps, optional `sourceBoardIds`
-- Deleting from the hub removes the index row and best-effort deletes the R2 object
+- Recents / Library are signed-in cloud only; signed-out lists stay hidden
 
 ## Cloud library board index
 

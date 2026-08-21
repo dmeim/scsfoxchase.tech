@@ -11,37 +11,56 @@ import { DurableObject } from 'cloudflare:workers'
 import { generateGuestDisplayName } from '../lib/whiteboard-display-name'
 import {
 	FULL_RESYNC_EVERY,
+	MAX_SCENE_ELEMENTS,
 	MAX_SCENE_JSON_BYTES,
 	META_BOARD_ID_KEY,
+	META_CLASS_CAN_EDIT_KEY,
 	META_CLOUD_OWNER_KEY,
 	META_CREATED_AT_KEY,
 	META_SAVED_TO_LIBRARY_KEY,
 	META_TEMP_ASSET_PREFIX_KEY,
 	META_UNSAVED_EXPIRES_AT_KEY,
 	UNSAVED_BOARD_TTL_MS,
+	asScenePersistError,
 	canAssignRole,
 	isAssignableRole,
 	isWhiteboardRole,
+	isGuestConnectUserId,
 	mergeSceneElements,
 	parseDatabaseScene,
 	parseSceneElements,
+	parseStoredSceneElements,
 	roleCanEdit,
+	sceneTooLargeError,
 	type AssignableRole,
+	type BoardPublicMeta,
 	type OwnerHook,
 	type SceneAppState,
 	type SceneElement,
+	type ScenePersistError,
 	type WhiteboardRole,
 } from '../lib/whiteboard-sync'
 import {
+	tryClerkWhiteboardAuth,
+	verifyClerkWhiteboardToken,
+	type ClerkWhiteboardAuth,
+} from './clerkAuth'
+import { libraryIndexContainsBoard } from './libraryRoutes'
+import {
 	isExpiredIso,
 	kvCodeKey,
+	normalizeShareCode,
 	sampleShareCode,
 	SHARE_CODE_TTL_MS,
 	SHARE_CODE_TTL_SECONDS,
 } from './shareCode'
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
+const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
 const FORCE_FOLLOW_KEY = 'meta:forceFollow'
+const META_TITLE_KEY = 'meta:title'
+const MAX_BOARD_TITLE_LENGTH = 80
+const DEFAULT_BOARD_TITLE = 'Untitled board'
 // PHASE 3.3
 const ROLES_KEY = 'meta:roles'
 const ACTIVE_CODE_KEY = 'meta:activeCode'
@@ -196,6 +215,17 @@ interface SocketAttachment {
 	role: WhiteboardRole
 	authToken: string
 	meta: SessionMeta
+	/** Waiting for first-message Clerk / host proof (`wb:auth`). */
+	pendingClerkAuth?: boolean
+	connectOrigin?: string
+	/** Cookie Clerk from the upgrade request; first-message token wins. */
+	connectClerkAuth?: ClerkWhiteboardAuth
+	/** Voluntary Follow target; survives hibernation with the socket. */
+	followTargetSessionId?: string
+	/** Presented the active share code on connect (cookie). Not a stored role. */
+	joinedViaShareCode?: boolean
+	/** Board UUID from the connect URL (Durable Object name). */
+	boardId?: string
 }
 
 // PHASE 3.3
@@ -240,6 +270,12 @@ function json(status: number, body: unknown): Response {
 	})
 }
 
+function sanitizeBoardTitle(value: unknown): string | null {
+	if (typeof value !== 'string') return null
+	const cleaned = value.replace(/\s+/g, ' ').trim().slice(0, MAX_BOARD_TITLE_LENGTH)
+	return cleaned || null
+}
+
 function sanitizeDisplayName(raw: string | null): string {
 	if (!raw) return ''
 	return raw.trim().slice(0, 48)
@@ -247,7 +283,17 @@ function sanitizeDisplayName(raw: string | null): string {
 
 function sanitizeUserId(raw: string | null): string {
 	if (!raw) return ''
-	return raw.trim().slice(0, 128)
+	const value = raw.trim().slice(0, 128)
+	if (!value || /^google:/i.test(value) || !isGuestConnectUserId(value)) {
+		return ''
+	}
+	return value
+}
+
+function looksLikeJwt(raw: string | null): boolean {
+	if (!raw) return false
+	const parts = raw.trim().split('.')
+	return parts.length === 3 && raw.trim().length > 40
 }
 
 function sanitizeOwnerKey(raw: string | null | undefined): string | null {
@@ -265,6 +311,66 @@ function sanitizeAssetPrefix(raw: string | null | undefined): string | null {
 	return value
 }
 
+const BOARD_UUID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PLAYER_OWNER_KEY_RE = /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/
+
+function parsePersistedPlayerLink(
+	link: unknown,
+): { ownerKey: string; fileId: string } | null {
+	if (typeof link !== 'string' || !link) return null
+	let url: URL
+	try {
+		url = new URL(link, 'https://scsfoxchase.tech')
+	} catch {
+		return null
+	}
+	if (url.pathname !== '/whiteboard-player') return null
+	const ownerKey = url.searchParams.get('owner') || ''
+	const fileId = url.searchParams.get('id') || ''
+	if (!PLAYER_OWNER_KEY_RE.test(ownerKey) || !BOARD_UUID_RE.test(fileId)) {
+		return null
+	}
+	return { ownerKey, fileId }
+}
+
+function rewritePlayerLinkOwner(link: string, nextOwner: string): string {
+	const url = new URL(link, 'https://scsfoxchase.tech')
+	url.searchParams.set('owner', nextOwner)
+	return `/whiteboard-player?${url.searchParams.toString()}`
+}
+
+/** Persist `owner=temp:{boardId}` embeddable player URLs as `google:` (keep `id=`). */
+function rewriteTempPlayerUrlsInElements(
+	elements: SceneElement[],
+	tempOwner: string,
+	googleOwner: string,
+): { elements: SceneElement[]; rewritten: number } {
+	let rewritten = 0
+	const next = elements.map((el) => {
+		if (el.type !== 'embeddable') return el
+		const parsed = parsePersistedPlayerLink(el.link)
+		if (!parsed || parsed.ownerKey !== tempOwner) return el
+		rewritten += 1
+		return {
+			...el,
+			link: rewritePlayerLinkOwner(String(el.link), googleOwner),
+			version: el.version + 1,
+		}
+	})
+	return { elements: next, rewritten }
+}
+
+function isClerkWhiteboardAuth(value: unknown): value is ClerkWhiteboardAuth {
+	if (!value || typeof value !== 'object') return false
+	const row = value as Partial<ClerkWhiteboardAuth>
+	return (
+		typeof row.accountId === 'string' &&
+		typeof row.ownerKey === 'string' &&
+		typeof row.clerkUserId === 'string'
+	)
+}
+
 /** Normalize attachments from older deploys that lacked canEdit/meta/role. */
 function normalizeAttachment(
 	raw: Partial<SocketAttachment> | null | undefined,
@@ -280,9 +386,9 @@ function normalizeAttachment(
 		? raw.role
 		: isHost
 			? 'owner'
-			: raw?.canEdit === false
-				? 'viewer'
-				: 'editor'
+			: raw?.canEdit === true
+				? 'editor'
+				: 'viewer'
 	return {
 		sessionId: raw?.sessionId ?? sessionId,
 		isHost,
@@ -294,7 +400,46 @@ function normalizeAttachment(
 			userId: meta.userId ?? '',
 			isHost: Boolean(meta.isHost || isHost),
 		},
+		pendingClerkAuth: Boolean(raw?.pendingClerkAuth),
+		connectOrigin:
+			typeof raw?.connectOrigin === 'string' ? raw.connectOrigin : '',
+		connectClerkAuth: isClerkWhiteboardAuth(raw?.connectClerkAuth)
+			? raw.connectClerkAuth
+			: undefined,
+		followTargetSessionId:
+			typeof raw?.followTargetSessionId === 'string' &&
+			raw.followTargetSessionId
+				? raw.followTargetSessionId
+				: undefined,
+		joinedViaShareCode: Boolean(raw?.joinedViaShareCode),
+		boardId: typeof raw?.boardId === 'string' ? raw.boardId : '',
 	}
+}
+
+function readCookieValue(header: string | null, name: string): string {
+	if (!header || !name) return ''
+	for (const part of header.split(';')) {
+		const idx = part.indexOf('=')
+		if (idx < 0) continue
+		if (part.slice(0, idx).trim() !== name) continue
+		try {
+			return decodeURIComponent(part.slice(idx + 1).trim())
+		} catch {
+			return part.slice(idx + 1).trim()
+		}
+	}
+	return ''
+}
+
+function joinCodeFromConnectRequest(request: Request, boardId: string): string {
+	return (
+		normalizeShareCode(
+			readCookieValue(
+				request.headers.get('Cookie'),
+				`${JOIN_CODE_COOKIE_PREFIX}${boardId}`,
+			),
+		) ?? ''
+	)
 }
 
 function sendJson(ws: WebSocket, payload: unknown): void {
@@ -310,9 +455,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
 	/** Cached force-follow flag (null until first storage read). */
 	private forceFollowCache: StoredForceFollow | null = null
-	/** PHASE 3.3: followerSessionId → targetSessionId (in-memory; clients resubscribe). */
+	/** followerSessionId → targetSessionId; restored from socket attachments after hibernation. */
 	private readonly voluntaryFollow = new Map<string, string>()
 	private socketsHydrated = false
+	/** After a wake, rebroadcast Follow Me to sockets that never disconnected. */
+	private forceFollowNeedsRebroadcast = false
 	private sceneCache: LiveScene | null = null
 	private sceneLoaded = false
 	private updatesSinceFullSync = 0
@@ -335,6 +482,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private resetLiveState(): void {
 		this.forceFollowCache = null
 		this.voluntaryFollow.clear()
+		this.forceFollowNeedsRebroadcast = false
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
 		this.updatesSinceFullSync = 0
@@ -377,10 +525,101 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		})
 	}
 
+	/**
+	 * Asset PUT/DELETE gate used by assetRoutes. Accepts the creating host
+	 * secret or a live can-edit WebSocket session. Does not mint a host hash.
+	 */
+	async assertAssetWriteAccess(opts: {
+		hostSecret?: string | null
+		sessionId?: string | null
+		authToken?: string | null
+	}): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+		this.hydrateSockets()
+		const hostSecret =
+			typeof opts.hostSecret === 'string' ? opts.hostSecret.trim() : ''
+		if (hostSecret && (await this.assertHost(hostSecret))) {
+			return { ok: true }
+		}
+		const sessionId =
+			typeof opts.sessionId === 'string' ? opts.sessionId.trim() : ''
+		const authToken =
+			typeof opts.authToken === 'string' ? opts.authToken.trim() : ''
+		if (sessionId && authToken) {
+			const ws = this.sessionIdToWs.get(sessionId)
+			if (ws) {
+				const attachment = normalizeAttachment(
+					ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+					sessionId,
+				)
+				if (
+					attachment.authToken &&
+					attachment.authToken === authToken &&
+					(attachment.canEdit || roleCanEdit(attachment.role))
+				) {
+					return { ok: true }
+				}
+			}
+		}
+		const presented = Boolean(hostSecret || (sessionId && authToken))
+		return {
+			ok: false,
+			status: presented ? 403 : 401,
+			error: presented
+				? "Not allowed to write this board's assets"
+				: 'Host secret or editor session required',
+		}
+	}
+
+	/**
+	 * After claim copies temp→google, rewrite persisted `/whiteboard-player`
+	 * URLs in `scene_json`. Persist uses the same fail-closed path as live
+	 * edits (throw, `wb:error`, no broadcast). Does not delete R2 objects.
+	 */
+	async rewriteTempPlayerUrlsAfterClaim(opts: {
+		boardId: string
+		googleOwnerKey: string
+	}): Promise<
+		| { ok: true; rewritten: number }
+		| { ok: false; status: number; error: string; code?: string }
+	> {
+		this.hydrateSockets()
+		const boardId = typeof opts.boardId === 'string' ? opts.boardId.trim() : ''
+		if (!BOARD_UUID_RE.test(boardId)) {
+			return { ok: false, status: 400, error: 'Invalid boardId' }
+		}
+		const key = sanitizeOwnerKey(opts.googleOwnerKey)
+		if (!key || !key.startsWith('google:')) {
+			return { ok: false, status: 400, error: 'Invalid google owner' }
+		}
+		const stored =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (stored && stored.startsWith('google:') && stored !== key) {
+			return {
+				ok: false,
+				status: 403,
+				error: 'Owner does not match this board',
+			}
+		}
+		try {
+			const rewritten = await this.applyTempPlayerUrlRewrite(boardId, key)
+			return { ok: true, rewritten }
+		} catch (err) {
+			const persistErr = asScenePersistError(err)
+			this.notifyScenePersistError('', persistErr)
+			return {
+				ok: false,
+				status: 500,
+				error: persistErr.message,
+				code: persistErr.code,
+			}
+		}
+	}
+
 	/** Rebuild the session map after hibernation. */
 	private hydrateSockets(): void {
 		if (this.socketsHydrated) return
 		this.socketsHydrated = true
+		this.voluntaryFollow.clear()
 		for (const ws of this.ctx.getWebSockets()) {
 			const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
 			if (!raw?.sessionId) continue
@@ -388,6 +627,30 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			ws.serializeAttachment(attachment)
 			this.sessionIdToWs.set(attachment.sessionId, ws)
 		}
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const attachment = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			const target = attachment.followTargetSessionId
+			if (target && this.sessionIdToWs.has(target)) {
+				this.voluntaryFollow.set(sessionId, target)
+			} else if (target) {
+				this.persistVoluntaryFollow(sessionId, null)
+			}
+		}
+		this.forceFollowNeedsRebroadcast = this.sessionIdToWs.size > 0
+	}
+
+	/**
+	 * After hibernation, already-open tabs never got a new `wb:hello`.
+	 * Reload Follow Me from storage and send `wb:forceFollow` to them.
+	 */
+	private async restoreFollowAfterWake(): Promise<void> {
+		if (!this.forceFollowNeedsRebroadcast) return
+		this.forceFollowNeedsRebroadcast = false
+		await this.broadcastForceFollow()
+		await this.refreshFollowedFlags()
 	}
 
 	/**
@@ -395,7 +658,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	 * verify on later connects. Creating browser is ephemeral Owner.
 	 */
 	private async resolveHost(hostSecret: string | null): Promise<boolean> {
-		if (!hostSecret) return false
+		if (!hostSecret || looksLikeJwt(hostSecret)) return false
 		const hash = await sha256Hex(hostSecret)
 		const existing = await this.ctx.storage.get<string>(HOST_SECRET_HASH_KEY)
 		if (!existing) {
@@ -406,14 +669,48 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private async assertHost(hostSecret: string | null): Promise<boolean> {
-		if (!hostSecret) return false
+		if (!hostSecret || looksLikeJwt(hostSecret)) return false
 		const hash = await sha256Hex(hostSecret)
 		const existing = await this.ctx.storage.get<string>(HOST_SECRET_HASH_KEY)
 		return Boolean(existing && existing === hash)
 	}
 
+	/**
+	 * Scratch Owner proof only. After a Google claim, leftover host secrets
+	 * must not count as Owner for a *different* Google account (shared
+	 * Chromebook). Same Clerk owner may still use leftover host after an
+	 * in-flight Recents claim sets `cloudOwnerKey`. `mint` is first-connect
+	 * only — HTTP handlers must not mint a hash.
+	 */
+	private async hostProvesScratchOwner(
+		hostSecret: string | null,
+		opts: { mint: boolean; clerkAuth?: ClerkWhiteboardAuth | null },
+	): Promise<boolean> {
+		const ok = opts.mint
+			? await this.resolveHost(hostSecret)
+			: await this.assertHost(hostSecret)
+		if (!ok) return false
+		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (cloudOwnerKey && cloudOwnerKey.startsWith('google:')) {
+			return Boolean(
+				opts.clerkAuth &&
+					this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey),
+			)
+		}
+		return true
+	}
+
+	/** Header only — never the WebSocket query string (access logs). */
+	private connectHostSecretFromHeader(request: Request): string | null {
+		const header = request.headers.get('X-Board-Host')?.trim()
+		if (!header || looksLikeJwt(header)) return null
+		return header
+	}
+
 	async fetch(request: Request): Promise<Response> {
 		this.hydrateSockets()
+		await this.restoreFollowAfterWake()
 		const url = new URL(request.url)
 		const connectMatch = url.pathname.match(
 			/^\/api\/whiteboard\/connect\/([^/]+)\/?$/i,
@@ -474,15 +771,40 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return new Response('Missing sessionId', { status: 400 })
 		}
 
-		const hostSecret = url.searchParams.get('hostSecret')
-		const isHost = await this.resolveHost(hostSecret)
-		const userId = sanitizeUserId(url.searchParams.get('userId'))
+		const headerHost = this.connectHostSecretFromHeader(request)
+		// Do not resolve Clerk on the upgrade request. Browsers cannot send
+		// Authorization headers on a WebSocket, and a slow Clerk BAPI call
+		// here blocks the 101 handshake and the initial scene:sync. Role is
+		// decided at first-message `wb:auth` (finishPendingConnectAuth).
+		const clerkAuth: ClerkWhiteboardAuth | null = null
+		const isHost = await this.hostProvesScratchOwner(headerHost, {
+			mint: true,
+			clerkAuth,
+		})
+		const guestUserId = sanitizeUserId(url.searchParams.get('userId'))
 		let displayName = sanitizeDisplayName(url.searchParams.get('displayName'))
 		if (!displayName) {
-			displayName = generateGuestDisplayName(userId || sessionId)
+			displayName = generateGuestDisplayName(guestUserId || sessionId)
 		}
-		// PHASE 3.3: default Viewer; Owner from Google cloud owner or scratch host secret.
-		const role = await this.resolveConnectRole(userId, isHost)
+
+		// Always wait for first-message `wb:auth` so scratch host proof can
+		// arrive off the query string (browsers cannot set WS headers).
+		const pendingClerkAuth = true
+		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
+		if (clerkAuth) {
+			displayName = sanitizeDisplayName(clerkAuth.displayName) || displayName
+		}
+		const joinedViaShareCode = await this.presentedJoinCodeIsActive(
+			joinCodeFromConnectRequest(request, boardId),
+		)
+		await this.ensureBoardLifetime(boardId)
+		const role = await this.resolveConnectRole({
+			clerkAuth,
+			guestUserId,
+			isHost,
+			joinedViaShareCode,
+			boardId,
+		})
 		const canEdit = roleCanEdit(role)
 		const authToken = crypto.randomUUID()
 		const meta: SessionMeta = {
@@ -511,31 +833,159 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			role,
 			authToken,
 			meta,
+			pendingClerkAuth,
+			connectOrigin: request.headers.get('Origin') ?? '',
+			connectClerkAuth: clerkAuth ?? undefined,
+			joinedViaShareCode,
+			boardId,
 		}
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
 
-		await this.ensureBoardLifetime(boardId)
-		const owner = await this.readOwnerHook(isHost)
-		const savedToLibrary = await this.isSavedToLibrary()
-		sendJson(serverWebSocket, {
-			type: 'wb:hello',
-			sessionId,
-			isHost,
-			canEdit,
-			savedToLibrary,
-			owner,
-			// PHASE 3.3
-			role,
-			authToken,
-		})
 		await this.sendFullScene(serverWebSocket)
 
+		return new Response(null, { status: 101, webSocket: clientWebSocket })
+	}
+
+	private async sendConnectHello(
+		ws: WebSocket,
+		attachment: SocketAttachment,
+	): Promise<void> {
+		const revealOwnerKey = roleCanEdit(attachment.role)
+		const owner = await this.readOwnerHook(attachment.isHost, revealOwnerKey)
+		const savedToLibrary = await this.isSavedToLibrary()
+		sendJson(ws, {
+			type: 'wb:hello',
+			sessionId: attachment.sessionId,
+			isHost: attachment.isHost,
+			canEdit: attachment.canEdit,
+			savedToLibrary,
+			owner,
+			title: await this.readBoardTitle(),
+			classCanEdit: await this.readClassCanEdit(),
+			role: attachment.role,
+			authToken: attachment.authToken,
+		})
+	}
+
+	/**
+	 * Resolve identity + role from a `wb:auth` payload. Returns null when the
+	 * caller says it is signed in but has no JWT yet — the socket must stay
+	 * pending (client shows "Connecting…") rather than finalize as Viewer and
+	 * lock a real Owner out of the tools.
+	 */
+	private async resolveAuthMessage(
+		attachment: SocketAttachment,
+		data: Record<string, unknown>,
+	): Promise<SocketAttachment | null> {
+		let clerkAuth: ClerkWhiteboardAuth | null =
+			attachment.connectClerkAuth ?? null
+		const rawToken = 'token' in data ? data.token : undefined
+		const token = typeof rawToken === 'string' ? rawToken.trim() : ''
+		if (token) {
+			const fromToken = await verifyClerkWhiteboardToken(
+				token,
+				this.env,
+				attachment.connectOrigin,
+			)
+			if (fromToken) clerkAuth = fromToken
+		}
+		const signedInWithoutClerk = !clerkAuth && data.signedIn === true
+
+		const hostSecret =
+			typeof data.hostSecret === 'string' ? data.hostSecret : ''
+		const isHost =
+			attachment.isHost ||
+			(await this.hostProvesScratchOwner(hostSecret, {
+				mint: true,
+				clerkAuth,
+			}))
+
+		const guestUserId = sanitizeUserId(attachment.meta.userId)
+		const userId = clerkAuth ? clerkAuth.accountId : guestUserId
+		let displayName = attachment.meta.displayName
+		if (clerkAuth) {
+			displayName = sanitizeDisplayName(clerkAuth.displayName) || displayName
+		}
+		const joinedViaShareCode = Boolean(attachment.joinedViaShareCode)
+		const boardId =
+			attachment.boardId ||
+			(await this.ctx.storage.get<string>(META_BOARD_ID_KEY)) ||
+			''
+		const role = await this.resolveConnectRole({
+			clerkAuth,
+			guestUserId,
+			isHost,
+			joinedViaShareCode,
+			boardId,
+		})
+		// Host proof on an unclaimed board already earns Owner, so greeting is
+		// safe. Anything less could be a real Owner whose Clerk session has not
+		// loaded yet — keep that socket pending instead of locking it to Viewer.
+		if (signedInWithoutClerk && !roleCanEdit(role)) return null
+
+		return {
+			...attachment,
+			isHost,
+			role,
+			canEdit: roleCanEdit(role),
+			pendingClerkAuth: false,
+			connectClerkAuth: undefined,
+			joinedViaShareCode,
+			boardId,
+			meta: {
+				...attachment.meta,
+				userId,
+				displayName,
+				isHost,
+			},
+		}
+	}
+
+	private async finishPendingConnectAuth(
+		ws: WebSocket,
+		attachment: SocketAttachment,
+		data: Record<string, unknown>,
+	): Promise<SocketAttachment> {
+		const next = await this.resolveAuthMessage(attachment, data)
+		if (!next) return attachment
+		ws.serializeAttachment(next)
+		await this.sendConnectHello(ws, next)
 		this.broadcastParticipants()
 		void this.broadcastForceFollow()
 		void this.refreshFollowedFlags()
+		return next
+	}
 
-		return new Response(null, { status: 101, webSocket: clientWebSocket })
+	/**
+	 * A second `wb:auth` on an already-greeted socket. Clerk can settle well
+	 * after connect (slow Chromebook, cold Clerk script), so the client
+	 * re-sends once it holds a real JWT. Upgrade in place via `wb:role` —
+	 * one hello per socket, and never downgrade an existing session.
+	 */
+	private async reauthenticateSocket(
+		ws: WebSocket,
+		attachment: SocketAttachment,
+		data: Record<string, unknown>,
+	): Promise<void> {
+		const token = typeof data.token === 'string' ? data.token.trim() : ''
+		const hostSecret =
+			typeof data.hostSecret === 'string' ? data.hostSecret.trim() : ''
+		if (!token && !hostSecret) return
+		const next = await this.resolveAuthMessage(attachment, data)
+		if (!next) return
+		const upgraded = roleCanEdit(next.role) && !roleCanEdit(attachment.role)
+		const identityChanged = next.meta.userId !== attachment.meta.userId
+		if (!upgraded && !identityChanged) return
+		ws.serializeAttachment(next)
+		sendJson(ws, {
+			type: 'wb:role',
+			role: next.role,
+			canEdit: next.canEdit,
+		})
+		this.broadcastParticipants()
+		void this.broadcastForceFollow()
+		void this.refreshFollowedFlags()
 	}
 
 	private async handleMetaHttp(
@@ -545,11 +995,65 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	): Promise<Response> {
 		if (request.method === 'GET') {
 			await this.ensureBoardLifetime(boardId)
-			return json(200, await this.readPublicMeta())
+			const reveal = await this.canRevealCloudOwnerKey(request, url)
+			return json(200, await this.readPublicMeta(reveal))
 		}
 
 		if (request.method !== 'PATCH') {
 			return json(405, { error: 'Method not allowed' })
+		}
+
+		let body: {
+			title?: unknown
+			sessionId?: unknown
+			authToken?: unknown
+			savedToLibrary?: unknown
+			cloudOwnerKey?: unknown
+			tempAssetPrefix?: unknown
+			classCanEdit?: unknown
+		}
+		try {
+			body = (await request.json()) as typeof body
+		} catch {
+			return json(400, { error: 'Invalid JSON body' })
+		}
+
+		const hasTitle = 'title' in body
+		const hasClassCanEdit = typeof body.classCanEdit === 'boolean'
+		const hasLifetimeFields =
+			typeof body.savedToLibrary === 'boolean' ||
+			'cloudOwnerKey' in body ||
+			'tempAssetPrefix' in body
+
+		if (hasTitle || hasClassCanEdit) {
+			const actor = await this.resolveActorFromMeta(url, request, body)
+			if (!actor || (actor.role !== 'owner' && actor.role !== 'manager')) {
+				return json(403, {
+					error: hasTitle
+						? 'Only the Owner or a Manager can rename this board.'
+						: 'Only the Owner or a Manager can change Group Edit.',
+				})
+			}
+			if (hasTitle) {
+				const nextTitle = sanitizeBoardTitle(body.title)
+				if (!nextTitle) {
+					return json(400, { error: 'Enter a board name' })
+				}
+				await this.ctx.storage.put(META_TITLE_KEY, nextTitle)
+				this.broadcastTitle(nextTitle)
+			}
+			if (hasClassCanEdit) {
+				await this.setClassCanEdit(body.classCanEdit === true)
+				await this.syncLiveRolesForClassCanEdit()
+			}
+		}
+
+		if (!hasLifetimeFields) {
+			if (hasTitle || hasClassCanEdit) {
+				await this.ensureBoardLifetime(boardId)
+				return json(200, await this.readPublicMeta(true))
+			}
+			return json(400, { error: 'No meta fields to update' })
 		}
 
 		const hostSecret = url.searchParams.get('hostSecret')
@@ -557,15 +1061,45 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(403, { error: 'Host secret required' })
 		}
 
-		let body: {
-			savedToLibrary?: unknown
-			cloudOwnerKey?: unknown
-			tempAssetPrefix?: unknown
+		const existingOwner =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		const existingGoogle = Boolean(
+			existingOwner && existingOwner.startsWith('google:'),
+		)
+
+		let nextOwner: string | null | undefined
+		if ('cloudOwnerKey' in body) {
+			if (body.cloudOwnerKey === null) {
+				nextOwner = null
+			} else if (typeof body.cloudOwnerKey === 'string') {
+				const key = sanitizeOwnerKey(body.cloudOwnerKey)
+				if (!key) return json(400, { error: 'Invalid cloudOwnerKey' })
+				nextOwner = key
+			}
 		}
-		try {
-			body = (await request.json()) as typeof body
-		} catch {
-			return json(400, { error: 'Invalid JSON body' })
+
+		const ownerChanging =
+			nextOwner !== undefined && nextOwner !== existingOwner
+		if (ownerChanging && existingGoogle) {
+			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+			if (!clerkAuth || !this.clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
+				return json(403, {
+					error: 'Host secret cannot change the Google owner of a saved board',
+				})
+			}
+		}
+
+		if (
+			typeof body.savedToLibrary === 'boolean' &&
+			body.savedToLibrary === false &&
+			existingGoogle
+		) {
+			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+			if (!clerkAuth || !this.clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
+				return json(403, {
+					error: 'Host secret cannot unsaved a Google-owned board',
+				})
+			}
 		}
 
 		if (typeof body.savedToLibrary === 'boolean') {
@@ -583,13 +1117,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 		}
 
-		if ('cloudOwnerKey' in body) {
-			if (body.cloudOwnerKey === null) {
+		if (ownerChanging) {
+			if (nextOwner === null) {
 				await this.ctx.storage.delete(META_CLOUD_OWNER_KEY)
-			} else if (typeof body.cloudOwnerKey === 'string') {
-				const key = sanitizeOwnerKey(body.cloudOwnerKey)
-				if (!key) return json(400, { error: 'Invalid cloudOwnerKey' })
-				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, key)
+			} else if (typeof nextOwner === 'string') {
+				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, nextOwner)
 			}
 		}
 
@@ -604,19 +1136,88 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		await this.scheduleNextAlarm()
-		return json(200, await this.readPublicMeta())
+
+		const savedNow = await this.isSavedToLibrary()
+		const googleNow =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (savedNow && googleNow && googleNow.startsWith('google:')) {
+			try {
+				await this.applyTempPlayerUrlRewrite(boardId, googleNow)
+			} catch (err) {
+				const persistErr = asScenePersistError(err)
+				this.notifyScenePersistError('', persistErr)
+				return json(500, {
+					error: persistErr.message,
+					code: persistErr.code,
+				})
+			}
+		}
+
+		return json(200, await this.readPublicMeta(true))
 	}
 
-	private async readPublicMeta(): Promise<{
-		savedToLibrary: boolean
-		cloudOwnerKey: string | null
-		createdAt: string | null
-		unsavedExpiresAt: string | null
-		owner: OwnerHook
-	}> {
-		const savedToLibrary = await this.isSavedToLibrary()
+	/**
+	 * `google:` prefix for canvas PUT. Unsigned GET and Viewer sessions stay
+	 * hidden. Live Owner/Manager/Editor (session token) or Clerk Owner /
+	 * stored Manager/Editor may see it. Scratch host proof still reveals.
+	 */
+	private async canRevealCloudOwnerKey(
+		request: Request,
+		url: URL,
+	): Promise<boolean> {
+		const hostSecret = url.searchParams.get('hostSecret')
+		if (await this.assertHost(hostSecret)) {
+			return true
+		}
+		const actor = await this.resolveActorFromMeta(url, request, {})
+		if (actor && roleCanEdit(actor.role)) {
+			return true
+		}
+		const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+		if (!clerkAuth) return false
+		return this.clerkMayRevealCloudOwnerKey(clerkAuth)
+	}
+
+	private async clerkMayRevealCloudOwnerKey(
+		clerkAuth: ClerkWhiteboardAuth,
+	): Promise<boolean> {
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (cloudOwnerKey && this.clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
+			return true
+		}
+		const stored = await this.readStoredRoles()
+		const storedRole =
+			stored[clerkAuth.accountId] ??
+			stored[clerkAuth.ownerKey] ??
+			stored[clerkAuth.clerkUserId]
+		return storedRole === 'manager' || storedRole === 'editor'
+	}
+
+	/**
+	 * Worker meta forwarding copies Authorization Bearer into `hostSecret`.
+	 * Treat JWT-shaped values as Clerk proof, not as a host secret.
+	 */
+	private async tryClerkFromMetaRequest(
+		request: Request,
+		url: URL,
+	): Promise<ClerkWhiteboardAuth | null> {
+		const fromRequest = await tryClerkWhiteboardAuth(request, this.env)
+		if (fromRequest) return fromRequest
+		const forwarded = url.searchParams.get('hostSecret')
+		if (!forwarded || !looksLikeJwt(forwarded)) return null
+		return verifyClerkWhiteboardToken(
+			forwarded,
+			this.env,
+			request.headers.get('Origin'),
+		)
+	}
+
+	private async readPublicMeta(revealCloudOwnerKey: boolean): Promise<BoardPublicMeta> {
+		const savedToLibrary = await this.isSavedToLibrary()
+		const storedKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		const cloudOwnerKey = revealCloudOwnerKey ? storedKey : null
 		return {
 			savedToLibrary,
 			cloudOwnerKey,
@@ -624,19 +1225,102 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			unsavedExpiresAt:
 				(await this.ctx.storage.get<string>(META_UNSAVED_EXPIRES_AT_KEY)) ??
 				null,
-			owner: await this.readOwnerHook(false),
+			title: await this.readBoardTitle(),
+			owner: await this.readOwnerHook(false, revealCloudOwnerKey),
+			classCanEdit: await this.readClassCanEdit(),
 		}
 	}
 
-	private async readOwnerHook(isHost: boolean): Promise<OwnerHook> {
+	private async readBoardTitle(): Promise<string> {
+		return sanitizeBoardTitle(await this.ctx.storage.get<string>(META_TITLE_KEY))
+			?? DEFAULT_BOARD_TITLE
+	}
+
+	private broadcastTitle(title: string): void {
+		for (const ws of this.sessionIdToWs.values()) {
+			sendJson(ws, { type: 'wb:title', title })
+		}
+	}
+
+	/**
+	 * Title / class-can-edit PATCH: live session token, scratch host proof,
+	 * then Clerk Owner (`cloudOwnerKey`) or stored Clerk Manager. Hub rename
+	 * usually has Clerk (worker forwards the JWT as `hostSecret`) and no
+	 * live socket. JWT-shaped values stay Clerk, not host proof.
+	 */
+	private async resolveActorFromMeta(
+		url: URL,
+		request: Request,
+		body: { sessionId?: unknown; authToken?: unknown },
+	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
+		const actorUrl = new URL(url.toString())
+		const sessionId =
+			actorUrl.searchParams.get('actorSessionId') ||
+			request.headers.get('X-Board-Session')?.trim() ||
+			(typeof body.sessionId === 'string' ? body.sessionId.trim() : '')
+		const authToken =
+			actorUrl.searchParams.get('actorAuth') ||
+			request.headers.get('X-Board-Auth')?.trim() ||
+			(typeof body.authToken === 'string' ? body.authToken.trim() : '')
+		if (sessionId) actorUrl.searchParams.set('actorSessionId', sessionId)
+		if (authToken) actorUrl.searchParams.set('actorAuth', authToken)
+		const headerHost = request.headers.get('X-Board-Host')?.trim()
+		if (
+			headerHost &&
+			!looksLikeJwt(headerHost) &&
+			!actorUrl.searchParams.get('hostSecret')
+		) {
+			actorUrl.searchParams.set('hostSecret', headerHost)
+		}
+		const fromLive = await this.resolveActor(actorUrl)
+		if (fromLive) return fromLive
+		return this.resolveClerkOwnerOrManager(request, url)
+	}
+
+	/**
+	 * Share-admin / title PATCH Clerk fallback: Owner via `cloudOwnerKey`,
+	 * or stored Manager. Editors and unsigned stay out (Viewer 403).
+	 */
+	private async resolveClerkOwnerOrManager(
+		request: Request,
+		url: URL,
+	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
+		const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
+		if (!clerkAuth) return null
 		const cloudOwnerKey =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+		if (cloudOwnerKey && this.clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
+			return {
+				role: 'owner',
+				userId: clerkAuth.accountId,
+				sessionId: '',
+			}
+		}
+		const stored = await this.readStoredRoles()
+		const storedRole =
+			stored[clerkAuth.accountId] ??
+			stored[clerkAuth.ownerKey] ??
+			stored[clerkAuth.clerkUserId]
+		if (storedRole !== 'manager') return null
+		return {
+			role: 'manager',
+			userId: clerkAuth.accountId,
+			sessionId: '',
+		}
+	}
+
+	private async readOwnerHook(
+		isHost: boolean,
+		revealCloudOwnerKey = isHost,
+	): Promise<OwnerHook> {
+		const storedKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
 		const saved = await this.isSavedToLibrary()
 		const google =
-			saved && typeof cloudOwnerKey === 'string' && cloudOwnerKey.startsWith('google:')
+			saved && typeof storedKey === 'string' && storedKey.startsWith('google:')
 		return {
 			kind: google ? 'google' : 'ephemeral',
-			cloudOwnerKey,
+			cloudOwnerKey: revealCloudOwnerKey ? storedKey : null,
 			isHost,
 		}
 	}
@@ -674,18 +1358,24 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		try {
 			const live = JSON.parse(raw) as unknown
 			if (Array.isArray(live)) {
-				return { elements: parseSceneElements(live), appState: {} }
+				return { elements: parseStoredSceneElements(live), appState: {} }
 			}
 			if (live && typeof live === 'object') {
 				const rec = live as Record<string, unknown>
 				if (rec.type === 'excalidraw') {
 					const database = parseDatabaseScene(raw)
-					if (database) {
-						return { elements: database.elements, appState: database.appState }
-					}
+					return database
+						? { elements: database.elements, appState: database.appState }
+						: {
+								elements: parseStoredSceneElements(rec.elements),
+								appState:
+									rec.appState && typeof rec.appState === 'object'
+										? (rec.appState as SceneAppState)
+										: {},
+							}
 				}
 				return {
-					elements: parseSceneElements(rec.elements),
+					elements: parseStoredSceneElements(rec.elements),
 					appState:
 						rec.appState && typeof rec.appState === 'object'
 							? (rec.appState as SceneAppState)
@@ -709,15 +1399,14 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				)
 				.toArray()[0]
 			this.sceneCache = row
-				? (this.parseLiveSceneJson(row.scene_json) ?? {
+				? this.parseLiveSceneJson(row.scene_json) ?? {
 						elements: [],
 						appState: {},
-					})
+					}
 				: { elements: [], appState: {} }
 			return this.sceneCache
 		}
 
-		// Pre-migration boards that have not been re-opened yet.
 		const row = columns.has('live_json')
 			? this.ctx.storage.sql
 					.exec<{ live_json: string; database_json: string }>(
@@ -729,7 +1418,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			this.sceneCache = { elements: [], appState: {} }
 			return this.sceneCache
 		}
-		this.sceneCache = this.parseLiveSceneJson(row.live_json) ??
+		this.sceneCache =
+			this.parseLiveSceneJson(row.live_json) ??
 			this.parseLiveSceneJson(row.database_json) ?? {
 				elements: [],
 				appState: {},
@@ -746,22 +1436,62 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private persistScene(scene: LiveScene): void {
-		const sceneJson = JSON.stringify({
+		if (scene.elements.length > MAX_SCENE_ELEMENTS) {
+			throw sceneTooLargeError()
+		}
+		const liveJson = JSON.stringify({
 			elements: scene.elements,
 			appState: scene.appState,
 		})
-		if (sceneJson.length > MAX_SCENE_JSON_BYTES) return
-		this.ctx.storage.sql.exec(
-			`INSERT INTO excalidraw_scene (id, scene_json, updated_at)
-			 VALUES (1, ?, ?)
-			 ON CONFLICT(id) DO UPDATE SET
-			   scene_json = excluded.scene_json,
-			   updated_at = excluded.updated_at`,
-			sceneJson,
-			Date.now(),
-		)
+		if (liveJson.length > MAX_SCENE_JSON_BYTES) {
+			throw sceneTooLargeError()
+		}
+		try {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO excalidraw_scene (id, scene_json, updated_at)
+				 VALUES (1, ?, ?)
+				 ON CONFLICT(id) DO UPDATE SET
+				   scene_json = excluded.scene_json,
+				   updated_at = excluded.updated_at`,
+				liveJson,
+				Date.now(),
+			)
+		} catch (err) {
+			throw asScenePersistError(err)
+		}
 		this.sceneCache = scene
 		this.sceneLoaded = true
+	}
+
+	/**
+	 * Rewrite persisted embeddable player URLs from this board's temp prefix
+	 * to `google:`. No-op when none match. persistScene throws on failure;
+	 * callers must not broadcast until this returns.
+	 */
+	private async applyTempPlayerUrlRewrite(
+		boardId: string,
+		googleOwnerKey: string,
+	): Promise<number> {
+		this.hydrateSockets()
+		const scene = await this.loadScene()
+		const { elements, rewritten } = rewriteTempPlayerUrlsInElements(
+			scene.elements,
+			`temp:${boardId}`,
+			googleOwnerKey,
+		)
+		if (rewritten === 0) return 0
+		const nextScene: LiveScene = { elements, appState: scene.appState }
+		this.persistScene(nextScene)
+		this.updatesSinceFullSync = 0
+		this.broadcastScene(
+			{
+				type: 'scene:sync',
+				elements: nextScene.elements,
+				appState: nextScene.appState,
+			},
+			null,
+		)
+		return rewritten
 	}
 
 	private async sendFullScene(ws: WebSocket): Promise<void> {
@@ -780,6 +1510,27 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		for (const [sessionId, ws] of this.sessionIdToWs) {
 			if (exceptSessionId && sessionId === exceptSessionId) continue
 			sendJson(ws, payload)
+		}
+	}
+
+	private notifyScenePersistError(
+		fromSessionId: string,
+		error: ScenePersistError,
+	): void {
+		const payload = {
+			type: 'wb:error' as const,
+			code: error.code,
+			message: error.message,
+		}
+		const origin = this.sessionIdToWs.get(fromSessionId)
+		if (origin) sendJson(origin, payload)
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			if (sessionId === fromSessionId) continue
+			const attachment = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			if (roleCanEdit(attachment.role)) sendJson(ws, payload)
 		}
 	}
 
@@ -822,23 +1573,200 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 	}
 
+	private clerkOwnerKeys(auth: ClerkWhiteboardAuth): string[] {
+		return [
+			...new Set([
+				auth.ownerKey,
+				`google:${auth.accountId}`,
+				`google:${auth.clerkUserId}`,
+			]),
+		].filter((key) => key.startsWith('google:') && key !== 'google:')
+	}
+
+	/** Recents/DO may store `google:{sub}` while the JWT has `google:{clerkUserId}` (or the reverse). */
+	private clerkMatchesCloudOwner(
+		auth: ClerkWhiteboardAuth,
+		cloudOwnerKey: string | null,
+	): boolean {
+		if (!cloudOwnerKey) return false
+		if (this.clerkOwnerKeys(auth).includes(cloudOwnerKey)) return true
+		const suffix = cloudOwnerKey.startsWith('google:')
+			? cloudOwnerKey.slice('google:'.length)
+			: cloudOwnerKey
+		if (!suffix) return false
+		return (
+			auth.accountId === suffix ||
+			auth.clerkUserId === suffix ||
+			auth.accountId === cloudOwnerKey ||
+			auth.clerkUserId === cloudOwnerKey
+		)
+	}
+
+	private async clerkOwnsLibraryIndex(
+		auth: ClerkWhiteboardAuth,
+		boardId: string,
+	): Promise<boolean> {
+		if (!boardId) return false
+		for (const key of this.clerkOwnerKeys(auth)) {
+			if (await libraryIndexContainsBoard(this.env, key, boardId)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	/**
+	 * Recents is an R2 index, not Owner proof — except when the DO has no
+	 * owner yet (pre-claim library PUT). Then Clerk + boards.json membership
+	 * backfills `cloudOwnerKey`. Also rewrite google:{clerkUserId} →
+	 * google:{sub}. Does not overwrite an existing Google owner.
+	 */
+	private async syncCloudOwnerFromClerk(
+		auth: ClerkWhiteboardAuth,
+		boardId: string,
+	): Promise<void> {
+		const current =
+			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
+
+		if (this.clerkMatchesCloudOwner(auth, current)) {
+			if (current !== auth.ownerKey) {
+				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, auth.ownerKey)
+			}
+			if (!(await this.isSavedToLibrary())) {
+				await this.ctx.storage.put(META_SAVED_TO_LIBRARY_KEY, true)
+				await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+			}
+			return
+		}
+
+		if (current) return
+		if (!(await this.clerkOwnsLibraryIndex(auth, boardId))) return
+
+		await this.ctx.storage.put(META_CLOUD_OWNER_KEY, auth.ownerKey)
+		await this.ctx.storage.put(META_SAVED_TO_LIBRARY_KEY, true)
+		await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+	}
+
 	// PHASE 3.3 — roles + follow (do not replace the Phase 2 scene store above)
-	private async resolveConnectRole(
-		userId: string,
-		isHost: boolean,
-	): Promise<WhiteboardRole> {
+	private async resolveConnectRole(opts: {
+		clerkAuth: ClerkWhiteboardAuth | null
+		guestUserId: string
+		isHost: boolean
+		joinedViaShareCode: boolean
+		boardId: string
+	}): Promise<WhiteboardRole> {
+		if (opts.clerkAuth) {
+			await this.syncCloudOwnerFromClerk(opts.clerkAuth, opts.boardId)
+		}
+
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		if (userId && cloudOwnerKey === `google:${userId}`) return 'owner'
-		if (!cloudOwnerKey && isHost) return 'owner'
-		if (userId) {
+
+		if (opts.clerkAuth) {
+			if (this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey)) {
+				return 'owner'
+			}
 			const stored = await this.readStoredRoles()
-			const role = stored[userId]
+			const storedRole =
+				stored[opts.clerkAuth.accountId] ??
+				stored[opts.clerkAuth.ownerKey] ??
+				stored[opts.clerkAuth.clerkUserId]
+			if (
+				storedRole === 'manager' ||
+				storedRole === 'editor' ||
+				storedRole === 'viewer'
+			) {
+				return storedRole
+			}
+			if (!cloudOwnerKey && opts.isHost) return 'owner'
+			// Group Edit Off must not lock the Google Owner. UUID-only guests
+			// (no Clerk match, no host) stay Viewer via share-code joiner.
+			return this.roleForShareCodeJoiner(opts.joinedViaShareCode)
+		}
+
+		if (!cloudOwnerKey && opts.isHost) return 'owner'
+
+		const guestUserId = opts.guestUserId
+		if (guestUserId && isGuestConnectUserId(guestUserId)) {
+			const stored = await this.readStoredRoles()
+			const role = stored[guestUserId]
 			if (role === 'manager' || role === 'editor' || role === 'viewer') {
 				return role
 			}
 		}
+		return this.roleForShareCodeJoiner(opts.joinedViaShareCode)
+	}
+
+	private async roleForShareCodeJoiner(
+		joinedViaShareCode: boolean,
+	): Promise<WhiteboardRole> {
+		if (joinedViaShareCode && (await this.readClassCanEdit())) {
+			return 'editor'
+		}
 		return 'viewer'
+	}
+
+	private async readClassCanEdit(): Promise<boolean> {
+		return (await this.ctx.storage.get<boolean>(META_CLASS_CAN_EDIT_KEY)) === true
+	}
+
+	private async setClassCanEdit(enabled: boolean): Promise<void> {
+		if (enabled) {
+			await this.ctx.storage.put(META_CLASS_CAN_EDIT_KEY, true)
+			return
+		}
+		await this.ctx.storage.delete(META_CLASS_CAN_EDIT_KEY)
+	}
+
+	private async presentedJoinCodeIsActive(code: string): Promise<boolean> {
+		if (!code) return false
+		const active = await this.readActiveCode()
+		return Boolean(active && active.code === code)
+	}
+
+	/**
+	 * Promote/demote live code-joiners when class-can-edit changes.
+	 * Does not write `meta:roles` — stored Viewer/Editor still wins on reconnect.
+	 */
+	private async syncLiveRolesForClassCanEdit(): Promise<void> {
+		this.hydrateSockets()
+		const enabled = await this.readClassCanEdit()
+		const stored = await this.readStoredRoles()
+		let changed = false
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const prev = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			if (prev.role === 'owner' || prev.role === 'manager' || prev.isHost) {
+				continue
+			}
+			const userId = prev.meta.userId
+			const storedRole = userId ? stored[userId] : undefined
+			if (
+				storedRole === 'manager' ||
+				storedRole === 'editor' ||
+				storedRole === 'viewer'
+			) {
+				continue
+			}
+			const nextRole: WhiteboardRole =
+				enabled && prev.joinedViaShareCode ? 'editor' : 'viewer'
+			if (nextRole === prev.role) continue
+			const next: SocketAttachment = {
+				...prev,
+				role: nextRole,
+				canEdit: roleCanEdit(nextRole),
+			}
+			ws.serializeAttachment(next)
+			sendJson(ws, {
+				type: 'wb:role',
+				role: nextRole,
+				canEdit: next.canEdit,
+			})
+			changed = true
+		}
+		if (changed) this.broadcastParticipants()
 	}
 
 	private async readStoredRoles(): Promise<StoredRoles> {
@@ -1124,6 +2052,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 			sessionId,
 		)
+		if (attachment.pendingClerkAuth) return null
 		return {
 			sessionId,
 			userId: attachment.meta.userId,
@@ -1141,6 +2070,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
 			)
+			if (attachment.pendingClerkAuth) continue
 			rows.push({
 				sessionId,
 				userId: attachment.meta.userId,
@@ -1166,7 +2096,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
-	private handleFollowSubscribe(
+	private persistVoluntaryFollow(
 		fromSessionId: string,
 		targetSessionId: string | null,
 	): void {
@@ -1174,20 +2104,39 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			this.voluntaryFollow.delete(fromSessionId)
 		} else if (this.sessionIdToWs.has(targetSessionId)) {
 			this.voluntaryFollow.set(fromSessionId, targetSessionId)
+		} else {
+			return
 		}
+		const ws = this.sessionIdToWs.get(fromSessionId)
+		if (!ws) return
+		const prev = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			fromSessionId,
+		)
+		ws.serializeAttachment({
+			...prev,
+			followTargetSessionId: targetSessionId || undefined,
+		})
+	}
+
+	private handleFollowSubscribe(
+		fromSessionId: string,
+		targetSessionId: string | null,
+	): void {
+		this.persistVoluntaryFollow(fromSessionId, targetSessionId)
 		void this.refreshFollowedFlags()
 	}
 
-	private relaySceneBounds(
+	private async relaySceneBounds(
 		fromSessionId: string,
 		bounds: [number, number, number, number],
-	): void {
+	): Promise<void> {
 		const payload = {
 			type: 'wb:sceneBounds' as const,
 			socketId: fromSessionId,
 			bounds,
 		}
-		const force = this.forceFollowCache ?? this.emptyForceFollow()
+		const force = await this.getForceFollowState()
 		const fromRow = this.participantFromSession(fromSessionId)
 		for (const [sessionId, ws] of this.sessionIdToWs) {
 			if (sessionId === fromSessionId) continue
@@ -1208,6 +2157,52 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * Share-code GET (secret value) / POST / DELETE: Owner or Manager only.
+	 * Proof is a live session token, scratch host secret, or Clerk Owner /
+	 * stored Manager. Leftover host on a Google-owned board is not enough.
+	 */
+	private async resolveShareCodeActor(
+		request: Request,
+		url: URL,
+	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
+		const actorUrl = new URL(url.toString())
+		const sessionId =
+			actorUrl.searchParams.get('actorSessionId') ||
+			request.headers.get('X-Board-Session')?.trim() ||
+			''
+		const authToken =
+			actorUrl.searchParams.get('actorAuth') ||
+			request.headers.get('X-Board-Auth')?.trim() ||
+			''
+		if (sessionId) actorUrl.searchParams.set('actorSessionId', sessionId)
+		if (authToken) actorUrl.searchParams.set('actorAuth', authToken)
+		const headerHost = request.headers.get('X-Board-Host')?.trim()
+		if (
+			headerHost &&
+			!looksLikeJwt(headerHost) &&
+			!actorUrl.searchParams.get('hostSecret')
+		) {
+			actorUrl.searchParams.set('hostSecret', headerHost)
+		}
+		const fromLive = await this.resolveActor(actorUrl)
+		if (fromLive) return fromLive
+		return this.resolveClerkOwnerOrManager(request, url)
+	}
+
+	private async requireShareCodeAdmin(
+		request: Request,
+		url: URL,
+	): Promise<Response | null> {
+		const actor = await this.resolveShareCodeActor(request, url)
+		if (actor && (actor.role === 'owner' || actor.role === 'manager')) {
+			return null
+		}
+		return json(403, {
+			error: 'Only the Owner or a Manager can manage the share code.',
+		})
+	}
+
 	private async handleCodeHttp(
 		request: Request,
 		url: URL,
@@ -1218,6 +2213,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				error: 'Share codes are not configured on this Worker.',
 			})
 		}
+
+		const denied = await this.requireShareCodeAdmin(request, url)
+		if (denied) return denied
 
 		if (request.method === 'GET') {
 			const state = await this.readActiveCode()
@@ -1440,6 +2438,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
 		this.hydrateSockets()
+		await this.restoreFollowAfterWake()
 		const sessionId = this.getSessionId(ws)
 		if (!sessionId) return
 		this.sessionIdToWs.set(sessionId, ws)
@@ -1453,7 +2452,24 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 		if (!parsed || typeof parsed !== 'object') return
 		const data = parsed as Record<string, unknown>
+		const attachment = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			sessionId,
+		)
+		if (attachment.pendingClerkAuth) {
+			if (data.type !== 'wb:auth') {
+				// Scene/ping/follow must not mint Owner or lock Viewer before
+				// Clerk + host proof arrive. Drop until `wb:auth`.
+				return
+			}
+			await this.finishPendingConnectAuth(ws, attachment, data)
+			return
+		}
 		const type = data.type
+		if (type === 'wb:auth') {
+			await this.reauthenticateSocket(ws, attachment, data)
+			return
+		}
 
 		if (type === 'scene:request') {
 			await this.sendFullScene(ws)
@@ -1476,7 +2492,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				bounds.length === 4 &&
 				bounds.every((n) => typeof n === 'number' && Number.isFinite(n))
 			) {
-				this.relaySceneBounds(
+				await this.relaySceneBounds(
 					sessionId,
 					bounds as [number, number, number, number],
 				)
@@ -1491,18 +2507,27 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			)
 			// PHASE 3.3: Viewers cannot mutate the document (UI + server).
 			if (!roleCanEdit(attachment.role)) return
-			const elements = parseSceneElements(data.elements)
-			const databaseJson =
-				typeof data.databaseJson === 'string' &&
-				data.databaseJson.length <= MAX_SCENE_JSON_BYTES
-					? data.databaseJson
-					: undefined
-			await this.applySceneUpdate(
-				sessionId,
-				elements,
-				databaseJson,
-				data.full === true,
-			)
+			try {
+				if (
+					typeof data.databaseJson === 'string' &&
+					data.databaseJson.length > MAX_SCENE_JSON_BYTES
+				) {
+					throw sceneTooLargeError()
+				}
+				const elements = parseSceneElements(data.elements)
+				const databaseJson =
+					typeof data.databaseJson === 'string'
+						? data.databaseJson
+						: undefined
+				await this.applySceneUpdate(
+					sessionId,
+					elements,
+					databaseJson,
+					data.full === true,
+				)
+			} catch (err) {
+				this.notifyScenePersistError(sessionId, asScenePersistError(err))
+			}
 		}
 	}
 
@@ -1529,9 +2554,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
 		if (!raw?.sessionId) return
 		this.sessionIdToWs.delete(raw.sessionId)
-		this.voluntaryFollow.delete(raw.sessionId)
+		this.persistVoluntaryFollow(raw.sessionId, null)
 		for (const [follower, target] of [...this.voluntaryFollow]) {
-			if (target === raw.sessionId) this.voluntaryFollow.delete(follower)
+			if (target === raw.sessionId) this.persistVoluntaryFollow(follower, null)
 		}
 		this.broadcastParticipants()
 		void this.refreshFollowedFlags()

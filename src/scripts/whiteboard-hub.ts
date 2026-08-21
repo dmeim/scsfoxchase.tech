@@ -20,9 +20,28 @@ import {
   listBoardsActive,
   parseJoinInput,
   removeBoardActive,
-  setBoardTitleActive,
+  renameBoardActive,
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
+
+/** Four-character digit-letter code, `1A2B` form (server `SHARE_CODE_RE`). */
+const HUB_SHARE_CODE_RE = /^([0-9][A-Za-z]){2}$/;
+
+/**
+ * Board URL / UUID via `parseJoinInput`; share codes are `1A2B` form
+ * (digit, letter, digit, letter).
+ */
+function parseHubJoinInput(
+  raw: string,
+): { kind: 'board'; id: string } | { kind: 'code'; code: string } | null {
+  const parsed = parseJoinInput(raw);
+  if (parsed?.kind === 'board') return parsed;
+  const trimmed = raw.trim();
+  if (HUB_SHARE_CODE_RE.test(trimmed)) {
+    return { kind: 'code', code: trimmed.toUpperCase() };
+  }
+  return null;
+}
 
 function cardHtml(entry: WhiteboardLibraryEntry): string {
   const title = escapeHtml(entry.title || 'Untitled board');
@@ -31,7 +50,7 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
   const idAttr = escapeAttr(entry.id);
   const href = `/board/${encodeURIComponent(entry.id)}`;
   const preview = entry.previewDataUrl
-    ? `<img src="${escapeAttr(entry.previewDataUrl)}" alt="" class="wb-card-preview-img" loading="lazy" />`
+    ? `<img src="${escapeAttr(entry.previewDataUrl)}" alt="" class="wb-card-preview-img" />`
     : `<div class="wb-card-preview-placeholder" aria-hidden="true"></div>`;
 
   return `
@@ -199,6 +218,9 @@ const NOTE_SIGNED_OUT =
   'Create works without an account. That scratch board stays live if you refresh, but it is not in a library and is removed after 24 hours if it is never saved. Join by code or link also works signed out. Sign in with Google to Save and keep Recents, Library, and Assets.';
 const NOTE_SIGNED_IN =
   'New boards save to your Google library and you are Owner. A scratch board you created while signed out can be Saved from this account to claim Owner and lift the 24-hour limit. Leaving without Save means the board was never kept in your library — refresh does not erase it.';
+/** Joiners land as Viewer unless Group Edit is On (code join) or People Editor. UUID stays Viewer. */
+const JOIN_VIEW_ONLY_HINT =
+  'Join is view-only unless Group Edit is on, or you set Editor on People. UUID links stay Viewer.';
 
 function setHubNote(message: string) {
   const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');
@@ -455,10 +477,14 @@ function bindCardMenus(root: Element) {
     // Gate on auth-ready so a pre-AuthBridge rename does not miss the cloud library.
     void (async () => {
       await whenAuthReady();
-      if (kind === 'asset') {
-        await setAssetTitleActive(id, nextTitle);
-      } else {
-        await setBoardTitleActive(id, nextTitle);
+      try {
+        if (kind === 'asset') {
+          await setAssetTitleActive(id, nextTitle);
+        } else {
+          await renameBoardActive(id, nextTitle);
+        }
+      } catch {
+        // Live meta:title PATCH failed; Recents was not mirrored.
       }
       closeCardMenus();
       void renderLibrary();
@@ -492,15 +518,24 @@ function initWhiteboardHub() {
   getDeviceInstallId();
 
   const createBtn = root.querySelector<HTMLButtonElement>('[data-wb-create]');
+  const createHint = root.querySelector<HTMLElement>('[data-wb-create-hint]');
   const joinForm = root.querySelector<HTMLFormElement>('[data-wb-join]');
   const joinInput = root.querySelector<HTMLInputElement>('[data-wb-join-input]');
   const joinHint = root.querySelector<HTMLElement>('[data-wb-join-hint]');
 
-  const showActionHint = (message: string) => {
-    if (!joinHint) return;
-    joinHint.hidden = false;
-    joinHint.textContent = message;
+  const setHint = (el: HTMLElement | null, message: string | null) => {
+    if (!el) return;
+    if (!message) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent = message;
   };
+
+  const showCreateHint = (message: string | null) => setHint(createHint, message);
+  const showJoinHint = (message: string | null) => setHint(joinHint, message);
 
   const showAuthPendingUi = () => {
     setCloudListsVisible(false);
@@ -510,6 +545,7 @@ function initWhiteboardHub() {
   createBtn?.addEventListener('click', () => {
     if (createBtn.disabled) return;
     createBtn.disabled = true;
+    showCreateHint(null);
     void (async () => {
       try {
         await whenAuthReady();
@@ -521,18 +557,25 @@ function initWhiteboardHub() {
           err instanceof Error && err.message
             ? err.message
             : 'Could not create board. Check your connection and try again.';
-        showActionHint(message);
+        showCreateHint(message);
       }
     })();
   });
 
+  joinInput?.addEventListener('focus', () => {
+    const current = joinHint?.textContent?.trim() ?? '';
+    if (!current || current === JOIN_VIEW_ONLY_HINT) {
+      showJoinHint(JOIN_VIEW_ONLY_HINT);
+    }
+  });
+
   joinForm?.addEventListener('submit', (event) => {
     event.preventDefault();
-    const parsed = parseJoinInput(joinInput?.value ?? '');
+    const parsed = parseHubJoinInput(joinInput?.value ?? '');
 
     if (!parsed) {
-      showActionHint(
-        'Enter a share code (like 1A2B), paste a board link (/board/…), or a UUID.',
+      showJoinHint(
+        'Enter a share code, paste a board link (/board/…), or a UUID. Treat share codes like passwords — do not project them where a hallway can see.',
       );
       joinInput?.focus();
       return;
@@ -543,19 +586,19 @@ function initWhiteboardHub() {
         await whenAuthReady();
         let boardId: string;
         if (parsed.kind === 'code') {
-          showActionHint('Looking up code…');
+          showJoinHint('Looking up code…');
           boardId = await lookupShareCode(parsed.code);
         } else {
           boardId = parsed.id;
         }
-        showActionHint('Opening board…');
+        showJoinHint('Opening board…');
         window.location.href = `/board/${encodeURIComponent(boardId)}`;
       } catch (err) {
         const message =
           err instanceof Error && err.message
             ? err.message
             : 'Could not open board. Check your connection and try again.';
-        showActionHint(message);
+        showJoinHint(message);
       }
     })();
   });

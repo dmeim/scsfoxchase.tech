@@ -12,7 +12,15 @@ import {
   markBoardSavedToLibrary,
   upsertCloudBoard,
 } from '../lib/whiteboard-cloud';
-import { getActiveIdentity, isSignedIn, onAuthChange, whenAuthReady } from '../lib/whiteboard-identity';
+import { getBoardSessionAuth } from '../lib/whiteboard-participants';
+import {
+  getActiveIdentity,
+  getAuthHeaders,
+  isSignedIn,
+  onAuthChange,
+  waitForSessionToken,
+  whenAuthReady,
+} from '../lib/whiteboard-identity';
 
 /** @deprecated Phase 3.1 — local board library removed; key is cleared on load. */
 export const LIBRARY_KEY = 'scsfoxchase.whiteboard.library';
@@ -70,15 +78,16 @@ export function getOwnerKey(): string {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-/** Mirrors the server format in `src/worker/shareCode.ts`: `1A2B`. */
-const SHARE_CODE_RE = /^([0-9][A-Za-z]){2}$/;
+/** Four-character digit-letter code, `1A2B` form (server `SHARE_CODE_RE`). */
+const SHARE_CODE_RE = /^([0-9][A-Z]){2}$/;
+const MAX_BOARD_TITLE_LENGTH = 80;
 
 export function isBoardUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
 }
 
 export function isShareCode(value: string): boolean {
-  return SHARE_CODE_RE.test(value.trim());
+  return SHARE_CODE_RE.test(value.trim().toUpperCase());
 }
 
 export function hostSecretKey(boardId: string): string {
@@ -99,6 +108,11 @@ function readScratchTitle(boardId: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Creating-browser default name until Recents / `meta:title` exist. */
+export function getScratchBoardTitle(boardId: string): string | null {
+  return readScratchTitle(boardId);
 }
 
 function untitledEntry(
@@ -165,6 +179,15 @@ function persistHostSecret(boardId: string, hostSecret: string): void {
   }
 }
 
+/** Drop creating-browser host proof. Call after a successful Google claim. */
+export function clearHostSecret(boardId: string): void {
+  try {
+    localStorage.removeItem(hostSecretKey(boardId));
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
+
 /** Scratch create: UUID + host secret only. Does not write a library index. */
 export function createBoard(title = defaultBoardTitle()): {
   id: string;
@@ -180,11 +203,7 @@ export function createBoard(title = defaultBoardTitle()): {
 
 /** Drop host secret for this board. Does not delete the Durable Object. */
 export function removeBoard(boardId: string): void {
-  try {
-    localStorage.removeItem(hostSecretKey(boardId));
-  } catch {
-    // ignore quota / private-mode failures
-  }
+  clearHostSecret(boardId);
 }
 
 function createHostSecret(): string {
@@ -193,6 +212,7 @@ function createHostSecret(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Scratch-board Owner proof only. Cleared after Google claim / `savedToLibrary`. */
 export function getHostSecret(boardId: string): string | null {
   try {
     return localStorage.getItem(hostSecretKey(boardId));
@@ -222,9 +242,13 @@ function scheduleSavedToLibrary(
 ): void {
   if (!isSignedIn() || !hostSecret) return;
   const ownerKey = getOwnerKey();
-  void markBoardSavedToLibrary(boardId, ownerKey, hostSecret).catch(() => {
-    // First WebSocket connect stores the host hash; later touch/Save retries.
-  });
+  void markBoardSavedToLibrary(boardId, ownerKey, hostSecret)
+    .then(() => {
+      clearHostSecret(boardId);
+    })
+    .catch(() => {
+      // First WebSocket connect stores the host hash; later touch/Save retries.
+    });
 }
 
 /**
@@ -245,6 +269,16 @@ export async function claimBoardToLibrary(
     );
   }
   const existing = await getEntryActive(boardId);
+  if (existing && title === undefined) {
+    scheduleSavedToLibrary(boardId, hostSecret);
+    try {
+      await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
+      clearHostSecret(boardId);
+    } catch {
+      scheduleSavedToLibrary(boardId, hostSecret);
+    }
+    return existing;
+  }
   const now = new Date().toISOString();
   const next: WhiteboardLibraryEntry = {
     id: boardId,
@@ -252,9 +286,15 @@ export async function claimBoardToLibrary(
     lastAccessedAt: now,
     previewDataUrl: existing?.previewDataUrl,
   };
+  try {
+    await patchLiveBoardTitle(boardId, next.title);
+  } catch {
+    // Recents can still write; hello/Save retries live `meta:title`.
+  }
   const saved = await upsertCloudBoard(next, { hostSecret });
   try {
     await markBoardSavedToLibrary(boardId, getOwnerKey(), hostSecret);
+    clearHostSecret(boardId);
   } catch {
     scheduleSavedToLibrary(boardId, hostSecret);
   }
@@ -321,10 +361,16 @@ export async function touchBoardActive(
   const existing = await getEntryActive(boardId);
   const hostSecret = getHostSecret(boardId);
   if (existing) {
+    if (title === undefined) {
+      // Hello / page-load must not PUT existing.title (often Untitled) over a
+      // concurrent Owner Save. lastAccessedAt updates when a title is provided.
+      scheduleSavedToLibrary(boardId, hostSecret);
+      return existing;
+    }
     const next = await upsertCloudBoard(
       {
         ...existing,
-        title: title ?? existing.title,
+        title,
         lastAccessedAt: new Date().toISOString(),
       },
       { hostSecret },
@@ -338,6 +384,132 @@ export async function touchBoardActive(
   return untitledEntry(boardId, title);
 }
 
+/**
+ * Signed-in GET so the matching Owner sees `cloudOwnerKey`. A Manager gets
+ * null on a saved board — that account must not upsert `boards.json`.
+ * `null` means unknown (fail open for hub Owner rename if meta is down).
+ */
+async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null> {
+  const ownerKey = getOwnerKey();
+  if (!ownerKey.startsWith('google:')) return false;
+  try {
+    if (isSignedIn()) await waitForSessionToken();
+    const headers = await getAuthHeaders();
+    const res = await fetch(
+      `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+      { headers },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      cloudOwnerKey?: unknown;
+    };
+    if (typeof body.cloudOwnerKey === 'string') {
+      return body.cloudOwnerKey === ownerKey;
+    }
+    // Hidden key is unknown (Owner GET and guest GET can look the same).
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Same live `meta:title` PATCH as the manage panel: session token and/or
+ * scratch host proof, plus Clerk so an Owner on the hub (no open socket)
+ * can still rename. Guests receive `wb:title` from the Durable Object.
+ * Host proof stays on `X-Board-Host`, never the WebSocket query string.
+ */
+export async function patchLiveBoardTitle(
+  boardId: string,
+  title: string,
+): Promise<string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const hostSecret = getHostSecret(boardId);
+  if (hostSecret) {
+    headers['X-Board-Host'] = hostSecret;
+  }
+  const sessionAuth = getBoardSessionAuth(boardId);
+  if (sessionAuth) {
+    headers['X-Board-Session'] = sessionAuth.sessionId;
+    headers['X-Board-Auth'] = sessionAuth.authToken;
+  }
+  if (isSignedIn()) {
+    const token = await waitForSessionToken();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    } else if (hostSecret) {
+      headers.Authorization = `Bearer ${hostSecret}`;
+    }
+  } else if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`;
+  }
+  const body: Record<string, string> = { title };
+  if (sessionAuth) {
+    body.sessionId = sessionAuth.sessionId;
+    body.authToken = sessionAuth.authToken;
+  }
+  const res = await fetch(
+    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    },
+  );
+  let payload: { title?: unknown; error?: unknown } = {};
+  try {
+    payload = (await res.json()) as typeof payload;
+  } catch {
+    // ignore
+  }
+  if (!res.ok) {
+    const message =
+      typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : 'Could not save the name. Check your connection and try again.';
+    throw new Error(message);
+  }
+  const next =
+    typeof payload.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : title.trim();
+  return next.slice(0, MAX_BOARD_TITLE_LENGTH);
+}
+
+/**
+ * Hub Recents / Library rename. PATCHes live `meta:title` first so guests
+ * update, then optionally mirrors Owner Recents. Known-not-Owner Recents
+ * skips the live PATCH and does not write Manager `boards.json`.
+ */
+export async function renameBoardActive(
+  boardId: string,
+  title: string,
+): Promise<WhiteboardLibraryEntry> {
+  const cleaned = title.trim() || 'Untitled board';
+  if (!isSignedIn()) {
+    rememberScratchTitle(boardId, cleaned);
+    return untitledEntry(boardId, cleaned);
+  }
+  const hostSecret = getHostSecret(boardId);
+  if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
+    return untitledEntry(boardId, cleaned);
+  }
+  const liveTitle = await patchLiveBoardTitle(boardId, cleaned);
+  try {
+    return await setBoardTitleActive(boardId, liveTitle);
+  } catch {
+    // Recents is an optional Owner index; the live room already has the name.
+    return untitledEntry(boardId, liveTitle);
+  }
+}
+
+/**
+ * Optional Owner Recents / Library mirror. Live title is Durable Object
+ * `meta:title` (hub / manage panel PATCH that). Does not write a Manager's
+ * `library/{manager}/boards.json` as the class title.
+ */
 export async function setBoardTitleActive(
   boardId: string,
   title: string,
@@ -353,7 +525,10 @@ export async function setBoardTitleActive(
     return claimBoardToLibrary(boardId, cleaned);
   }
   if (!existing) {
-    throw new Error('Sign in as the owner and Save to keep this board in your library.');
+    throw new Error('This board is not in your library yet.');
+  }
+  if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
+    throw new Error('Only the owner library stores this name.');
   }
   return upsertEntryActive({
     id: boardId,
@@ -362,6 +537,11 @@ export async function setBoardTitleActive(
   });
 }
 
+/**
+ * Mint a scratch board and navigate. Recents is written after the first
+ * WebSocket (host hash). A library PUT before connect 403s “Host secret
+ * required.” Signed-in claim runs from the board page on `wb:hello`.
+ */
 export async function createBoardActive(title = defaultBoardTitle()): Promise<{
   id: string;
   hostSecret: string;
@@ -377,12 +557,7 @@ export async function createBoardActive(title = defaultBoardTitle()): Promise<{
     title,
     lastAccessedAt: now,
   };
-  if (!isSignedIn()) {
-    return { id, hostSecret, entry: draft };
-  }
-  const entry = await upsertCloudBoard(draft, { hostSecret });
-  scheduleSavedToLibrary(id, hostSecret);
-  return { id, hostSecret, entry };
+  return { id, hostSecret, entry: draft };
 }
 
 /** Remove from the signed-in cloud library. No-op when signed out. */
@@ -460,21 +635,23 @@ export function formatAccessedDate(iso: string): string {
 }
 
 /**
- * Board-page hook: if this browser created a scratch board and the user signs
- * in, claim Owner + cloud library without waiting on Phase 3.3 People UI.
+ * Board-page hook: after `wb:hello` the host hash exists, so signed-in create
+ * can write Recents. Opening a Recents row retries touch once `savedToLibrary`
+ * is backfilled. Page-load touch before connect is expected to fail closed.
  */
 function bindBoardPageScratchClaim(): void {
   if (typeof window === 'undefined') return;
   const boardId = readBoardIdFromPath();
   if (!boardId) return;
   const tryClaim = () => {
-    if (!isSignedIn() || !getHostSecret(boardId)) return;
-    void claimBoardToLibrary(boardId).catch(() => {
-      // PATCH may 403 until the first WebSocket connect stores the host hash.
+    if (!isSignedIn()) return;
+    void touchBoardActive(boardId).catch(() => {
+      // PUT waits on first WebSocket host hash / savedToLibrary backfill.
     });
   };
   void whenAuthReady().then(tryClaim);
   onAuthChange(tryClaim);
+  window.addEventListener('scsfoxchase:whiteboard-hello', tryClaim);
 }
 
 bindBoardPageScratchClaim();

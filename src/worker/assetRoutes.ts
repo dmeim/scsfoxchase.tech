@@ -2,17 +2,23 @@
  * R2 asset upload / download / delete for whiteboard media.
  * Keys: assets/{ownerKey}/{assetId}
  *   google:{accountId} — signed-in saved boards
- *   temp:{boardId}     — unsaved / signed-out scratch (24h TTL)
- *   local:{deviceId}   — legacy hub index (Phase 3.1 may drop)
+ *   temp:{boardId}     — unsaved / signed-out scratch (24h TTL unless savedToLibrary)
+ *   local:{deviceId}   — leftover hub objects (GET only; no new writes)
  * Routes: PUT|GET|DELETE /api/whiteboard/assets/{ownerKey}/{assetId}
  *         POST /api/whiteboard/assets/claim
  *         POST /api/whiteboard/assets/expire-temp
  *
- * Phase 4b: google:* writes require a Clerk session whose ownerKey matches.
- * temp:* / local:* keep capability-URL behavior (unguessable file UUIDs).
+ * PUT/DELETE google:*: matching Clerk Owner, or a live Owner/Manager/Editor
+ * WebSocket session (`X-Board-Session` / `X-Board-Auth`) and/or host proof
+ * for that board (`X-Board-Id`). Viewers are read-only.
+ * temp:* requires a host secret or a live can-edit board session.
+ * local:* PUT/DELETE are rejected. Guessing a fileId is not enough.
+ * GET stays unauthenticated so connected players can load media; SVG is
+ * served as an attachment with nosniff (not a navigable executable document).
  */
 import { UNSAVED_BOARD_TTL_MS } from '../lib/whiteboard-sync'
 import { requireClerkWhiteboardAuth } from './clerkAuth'
+import type { WhiteboardBoard } from './WhiteboardBoard'
 
 export const MAX_ASSET_BYTES = 8 * 1024 * 1024 // 8 MB — Chromebook-friendly
 
@@ -29,7 +35,7 @@ const ALLOWED_MIME = new Set([
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-/** Signed-out hub: local:{uuid}; saved: google:{sub}; scratch media: temp:{boardUuid} */
+/** Leftover GET: local:{uuid}; saved: google:{sub}; scratch media: temp:{boardUuid} */
 const OWNER_KEY_RE = /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/
 
 function isAssetUuid(value: string): boolean {
@@ -44,6 +50,10 @@ export function isTempOwnerKey(ownerKey: string): boolean {
 	return ownerKey.startsWith('temp:')
 }
 
+export function isLocalOwnerKey(ownerKey: string): boolean {
+	return ownerKey.startsWith('local:')
+}
+
 export function tempOwnerKey(boardId: string): string {
 	return `temp:${boardId}`
 }
@@ -54,6 +64,40 @@ export function r2TempPrefix(boardId: string): string {
 
 export function r2ObjectKey(ownerKey: string, assetId: string): string {
 	return `assets/${ownerKey}/${assetId}`
+}
+
+function boardIdFromTempR2Key(key: string): string | null {
+	const prefix = 'assets/temp:'
+	if (!key.startsWith(prefix)) return null
+	const rest = key.slice(prefix.length)
+	const slash = rest.indexOf('/')
+	const boardId = slash === -1 ? rest : rest.slice(0, slash)
+	return UUID_RE.test(boardId) ? boardId : null
+}
+
+/** google then temp, then the requested prefix (covers leftover `local:`). */
+function assetOwnerKeysToTry(
+	requestedOwnerKey: string,
+	boardHint: string | null,
+): string[] {
+	const fromTemp = isTempOwnerKey(requestedOwnerKey)
+		? requestedOwnerKey.slice('temp:'.length)
+		: null
+	const boardId =
+		fromTemp && UUID_RE.test(fromTemp)
+			? fromTemp
+			: boardHint && UUID_RE.test(boardHint)
+				? boardHint
+				: null
+	const temp = boardId ? tempOwnerKey(boardId) : null
+	const google = requestedOwnerKey.startsWith('google:')
+		? requestedOwnerKey
+		: null
+	return [
+		...new Set(
+			[google, temp, requestedOwnerKey].filter(Boolean) as string[],
+		),
+	]
 }
 
 /**
@@ -74,15 +118,26 @@ export function parseAssetPath(
 	return { ownerKey, assetId }
 }
 
+/** Site + local Astro origins only. Never echo an arbitrary Origin. */
+const ALLOWED_CORS_ORIGINS = new Set([
+	'https://scsfoxchase.tech',
+	'https://www.scsfoxchase.tech',
+	'http://localhost:4321',
+	'http://127.0.0.1:4321',
+])
+
+const CORS_ALLOW_HEADERS =
+	'Content-Type, Content-Length, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth, X-Board-Id'
+
 function corsHeaders(request: Request): HeadersInit {
 	const origin = request.headers.get('Origin')
-	// Same-origin capability URLs; allow null Origin for some Chromebook cases
-	if (!origin) return {}
+	if (!origin || !ALLOWED_CORS_ORIGINS.has(origin)) {
+		return {}
+	}
 	return {
 		'Access-Control-Allow-Origin': origin,
 		'Access-Control-Allow-Methods': 'GET, PUT, DELETE, POST, OPTIONS',
-		'Access-Control-Allow-Headers':
-			'Content-Type, Content-Length, Authorization, X-Board-Host',
+		'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS,
 		Vary: 'Origin',
 	}
 }
@@ -92,7 +147,13 @@ async function assertGoogleOwnerWrite(
 	env: Env,
 	ownerKey: string,
 ): Promise<Response | null> {
-	if (!ownerKey.startsWith('google:')) return null
+	if (!ownerKey.startsWith('google:')) {
+		return jsonError(
+			403,
+			'This prefix requires a host secret or editor session',
+			request,
+		)
+	}
 	const authResult = await requireClerkWhiteboardAuth(request, env)
 	if (!authResult.ok) {
 		const headers = new Headers(authResult.response.headers)
@@ -108,6 +169,216 @@ async function assertGoogleOwnerWrite(
 		return jsonError(403, 'ownerKey does not match signed-in account', request)
 	}
 	return null
+}
+
+function extractHostSecret(request: Request): string | null {
+	const header = request.headers.get('X-Board-Host')?.trim()
+	if (header) return header
+	const auth = request.headers.get('Authorization')
+	if (auth?.toLowerCase().startsWith('bearer ')) {
+		const token = auth.slice(7).trim()
+		// Host secrets are hex; Clerk JWTs contain '.'.
+		if (token && !token.includes('.')) return token
+	}
+	return new URL(request.url).searchParams.get('hostSecret')?.trim() || null
+}
+
+function extractSessionProof(
+	request: Request,
+): { sessionId: string; authToken: string } | null {
+	const sessionId = request.headers.get('X-Board-Session')?.trim() || ''
+	const authToken = request.headers.get('X-Board-Auth')?.trim() || ''
+	if (!sessionId || !authToken) return null
+	return { sessionId, authToken }
+}
+
+function boardIdFromRequest(request: Request): string | null {
+	const headerId = request.headers.get('X-Board-Id')?.trim() || ''
+	if (UUID_RE.test(headerId)) return headerId
+	const queryId = new URL(request.url).searchParams.get('boardId')?.trim() || ''
+	return UUID_RE.test(queryId) ? queryId : null
+}
+
+function boardIdForAssetWrite(
+	request: Request,
+	ownerKey: string,
+): string | null {
+	if (isTempOwnerKey(ownerKey)) {
+		const fromKey = ownerKey.slice('temp:'.length)
+		if (!UUID_RE.test(fromKey)) return null
+		const headerId = request.headers.get('X-Board-Id')?.trim() || ''
+		if (headerId && headerId !== fromKey) return null
+		return fromKey
+	}
+	if (ownerKey.startsWith('google:')) {
+		return boardIdFromRequest(request)
+	}
+	return null
+}
+
+async function verifyBoardWriteAccess(
+	env: Env,
+	boardId: string,
+	hostSecret: string | null,
+	session: { sessionId: string; authToken: string } | null,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+	const stub = env.WHITEBOARDS.get(
+		env.WHITEBOARDS.idFromName(boardId),
+	) as DurableObjectStub<WhiteboardBoard>
+	return stub.assertAssetWriteAccess({
+		hostSecret,
+		sessionId: session?.sessionId ?? null,
+		authToken: session?.authToken ?? null,
+	})
+}
+
+async function tryRevealCloudOwnerKey(
+	request: Request,
+	env: Env,
+	boardId: string,
+	hostSecret: string | null,
+): Promise<string | null> {
+	const stub = boardStub(env, boardId)
+	try {
+		const viaClerk = await readRevealedCloudOwnerKey(stub, request, boardId, {
+			authorization: request.headers.get('Authorization'),
+		})
+		if (viaClerk) return viaClerk
+	} catch {
+		// Guest editors have no matching Clerk; session path still proceeds.
+	}
+	if (!hostSecret) return null
+	try {
+		return await readRevealedCloudOwnerKey(stub, request, boardId, {
+			hostSecret,
+		})
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Saved-board canvas PUT/DELETE: Owner Clerk match, or a live can-edit
+ * session / host proof on this board. Do not use Clerk-owner as the sole gate
+ * (student Editors are signed in as a different google: account).
+ */
+async function assertGoogleAssetWrite(
+	request: Request,
+	env: Env,
+	ownerKey: string,
+): Promise<Response | null> {
+	if (!ownerKey.startsWith('google:')) {
+		return jsonError(
+			403,
+			'This prefix requires a host secret or editor session',
+			request,
+		)
+	}
+
+	const hostSecret = extractHostSecret(request)
+	const session = extractSessionProof(request)
+	const boardId = boardIdForAssetWrite(request, ownerKey)
+
+	let boardResult: Awaited<ReturnType<typeof verifyBoardWriteAccess>> | null =
+		null
+	if (boardId && (hostSecret || session)) {
+		try {
+			boardResult = await verifyBoardWriteAccess(
+				env,
+				boardId,
+				hostSecret,
+				session,
+			)
+			if (boardResult.ok) {
+				const revealed = await tryRevealCloudOwnerKey(
+					request,
+					env,
+					boardId,
+					hostSecret,
+				)
+				if (revealed && revealed !== ownerKey) {
+					return jsonError(
+						403,
+						'ownerKey does not match this board',
+						request,
+					)
+				}
+				return null
+			}
+		} catch {
+			boardResult = {
+				ok: false,
+				status: 503,
+				error: 'Could not verify board write access',
+			}
+		}
+	}
+
+	const clerkDenied = await assertGoogleOwnerWrite(request, env, ownerKey)
+	if (!clerkDenied) return null
+	if (boardResult && !boardResult.ok) {
+		return jsonError(boardResult.status, boardResult.error, request)
+	}
+	if ((hostSecret || session) && !boardId) {
+		return jsonError(401, 'Board proof required', request)
+	}
+	return clerkDenied
+}
+
+async function assertTempWrite(
+	request: Request,
+	env: Env,
+	ownerKey: string,
+): Promise<Response | null> {
+	const hostSecret = extractHostSecret(request)
+	const session = extractSessionProof(request)
+	if (!hostSecret && !session) {
+		return jsonError(
+			401,
+			'Host secret or editor session required',
+			request,
+		)
+	}
+
+	const boardId = boardIdForAssetWrite(request, ownerKey)
+	if (!boardId) {
+		return jsonError(401, 'Board proof required', request)
+	}
+
+	try {
+		const result = await verifyBoardWriteAccess(
+			env,
+			boardId,
+			hostSecret,
+			session,
+		)
+		if (result.ok) return null
+		return jsonError(result.status, result.error, request)
+	} catch {
+		return jsonError(
+			503,
+			'Could not verify board write access',
+			request,
+		)
+	}
+}
+
+/** PUT/DELETE gate: never skip temp:* as unauthenticated capability URLs. */
+async function assertAssetWrite(
+	request: Request,
+	env: Env,
+	ownerKey: string,
+): Promise<Response | null> {
+	if (ownerKey.startsWith('google:')) {
+		return assertGoogleAssetWrite(request, env, ownerKey)
+	}
+	if (isTempOwnerKey(ownerKey)) {
+		return assertTempWrite(request, env, ownerKey)
+	}
+	if (isLocalOwnerKey(ownerKey)) {
+		return jsonError(403, 'local: prefix is read-only', request)
+	}
+	return jsonError(403, 'Unsupported owner key', request)
 }
 
 function jsonError(
@@ -142,7 +413,32 @@ function isExpiredUpload(uploaded: Date, now = Date.now()): boolean {
 	return now - uploaded.getTime() >= UNSAVED_BOARD_TTL_MS
 }
 
-/** Copy temp:{boardId}/* → google:{id}/* and delete the temp objects. */
+/**
+ * Public GET meta includes `savedToLibrary` without revealing `cloudOwnerKey`.
+ * `null` means the flag could not be read — callers must not expire temp media.
+ */
+async function readSavedToLibraryFlag(
+	env: Env,
+	boardId: string,
+): Promise<boolean | null> {
+	if (!UUID_RE.test(boardId)) return null
+	try {
+		const stub = boardStub(env, boardId)
+		const res = await stub.fetch(
+			new Request(
+				`https://scsfoxchase.tech/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta?boardId=${encodeURIComponent(boardId)}`,
+				{ method: 'GET' },
+			),
+		)
+		if (!res.ok) return null
+		const meta = (await res.json()) as { savedToLibrary?: unknown }
+		return meta.savedToLibrary === true
+	} catch {
+		return null
+	}
+}
+
+/** Copy temp:{boardId}/* → google:{id}/*. Keep temp; the DO rewrites persisted player URLs. */
 export async function moveTempPrefixToOwner(
 	env: Env,
 	boardId: string,
@@ -175,7 +471,6 @@ export async function moveTempPrefixToOwner(
 					kind: 'persistent',
 				},
 			})
-			await env.WHITEBOARD_ASSETS.delete(obj.key)
 			moved.push(fileId)
 		}
 		cursor = listed.truncated ? listed.cursor : undefined
@@ -184,8 +479,10 @@ export async function moveTempPrefixToOwner(
 }
 
 /**
- * Delete temp:* objects older than 24h. Called from expire-temp, temp PUT,
- * and (via DO alarm) prefix wipe when the unsaved board expires.
+ * Delete temp:* objects older than 24h on unsaved boards only.
+ * Saved boards keep temp until google-then-temp resolution can replace it.
+ * Called from expire-temp, temp PUT, and (via DO alarm) prefix wipe when
+ * an unsaved board expires.
  */
 export async function expireTempR2Objects(
 	env: Env,
@@ -193,15 +490,29 @@ export async function expireTempR2Objects(
 ): Promise<number> {
 	let deleted = 0
 	let cursor: string | undefined
+	const savedByBoard = new Map<string, boolean | null>()
 	do {
 		const listed = await env.WHITEBOARD_ASSETS.list({
 			prefix: 'assets/temp:',
 			cursor,
 			limit: 100,
 		})
-		const stale = listed.objects
-			.filter((obj) => isExpiredUpload(obj.uploaded, now))
-			.map((obj) => obj.key)
+		const stale: string[] = []
+		for (const obj of listed.objects) {
+			if (!isExpiredUpload(obj.uploaded, now)) continue
+			const boardId = boardIdFromTempR2Key(obj.key)
+			if (!boardId) {
+				stale.push(obj.key)
+				continue
+			}
+			let saved = savedByBoard.get(boardId)
+			if (saved === undefined) {
+				saved = await readSavedToLibraryFlag(env, boardId)
+				savedByBoard.set(boardId, saved)
+			}
+			if (saved !== false) continue
+			stale.push(obj.key)
+		}
 		if (stale.length > 0) {
 			await env.WHITEBOARD_ASSETS.delete(stale)
 			deleted += stale.length
@@ -233,6 +544,162 @@ export async function claimTempAssetsFromMetaResponse(
 	} catch {
 		// best-effort; canvas hook also claims
 	}
+}
+
+function boardStub(
+	env: Env,
+	boardId: string,
+): DurableObjectStub<WhiteboardBoard> {
+	return env.WHITEBOARDS.get(
+		env.WHITEBOARDS.idFromName(boardId),
+	) as DurableObjectStub<WhiteboardBoard>
+}
+
+/**
+ * GET meta reveals `cloudOwnerKey` only to the matching Owner or host.
+ * Do not send a leftover host secret on the Clerk-only probe — that would
+ * expose another account's key. Host GETs are used only after
+ * `assertAssetWriteAccess` confirms the secret.
+ */
+async function readRevealedCloudOwnerKey(
+	stub: DurableObjectStub<WhiteboardBoard>,
+	request: Request,
+	boardId: string,
+	proof: { hostSecret?: string | null; authorization?: string | null },
+): Promise<string | null> {
+	const forwardUrl = new URL(request.url)
+	forwardUrl.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
+	forwardUrl.search = ''
+	forwardUrl.searchParams.set('boardId', boardId)
+	const hostSecret = proof.hostSecret?.trim()
+	if (hostSecret) {
+		forwardUrl.searchParams.set('hostSecret', hostSecret)
+	}
+	const headers = new Headers({ 'Content-Type': 'application/json' })
+	const authorization = proof.authorization?.trim()
+	if (authorization) {
+		headers.set('Authorization', authorization)
+	}
+	const origin = request.headers.get('Origin')
+	if (origin) headers.set('Origin', origin)
+	const cookie = request.headers.get('Cookie')
+	if (cookie && !hostSecret) headers.set('Cookie', cookie)
+
+	const res = await stub.fetch(
+		new Request(forwardUrl.toString(), { method: 'GET', headers }),
+	)
+	if (!res.ok) return null
+	const meta = (await res.json()) as { cloudOwnerKey?: unknown }
+	if (
+		typeof meta.cloudOwnerKey === 'string' &&
+		meta.cloudOwnerKey.startsWith('google:')
+	) {
+		return meta.cloudOwnerKey
+	}
+	return null
+}
+
+/**
+ * Destination is the board's Google Owner, never an arbitrary Clerk caller.
+ * Matching Owner may claim without a host secret. Scratch (unset
+ * cloudOwnerKey) requires a valid host secret before moving into the
+ * caller's google: prefix. A leftover host secret cannot retarget an
+ * existing google: prefix to a different account.
+ */
+async function resolveClaimDestination(
+	request: Request,
+	env: Env,
+	boardId: string,
+	clerkOwnerKey: string,
+): Promise<
+	{ ok: true; destOwnerKey: string } | { ok: false; response: Response }
+> {
+	if (!clerkOwnerKey.startsWith('google:')) {
+		return {
+			ok: false,
+			response: jsonError(
+				403,
+				'ownerKey does not match signed-in account',
+				request,
+			),
+		}
+	}
+
+	const stub = boardStub(env, boardId)
+	let revealed: string | null
+	try {
+		revealed = await readRevealedCloudOwnerKey(stub, request, boardId, {
+			authorization: request.headers.get('Authorization'),
+		})
+	} catch {
+		return {
+			ok: false,
+			response: jsonError(503, 'Could not verify board owner', request),
+		}
+	}
+	if (revealed === clerkOwnerKey) {
+		return { ok: true, destOwnerKey: clerkOwnerKey }
+	}
+
+	const hostSecret = extractHostSecret(request)
+	if (!hostSecret) {
+		return {
+			ok: false,
+			response: jsonError(
+				403,
+				"Not allowed to claim this board's assets",
+				request,
+			),
+		}
+	}
+
+	let hostCheck: Awaited<ReturnType<WhiteboardBoard['assertAssetWriteAccess']>>
+	try {
+		hostCheck = await stub.assertAssetWriteAccess({
+			hostSecret,
+			sessionId: null,
+			authToken: null,
+		})
+	} catch {
+		return {
+			ok: false,
+			response: jsonError(
+				503,
+				'Could not verify board write access',
+				request,
+			),
+		}
+	}
+	if (!hostCheck.ok) {
+		return {
+			ok: false,
+			response: jsonError(hostCheck.status, hostCheck.error, request),
+		}
+	}
+
+	let stored: string | null
+	try {
+		stored = await readRevealedCloudOwnerKey(stub, request, boardId, {
+			hostSecret,
+		})
+	} catch {
+		return {
+			ok: false,
+			response: jsonError(503, 'Could not verify board owner', request),
+		}
+	}
+	if (stored && stored.startsWith('google:') && stored !== clerkOwnerKey) {
+		return {
+			ok: false,
+			response: jsonError(
+				403,
+				"Not allowed to claim this board's assets",
+				request,
+			),
+		}
+	}
+
+	return { ok: true, destOwnerKey: clerkOwnerKey }
 }
 
 async function handleClaim(
@@ -272,13 +739,37 @@ async function handleClaim(
 		})
 	}
 
-	const destOwnerKey = authResult.auth.ownerKey
+	const resolved = await resolveClaimDestination(
+		request,
+		env,
+		boardId,
+		authResult.auth.ownerKey,
+	)
+	if (!resolved.ok) return resolved.response
+
+	const destOwnerKey = resolved.destOwnerKey
 	const { moved } = await moveTempPrefixToOwner(env, boardId, destOwnerKey)
+	const stub = boardStub(env, boardId)
+	let rewrite: Awaited<
+		ReturnType<WhiteboardBoard['rewriteTempPlayerUrlsAfterClaim']>
+	>
+	try {
+		rewrite = await stub.rewriteTempPlayerUrlsAfterClaim({
+			boardId,
+			googleOwnerKey: destOwnerKey,
+		})
+	} catch {
+		return jsonError(503, 'Could not update board player URLs', request)
+	}
+	if (!rewrite.ok) {
+		return jsonError(rewrite.status, rewrite.error, request)
+	}
 	return jsonOk(request, {
 		ok: true,
 		boardId,
 		ownerKey: destOwnerKey,
 		moved,
+		rewritten: rewrite.rewritten,
 	})
 }
 
@@ -342,8 +833,8 @@ export async function handleAssetRequest(
 	}
 
 	if (request.method === 'PUT') {
-		const googleDenied = await assertGoogleOwnerWrite(request, env, ownerKey)
-		if (googleDenied) return googleDenied
+		const writeDenied = await assertAssetWrite(request, env, ownerKey)
+		if (writeDenied) return writeDenied
 
 		const contentType = (
 			request.headers.get('Content-Type') || ''
@@ -421,24 +912,63 @@ export async function handleAssetRequest(
 	}
 
 	if (request.method === 'GET' || request.method === 'HEAD') {
-		const object = await env.WHITEBOARD_ASSETS.get(key, {
-			range: request.headers,
-			onlyIf: request.headers,
-		})
+		const boardHint =
+			url.searchParams.get('board')?.trim() ||
+			url.searchParams.get('boardId')?.trim() ||
+			request.headers.get('X-Board-Id')?.trim() ||
+			null
+		const owners = assetOwnerKeysToTry(ownerKey, boardHint)
+		let servedOwnerKey = ownerKey
+		let servedKey = key
+		let object = null as Awaited<ReturnType<R2Bucket['get']>>
+		for (const tryOwner of owners) {
+			const tryKey = r2ObjectKey(tryOwner, assetId)
+			const found = await env.WHITEBOARD_ASSETS.get(tryKey, {
+				range: request.headers,
+				onlyIf: request.headers,
+			})
+			if (found !== null) {
+				servedOwnerKey = tryOwner
+				servedKey = tryKey
+				object = found
+				break
+			}
+		}
 		if (object === null) {
 			return jsonError(404, 'Asset not found', request)
 		}
 
-		if (isTempOwnerKey(ownerKey) && isExpiredUpload(object.uploaded)) {
-			await env.WHITEBOARD_ASSETS.delete(key)
-			return jsonError(404, 'Asset expired', request)
+		if (
+			isTempOwnerKey(servedOwnerKey) &&
+			isExpiredUpload(object.uploaded)
+		) {
+			const boardId = servedOwnerKey.slice('temp:'.length)
+			const saved = UUID_RE.test(boardId)
+				? await readSavedToLibraryFlag(env, boardId)
+				: false
+			if (saved === false) {
+				await env.WHITEBOARD_ASSETS.delete(servedKey)
+				return jsonError(404, 'Asset expired', request)
+			}
 		}
 
 		const headers = new Headers()
 		object.writeHttpMetadata(headers)
 		headers.set('etag', object.httpEtag)
 		headers.set('Accept-Ranges', 'bytes')
-		if (isTempOwnerKey(ownerKey)) {
+		headers.set('X-Content-Type-Options', 'nosniff')
+		const servedType = (headers.get('Content-Type') || '')
+			.split(';')[0]
+			.trim()
+			.toLowerCase()
+		if (servedType === 'image/svg+xml') {
+			headers.set(
+				'Content-Disposition',
+				`attachment; filename="${assetId}.svg"`,
+			)
+			headers.set('Content-Security-Policy', "default-src 'none'; sandbox")
+		}
+		if (isTempOwnerKey(servedOwnerKey)) {
 			headers.set('Cache-Control', 'private, max-age=3600')
 		} else {
 			headers.set('Cache-Control', 'public, max-age=31536000, immutable')
@@ -472,8 +1002,8 @@ export async function handleAssetRequest(
 	}
 
 	if (request.method === 'DELETE') {
-		const googleDenied = await assertGoogleOwnerWrite(request, env, ownerKey)
-		if (googleDenied) return googleDenied
+		const writeDenied = await assertAssetWrite(request, env, ownerKey)
+		if (writeDenied) return writeDenied
 
 		await env.WHITEBOARD_ASSETS.delete(key)
 		return jsonOk(request, { ok: true })

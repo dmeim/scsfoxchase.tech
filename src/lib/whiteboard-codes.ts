@@ -1,7 +1,14 @@
 /**
  * Client helpers for Phase 5 share codes.
  * Routes: /api/whiteboard/join/:code, /api/whiteboard/boards/:uuid/code
+ *
+ * Join is unauthenticated. Board code GET/POST/DELETE send host proof,
+ * live session token, and/or Clerk session — Owner/Manager only on the DO.
  */
+
+import { getAuthHeaders } from './whiteboard-identity'
+import { getBoardSessionAuth } from './whiteboard-participants'
+import { getHostSecret } from '../scripts/whiteboard-library'
 
 export type ShareCodeState = {
   code: string | null
@@ -24,6 +31,26 @@ function errorMessage(body: Record<string, unknown>, fallback: string): string {
   return typeof body.error === 'string' && body.error ? body.error : fallback
 }
 
+async function shareAdminHeaders(boardId: string): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {}
+  const hostSecret = getHostSecret(boardId)
+  if (hostSecret) {
+    headers['X-Board-Host'] = hostSecret
+  }
+  const sessionAuth = getBoardSessionAuth(boardId)
+  if (sessionAuth) {
+    headers['X-Board-Session'] = sessionAuth.sessionId
+    headers['X-Board-Auth'] = sessionAuth.authToken
+  }
+  const clerkHeaders = await getAuthHeaders()
+  if (clerkHeaders.Authorization) {
+    headers.Authorization = clerkHeaders.Authorization
+  } else if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`
+  }
+  return headers
+}
+
 export async function lookupShareCode(code: string): Promise<string> {
   const res = await fetch(`/api/whiteboard/join/${encodeURIComponent(code)}`)
   const body = await readJson(res)
@@ -37,7 +64,9 @@ export async function lookupShareCode(code: string): Promise<string> {
 }
 
 export async function fetchBoardShareCode(boardId: string): Promise<ShareCodeState> {
-  const res = await fetch(`/api/whiteboard/boards/${encodeURIComponent(boardId)}/code`)
+  const res = await fetch(`/api/whiteboard/boards/${encodeURIComponent(boardId)}/code`, {
+    headers: await shareAdminHeaders(boardId),
+  })
   const body = await readJson(res)
   if (!res.ok) {
     throw new Error(errorMessage(body, 'Could not load share code.'))
@@ -59,7 +88,10 @@ export async function openBoardShareCode(
   const qs = options.rotate ? '?rotate=1' : ''
   const res = await fetch(
     `/api/whiteboard/boards/${encodeURIComponent(boardId)}/code${qs}`,
-    { method: 'POST' },
+    {
+      method: 'POST',
+      headers: await shareAdminHeaders(boardId),
+    },
   )
   const body = await readJson(res)
   if (!res.ok) {
@@ -76,6 +108,7 @@ export async function openBoardShareCode(
 export async function closeBoardShareCode(boardId: string): Promise<ShareCodeState> {
   const res = await fetch(`/api/whiteboard/boards/${encodeURIComponent(boardId)}/code`, {
     method: 'DELETE',
+    headers: await shareAdminHeaders(boardId),
   })
   const body = await readJson(res)
   if (!res.ok) {

@@ -17,9 +17,158 @@ import {
 import { assignableRolesFor } from '../lib/whiteboard-sync'
 import {
   getEntryActive,
+  getHostSecret,
+  getScratchBoardTitle,
+  patchLiveBoardTitle,
   readBoardIdFromPath,
   setBoardTitleActive,
 } from './whiteboard-library'
+
+const DEFAULT_LIVE_TITLE = 'Untitled board'
+const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
+const JOIN_CODE_COOKIE_MAX_AGE = 12 * 60 * 60
+const JOIN_CODE_STORAGE_PREFIX = 'scsfoxchase.whiteboard.joinCode.'
+const JOIN_CODE_RE = /^([0-9][A-Z]){2}$/
+
+function writeJoinCodeCookie(boardId: string, code: string) {
+  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `${JOIN_CODE_COOKIE_PREFIX}${boardId}=${encodeURIComponent(code)}; Path=/; Max-Age=${JOIN_CODE_COOKIE_MAX_AGE}; SameSite=Lax${secure}`
+}
+
+function rememberJoinCode(boardId: string, code: string) {
+  const normalized = code.trim().toUpperCase()
+  if (!boardId || !JOIN_CODE_RE.test(normalized)) return
+  try {
+    sessionStorage.setItem(`${JOIN_CODE_STORAGE_PREFIX}${boardId}`, normalized)
+  } catch {
+    // Private mode may block sessionStorage; cookie is enough for connect.
+  }
+  writeJoinCodeCookie(boardId, normalized)
+}
+
+function restoreJoinCodeCookie() {
+  const boardId = readBoardIdFromPath()
+  if (!boardId) return
+  try {
+    const code = sessionStorage.getItem(`${JOIN_CODE_STORAGE_PREFIX}${boardId}`)
+    if (code) writeJoinCodeCookie(boardId, code)
+  } catch {
+    // ignore
+  }
+}
+
+function installJoinCodeCapture() {
+  const flagged = window as Window & { __scsfoxchaseJoinCodeCapture?: boolean }
+  if (flagged.__scsfoxchaseJoinCodeCapture) return
+  flagged.__scsfoxchaseJoinCodeCapture = true
+  const orig = window.fetch.bind(window)
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const res = await orig(input, init)
+    try {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input instanceof Request
+              ? input.url
+              : String(input)
+      const match = url.match(/\/api\/whiteboard\/join\/([^/?#]+)/i)
+      if (match?.[1] && res.ok) {
+        const code = decodeURIComponent(match[1])
+        const body = (await res.clone().json()) as { id?: unknown }
+        if (typeof body.id === 'string' && body.id) {
+          rememberJoinCode(body.id, code)
+        }
+      }
+    } catch {
+      // Join lookup still returns to the caller.
+    }
+    return res
+  }
+}
+
+installJoinCodeCapture()
+restoreJoinCodeCookie()
+
+function isPlaceholderTitle(title: string): boolean {
+  const cleaned = title.trim()
+  return !cleaned || cleaned === DEFAULT_LIVE_TITLE
+}
+
+async function readLiveBoardTitle(boardId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    )
+    if (!res.ok) return null
+    const body = (await res.json()) as { title?: unknown }
+    return typeof body.title === 'string' && body.title.trim()
+      ? body.title.trim()
+      : null
+  } catch {
+    return null
+  }
+}
+
+async function readClassCanEdit(boardId: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(
+      `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    )
+    if (!res.ok) return null
+    const body = (await res.json()) as { classCanEdit?: unknown }
+    return body.classCanEdit === true
+  } catch {
+    return null
+  }
+}
+
+async function patchClassCanEdit(
+  boardId: string,
+  classCanEdit: boolean,
+): Promise<boolean> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  const hostSecret = getHostSecret(boardId)
+  if (hostSecret) {
+    headers.Authorization = `Bearer ${hostSecret}`
+    headers['X-Board-Host'] = hostSecret
+  }
+  const sessionAuth = getBoardSessionAuth(boardId)
+  if (sessionAuth) {
+    headers['X-Board-Session'] = sessionAuth.sessionId
+    headers['X-Board-Auth'] = sessionAuth.authToken
+  }
+  const body: Record<string, unknown> = { classCanEdit }
+  if (sessionAuth) {
+    body.sessionId = sessionAuth.sessionId
+    body.authToken = sessionAuth.authToken
+  }
+  const res = await fetch(
+    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    },
+  )
+  let payload: { classCanEdit?: unknown; error?: unknown } = {}
+  try {
+    payload = (await res.json()) as typeof payload
+  } catch {
+    // ignore
+  }
+  if (!res.ok) {
+    const message =
+      typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : 'Could not update Group Edit.'
+    throw new Error(message)
+  }
+  return payload.classCanEdit === true
+}
 
 const PARTICIPANTS_EVENT = 'scsfoxchase:whiteboard-participants'
 const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
@@ -42,8 +191,11 @@ function initWhiteboardMenu() {
   const panel = root.querySelector<HTMLElement>('[data-whiteboard-panel]')
   const nameForm = root.querySelector<HTMLFormElement>('[data-wb-manage-name]')
   const titleInput = root.querySelector<HTMLInputElement>('[data-wb-manage-title]')
+  const liveTitleEl = root.querySelector<HTMLElement>('[data-wb-live-title]')
   const hint = root.querySelector<HTMLElement>('[data-wb-manage-hint]')
 
+  const shareBlock = root.querySelector<HTMLElement>('[data-wb-manage-share]')
+  const shareTools = root.querySelector<HTMLElement>('[data-wb-manage-share-tools]')
   const shareToggle = root.querySelector<HTMLInputElement>('[data-wb-share-toggle]')
   const shareState = root.querySelector<HTMLElement>('[data-wb-share-state]')
   const shareCodeBtn = root.querySelector<HTMLButtonElement>('[data-wb-share-code]')
@@ -74,6 +226,12 @@ function initWhiteboardMenu() {
   const forceFollowTarget = root.querySelector<HTMLSelectElement>(
     '[data-wb-force-follow-target]',
   )
+  const classCanEditToggle = root.querySelector<HTMLInputElement>(
+    '[data-wb-class-can-edit-toggle]',
+  )
+  const classCanEditState = root.querySelector<HTMLElement>(
+    '[data-wb-class-can-edit-state]',
+  )
 
   if (!toggle || !panel) return
 
@@ -82,6 +240,9 @@ function initWhiteboardMenu() {
   let expiryTimer: number | null = null
   let shareToastTimer: number | null = null
   let currentShare: ShareCodeState = { code: null, expiresAt: null, open: false }
+  let titleDirty = false
+  let titleSyncGen = 0
+  let liveTitle = ''
 
   let participants: ParticipantRow[] = []
   let yourSessionId = ''
@@ -92,26 +253,105 @@ function initWhiteboardMenu() {
   let forceFollowBusy = false
   let forceFollowOn = false
   let forceFollowTargetUserId = ''
+  let classCanEditOn = false
+  let classCanEditBusy = false
   const canForceFollow = () => yourRole === 'owner' || yourRole === 'manager'
+  const canRenameBoard = () => canForceFollow()
+  const canManageShare = () => canForceFollow()
+  const stopExpiryTimer = () => {
+    if (expiryTimer != null) {
+      window.clearInterval(expiryTimer)
+      expiryTimer = null
+    }
+  }
+  const nameDivider =
+    nameForm?.nextElementSibling instanceof HTMLElement &&
+    nameForm.nextElementSibling.classList.contains('whiteboard-menu-divider')
+      ? nameForm.nextElementSibling
+      : null
 
-  if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
-
-  const syncTitleFromLibrary = () => {
-    if (!boardId || !titleInput) return
-    // Wait for Clerk so signed-in users read cloud library, not localStorage.
-    void whenAuthReady()
-      .then(() => getEntryActive(boardId))
-      .then((entry) => {
-        if (entry && titleInput) {
-          titleInput.value = entry.title
-          document.title = `${entry.title} - St. Cecilia Technology`
-        }
-      })
+  const renderNameFormUi = () => {
+    const allowed = canRenameBoard()
+    if (nameForm) nameForm.hidden = !allowed
+    if (nameDivider) nameDivider.hidden = !allowed
+    if (liveTitleEl) {
+      liveTitleEl.hidden = allowed || !liveTitleEl.textContent
+    }
   }
 
-  syncTitleFromLibrary()
+  const renderShareAdminUi = () => {
+    const allowed = canManageShare()
+    if (shareBlock) shareBlock.hidden = !allowed
+    if (shareTools) shareTools.hidden = !allowed
+    if (!allowed) {
+      stopExpiryTimer()
+      currentShare = { code: null, expiresAt: null, open: false }
+      if (shareToggle) shareToggle.checked = false
+      if (shareState) shareState.textContent = 'Closed'
+      if (shareCodeBtn) shareCodeBtn.disabled = true
+      if (shareCodeValue) shareCodeValue.textContent = 'Code'
+    }
+  }
+
+  const renderClassCanEditUi = (on: boolean) => {
+    classCanEditOn = on
+    if (classCanEditToggle) classCanEditToggle.checked = on
+    if (classCanEditState) classCanEditState.textContent = on ? 'On' : 'Off'
+  }
+
+  if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
+  renderNameFormUi()
+  renderShareAdminUi()
+  renderClassCanEditUi(classCanEditOn)
+
+  const applyTitle = (title: string) => {
+    const cleaned = title.trim() || DEFAULT_LIVE_TITLE
+    liveTitle = cleaned
+    if (titleInput && !titleDirty) titleInput.value = cleaned
+    document.title = `${cleaned} - St. Cecilia Technology`
+    if (liveTitleEl) {
+      liveTitleEl.textContent = cleaned
+      liveTitleEl.hidden = canRenameBoard()
+    }
+  }
+
+  const maybeSeedOwnerTitle = async (currentLive: string) => {
+    if (!boardId || yourRole !== 'owner' || !isPlaceholderTitle(currentLive)) {
+      return
+    }
+    try {
+      await whenAuthReady()
+      if (yourRole !== 'owner') return
+      const entry = await getEntryActive(boardId)
+      const seed =
+        entry?.title?.trim() || getScratchBoardTitle(boardId)?.trim() || ''
+      if (!seed || isPlaceholderTitle(seed)) return
+      const next = await patchLiveBoardTitle(boardId, seed)
+      if (!titleDirty) applyTitle(next)
+    } catch {
+      // Recents is only a one-time Owner backfill, not the live name.
+    }
+  }
+
+  const syncTitleFromLiveRoom = (helloTitle?: string) => {
+    if (!boardId) return
+    const gen = ++titleSyncGen
+    const fromHello = typeof helloTitle === 'string' ? helloTitle.trim() : ''
+    if (fromHello) {
+      if (gen === titleSyncGen) applyTitle(fromHello)
+      void maybeSeedOwnerTitle(fromHello)
+      return
+    }
+    void readLiveBoardTitle(boardId).then((title) => {
+      if (gen !== titleSyncGen || !title) return
+      applyTitle(title)
+      void maybeSeedOwnerTitle(title)
+    })
+  }
+
+  syncTitleFromLiveRoom()
   onAuthChange(() => {
-    syncTitleFromLibrary()
+    renderNameFormUi()
   })
 
   const setHint = (message: string | null) => {
@@ -204,16 +444,10 @@ function initWhiteboardMenu() {
     }
   }
 
-  const stopExpiryTimer = () => {
-    if (expiryTimer != null) {
-      window.clearInterval(expiryTimer)
-      expiryTimer = null
-    }
-  }
-
   const setSharingLayout = (open: boolean) => {
-    panel.classList.toggle('is-sharing', open)
-    if (shareRight) shareRight.hidden = !open
+    const showRight = canManageShare() ? open : participants.length > 0
+    panel.classList.toggle('is-sharing', showRight)
+    if (shareRight) shareRight.hidden = !showRight
   }
 
   const renderShareUi = (state: ShareCodeState) => {
@@ -253,7 +487,7 @@ function initWhiteboardMenu() {
   }
 
   const refreshShareState = async () => {
-    if (!boardId) return
+    if (!boardId || !canManageShare()) return
     try {
       const state = await fetchBoardShareCode(boardId)
       renderShareUi(state)
@@ -261,6 +495,8 @@ function initWhiteboardMenu() {
     } catch {
       setShareHint('Could not load share code status.')
     }
+    const classCanEdit = await readClassCanEdit(boardId)
+    if (classCanEdit !== null) renderClassCanEditUi(classCanEdit)
   }
 
   const copyText = async (
@@ -286,6 +522,9 @@ function initWhiteboardMenu() {
       peopleList.hidden = true
       peopleEmpty.hidden = false
       renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
+      renderNameFormUi()
+      renderShareAdminUi()
+      setSharingLayout(Boolean(currentShare.open && currentShare.code))
       return
     }
 
@@ -394,6 +633,9 @@ function initWhiteboardMenu() {
       peopleList.append(li)
     }
     renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
+    renderNameFormUi()
+    renderShareAdminUi()
+    setSharingLayout(Boolean(currentShare.open && currentShare.code))
   }
 
   window.addEventListener(PARTICIPANTS_EVENT, ((event: CustomEvent) => {
@@ -405,15 +647,41 @@ function initWhiteboardMenu() {
     participants = Array.isArray(detail.participants) ? detail.participants : []
     yourSessionId =
       typeof detail.yourSessionId === 'string' ? detail.yourSessionId : ''
+    const couldManageShare = canManageShare()
     if (detail.yourRole) yourRole = detail.yourRole
+    renderNameFormUi()
+    renderShareAdminUi()
+    if (
+      !couldManageShare &&
+      canManageShare() &&
+      root.classList.contains('is-open')
+    ) {
+      void refreshShareState()
+    }
     renderPeople()
   }) as EventListener)
 
   window.addEventListener(HELLO_EVENT, ((event: CustomEvent) => {
-    const detail = event.detail as { role?: WhiteboardRole; sessionId?: string }
+    const detail = event.detail as {
+      role?: WhiteboardRole
+      sessionId?: string
+      title?: string
+    }
     if (detail.role) yourRole = detail.role
     if (typeof detail.sessionId === 'string') yourSessionId = detail.sessionId
     if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
+    renderNameFormUi()
+    renderShareAdminUi()
+    if (canManageShare() && root.classList.contains('is-open')) {
+      void refreshShareState()
+    }
+    if (typeof detail.title === 'string' && detail.title.trim()) {
+      titleSyncGen += 1
+      applyTitle(detail.title)
+      void maybeSeedOwnerTitle(detail.title)
+    } else {
+      syncTitleFromLiveRoom()
+    }
   }) as EventListener)
 
   window.addEventListener(FOLLOWING_EVENT, ((event: CustomEvent) => {
@@ -439,15 +707,19 @@ function initWhiteboardMenu() {
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
     panel.setAttribute('aria-hidden', open ? 'false' : 'true')
     if (open) {
-      syncTitleFromLibrary()
+      titleDirty = false
+      if (liveTitle) applyTitle(liveTitle)
+      else syncTitleFromLiveRoom()
       setHint(null)
       titleInput?.setCustomValidity('')
       void refreshShareState()
       renderPeople()
-      window.requestAnimationFrame(() => {
-        titleInput?.focus()
-        titleInput?.select()
-      })
+      if (canRenameBoard()) {
+        window.requestAnimationFrame(() => {
+          titleInput?.focus()
+          titleInput?.select()
+        })
+      }
     } else {
       stopExpiryTimer()
       setShareHint(null)
@@ -484,12 +756,19 @@ function initWhiteboardMenu() {
   })
 
   titleInput?.addEventListener('input', () => {
+    titleDirty = true
     titleInput.setCustomValidity('')
     setHint(null)
   })
 
   nameForm?.addEventListener('submit', (event) => {
     event.preventDefault()
+
+    if (!canRenameBoard()) {
+      renderNameFormUi()
+      setHint(null)
+      return
+    }
 
     if (!boardId) {
       setHint('Open a board from the library to rename it.')
@@ -508,26 +787,47 @@ function initWhiteboardMenu() {
     }
 
     titleInput?.setCustomValidity('')
-    // Wait for Clerk so signed-in Save writes the cloud library.
+    // Live-room PATCH is the source of truth. Owner Recents is an optional mirror.
     void (async () => {
       try {
         await whenAuthReady()
-        const next = await setBoardTitleActive(boardId, nextTitle)
-        if (titleInput) titleInput.value = next.title
-        document.title = `${next.title} - St. Cecilia Technology`
+        if (!canRenameBoard()) {
+          renderNameFormUi()
+          setHint(null)
+          return
+        }
+        const nextTitleLive = await patchLiveBoardTitle(boardId, nextTitle)
+        titleDirty = false
+        titleSyncGen += 1
+        applyTitle(nextTitleLive)
+        let mirroredToLibrary = false
+        if (yourRole === 'owner') {
+          try {
+            await setBoardTitleActive(boardId, nextTitleLive)
+            mirroredToLibrary = isSignedIn()
+          } catch {
+            // Recents PUT failed; do not claim the library-saved hint.
+          }
+        }
         setHint(
-          isSignedIn()
-            ? 'Saved to your Google library.'
-            : 'Name kept on this scratch board. Sign in to save it to your library.',
+          mirroredToLibrary
+            ? 'Name saved on this board and in your library. Save does not store the drawing.'
+            : isSignedIn()
+              ? 'Name saved on this board. Save does not store the drawing.'
+              : 'Name saved on this board. Sign in to save it to your library.',
         )
-      } catch {
-        setHint('Could not save the name. Check your connection and try again.')
+      } catch (err) {
+        setHint(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not save the name. Check your connection and try again.',
+        )
       }
     })()
   })
 
   shareToggle?.addEventListener('change', () => {
-    if (!boardId || shareBusy) {
+    if (!boardId || shareBusy || !canManageShare()) {
       if (shareToggle) shareToggle.checked = currentShare.open
       return
     }
@@ -553,8 +853,33 @@ function initWhiteboardMenu() {
     })()
   })
 
+  classCanEditToggle?.addEventListener('change', () => {
+    if (!boardId || classCanEditBusy || !canManageShare()) {
+      if (classCanEditToggle) classCanEditToggle.checked = classCanEditOn
+      return
+    }
+    classCanEditBusy = true
+    setShareHint(null)
+    const wantOn = classCanEditToggle.checked
+    void (async () => {
+      try {
+        const next = await patchClassCanEdit(boardId, wantOn)
+        renderClassCanEditUi(next)
+      } catch (err) {
+        renderClassCanEditUi(classCanEditOn)
+        setShareHint(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not update Group Edit.',
+        )
+      } finally {
+        classCanEditBusy = false
+      }
+    })()
+  })
+
   shareNew?.addEventListener('click', () => {
-    if (!boardId || shareBusy || !currentShare.open) return
+    if (!boardId || shareBusy || !currentShare.open || !canManageShare()) return
     shareBusy = true
     setShareHint(null)
     void (async () => {
@@ -577,7 +902,7 @@ function initWhiteboardMenu() {
   // Activating the share code control copies it (no separate Copy Code button).
   shareCodeBtn?.addEventListener('click', () => {
     const code = currentShare.code
-    if (!code || !currentShare.open) return
+    if (!canManageShare() || !code || !currentShare.open) return
     void copyText(
       code,
       'Code Copied',
@@ -586,7 +911,7 @@ function initWhiteboardMenu() {
   })
 
   shareCopyLink?.addEventListener('click', () => {
-    if (!boardId) return
+    if (!boardId || !canManageShare()) return
     const url = `${window.location.origin}/board/${boardId}`
     void copyText(
       url,

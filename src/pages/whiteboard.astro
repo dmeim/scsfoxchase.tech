@@ -20,9 +20,12 @@ import '../styles/whiteboard.css';
       </p>
 
       <div class="wb-actions">
-        <button type="button" class="wb-create-btn" data-wb-create>
-          Create a new whiteboard
-        </button>
+        <div class="wb-create">
+          <button type="button" class="wb-create-btn" data-wb-create>
+            Create a new whiteboard
+          </button>
+          <p class="wb-join-hint" data-wb-create-hint hidden></p>
+        </div>
 
         <form class="wb-join" data-wb-join>
           <div class="wb-join-fields">
@@ -55,10 +58,10 @@ import '../styles/whiteboard.css';
           <div class="wb-card-grid wb-card-grid--recents" data-wb-recents-grid hidden></div>
         </section>
 
-        <section class="wb-section wb-section--assets" aria-labelledby="wb-assets-heading">
+        <section class="wb-section wb-section--assets" hidden aria-labelledby="wb-assets-heading">
           <h3 id="wb-assets-heading" class="wb-section-title">Assets</h3>
           <p class="wb-section-empty" data-wb-assets-empty>
-            Images and videos you place on a saved board show up here.
+            Files you add on a board stay on that board. This list is not a class media library.
           </p>
           <div class="wb-asset-row" data-wb-assets-row hidden></div>
         </section>
@@ -76,7 +79,7 @@ import '../styles/whiteboard.css';
         Create works without an account. That scratch board stays live if you
         refresh, but it is not in a library and is removed after 24 hours if it
         is never saved. Join by code or link also works signed out. Sign in with
-        Google to Save and keep Recents, Library, and Assets.
+        Google to Save and keep Recents and Library.
       </p>
     </div>
   </section>
@@ -97,5 +100,10 @@ import '../styles/whiteboard.css';
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+  }
+
+  /* Hidden until canvas PUT upserts assets.json — not a class media library. */
+  .wb-section--assets {
+    display: none;
   }
 </style>

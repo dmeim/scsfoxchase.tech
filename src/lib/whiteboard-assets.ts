@@ -1,33 +1,31 @@
 /**
- * Whiteboard asset library (localStorage + cloud) + R2 upload helpers.
+ * Whiteboard hub asset index (cloud) + canvas R2 helpers.
  *
- * Owner keys:
+ * Canvas owner keys (live path):
  * - Signed-in saved boards: google:{accountId}
  * - Unsaved / signed-out scratch: temp:{boardId} (24h TTL)
- * - Legacy hub index: local:{deviceInstallId}
  *
- * R2 object keys: assets/{ownerKey}/{assetId}
+ * R2 object keys stay assets/{ownerKey}/{fileId} (one store; not a second library).
  * Resolve URL: /api/whiteboard/assets/{encodeURIComponent(ownerKey)}/{assetId}
- * Canvas images/GIF/video: see whiteboard-excalidraw-files.ts (not hub drag-drop).
+ * Canvas images/GIF/video: whiteboard-excalidraw-files.ts. Hub Assets is not
+ * a class media library — canvas PUT does not upsert assets.json.
+ *
+ * local:{deviceInstallId} is not a live hub upload prefix. The Worker may still
+ * GET leftover objects; parsePlayerPath accepts the shape for old links.
  */
 import {
 	deleteCloudAsset,
 	fetchCloudAssets,
 	upsertCloudAsset,
 } from './whiteboard-cloud'
-import { getAuthHeaders, isClerkConfigured, isSignedIn, whenAuthReady } from './whiteboard-identity'
+import { getAuthHeaders, isSignedIn } from './whiteboard-identity'
 import {
-	getDeviceInstallId,
 	getHostSecret,
 	getOwnerKey,
 	isBoardUuid,
 	readBoardIdFromPath,
 } from '../scripts/whiteboard-library'
-
-type WhiteboardAssetStore = {
-	upload: (asset: { id?: string }, file: File) => Promise<{ src: string }>
-	resolve: (asset: { props: { src?: string } }) => string | undefined
-}
+import { getBoardSessionAuth } from './whiteboard-participants'
 
 export const ASSETS_KEY = 'scsfoxchase.whiteboard.assets'
 
@@ -170,7 +168,7 @@ export async function removeAsset(assetId: string): Promise<boolean> {
 	try {
 		await fetch(assetResolveUrl(entry.ownerKey, entry.id), {
 			method: 'DELETE',
-			headers: await getAuthHeaders(),
+			headers: await assetWriteHeaders(entry.ownerKey),
 		})
 	} catch {
 		// Index already updated; orphaned R2 object is acceptable
@@ -240,7 +238,7 @@ export async function removeAssetActive(assetId: string): Promise<boolean> {
 		try {
 			await fetch(assetResolveUrl(entry.ownerKey, entry.id), {
 				method: 'DELETE',
-				headers: await getAuthHeaders(),
+				headers: await assetWriteHeaders(entry.ownerKey),
 			})
 		} catch {
 			// Index already updated
@@ -248,12 +246,6 @@ export async function removeAssetActive(assetId: string): Promise<boolean> {
 		return true
 	}
 	return removeAsset(assetId)
-}
-
-function defaultTitleFromFile(file: File): string {
-	const name = (file.name || '').trim()
-	if (!name || name === 'image.png' || name === 'blob') return 'Untitled asset'
-	return name.slice(0, 120)
 }
 
 function assertUploadAllowed(file: File): void {
@@ -270,80 +262,10 @@ function assertUploadAllowed(file: File): void {
 	}
 }
 
-/**
- * Mint library UUID, upload to R2 under the active owner key, upsert active Assets index.
- */
-export const r2AssetStore: WhiteboardAssetStore = {
-	async upload(_asset, file) {
-		assertUploadAllowed(file)
-
-		// Avoid writing under local:* while Clerk is still loading for a signed-in session.
-		if (isClerkConfigured()) {
-			await whenAuthReady()
-		}
-
-		const ownerKey = getOwnerKey()
-		// Ensure device id exists before signed-out upload
-		if (!isSignedIn()) void getDeviceInstallId()
-
-		const assetId = crypto.randomUUID()
-		const url = assetResolveUrl(ownerKey, assetId)
-		const mimeType = (file.type || 'application/octet-stream')
-			.split(';')[0]
-			.trim()
-			.toLowerCase()
-
-		const authHeaders = await getAuthHeaders()
-		const res = await fetch(url, {
-			method: 'PUT',
-			headers: {
-				'Content-Type': mimeType,
-				...authHeaders,
-			},
-			body: file,
-		})
-
-		if (!res.ok) {
-			let message = `Upload failed (${res.status})`
-			try {
-				const body = (await res.json()) as { error?: string }
-				if (body.error) message = body.error
-			} catch {
-				// ignore
-			}
-			throw new Error(message)
-		}
-
-		const boardId = readBoardIdFromPath()
-		const sourceBoardIds =
-			boardId && isBoardUuid(boardId) ? [boardId] : undefined
-
-		await upsertAssetActive({
-			id: assetId,
-			title: defaultTitleFromFile(file),
-			mimeType,
-			size: file.size,
-			r2Key: r2KeyFor(ownerKey, assetId),
-			ownerKey,
-			sourceBoardIds,
-			lastAccessedAt: new Date().toISOString(),
-		})
-
-		// Absolute URL so peers on other origins/devices resolve the same capability path
-		const src = new URL(url, window.location.origin).toString()
-		return { src }
-	},
-
-	resolve(asset) {
-		return asset.props.src
-	},
-}
-
-/** @deprecated Phase 3 stub — use r2AssetStore */
-export const localBlobAssetStore = r2AssetStore
-
 // ---------------------------------------------------------------------------
-// Phase 3.2 — canvas files (Excalidraw fileId → R2). Hub index is not updated.
+// Canvas files (Excalidraw fileId → R2 at assets/{ownerKey}/{fileId}).
+// Canvas PUT does not upsert library/{ownerKey}/assets.json. The hub Assets
+// strip is hidden until that index write exists — not a class media library.
 // ---------------------------------------------------------------------------
 
 export type BoardAssetMeta = {
@@ -403,6 +325,28 @@ function isOwnerKeyShape(value: string): boolean {
 	return /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/.test(value)
 }
 
+/** Host secret and/or live can-edit session for Worker PUT/DELETE on temp:* / local:*. */
+async function assetWriteHeaders(
+	ownerKey: string,
+): Promise<Record<string, string>> {
+	const headers: Record<string, string> = {}
+	if (ownerKey.startsWith('google:')) {
+		Object.assign(headers, await getAuthHeaders())
+	}
+	const boardId = readBoardIdFromPath()
+	if (boardId && isBoardUuid(boardId)) {
+		headers['X-Board-Id'] = boardId
+		const hostSecret = getHostSecret(boardId)
+		if (hostSecret) headers['X-Board-Host'] = hostSecret
+		const sessionAuth = getBoardSessionAuth(boardId)
+		if (sessionAuth) {
+			headers['X-Board-Session'] = sessionAuth.sessionId
+			headers['X-Board-Auth'] = sessionAuth.authToken
+		}
+	}
+	return headers
+}
+
 export async function fetchBoardAssetMeta(
 	boardId: string,
 ): Promise<BoardAssetMeta> {
@@ -448,9 +392,7 @@ export async function uploadCanvasBytes(opts: {
 	const url = assetResolveUrl(opts.ownerKey, opts.fileId)
 	const headers: Record<string, string> = {
 		'Content-Type': opts.mimeType,
-	}
-	if (opts.ownerKey.startsWith('google:')) {
-		Object.assign(headers, await getAuthHeaders())
+		...(await assetWriteHeaders(opts.ownerKey)),
 	}
 	const res = await fetch(url, {
 		method: 'PUT',

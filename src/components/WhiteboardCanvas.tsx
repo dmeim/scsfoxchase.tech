@@ -14,7 +14,12 @@ import type {
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
-import { whenAuthReady } from '../lib/whiteboard-identity'
+import {
+  getSessionToken,
+  isSignedIn,
+  waitForSessionToken,
+  whenAuthReady,
+} from '../lib/whiteboard-identity'
 import {
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
@@ -34,6 +39,7 @@ import {
 import { useWhiteboardExcalidrawFiles } from '../lib/whiteboard-excalidraw-files'
 // PHASE 3.3
 import {
+  FOLLOW_SOCKET_GAP_MS,
   getBoardConnectIdentity,
   useWhiteboardExcalidrawRoles,
 } from '../lib/whiteboard-excalidraw-roles'
@@ -46,6 +52,9 @@ declare global {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** How often to re-check Clerk for a JWT after a tokenless `wb:auth`. */
+const AUTH_RETRY_MS = 1000
 
 function readBoardIdFromLocation(): string | undefined {
   if (typeof window === 'undefined') return undefined
@@ -94,6 +103,19 @@ export default function WhiteboardCanvas({
     elements: SceneElement[]
     appState: SceneAppState | null
   } | null>(null)
+  /**
+   * True once this Excalidraw instance has applied a server scene. Outgoing
+   * updates are blocked until then — a freshly (re)mounted empty canvas must
+   * never push a full (empty) scene over the stored board.
+   */
+  const sceneHydratedRef = useRef(false)
+  /**
+   * True once `wb:auth` has been sent on the current socket. The server drops
+   * every message until auth, so sends before this would be lost while still
+   * being marked as delivered by version bookkeeping.
+   */
+  const authSentRef = useRef(false)
+  const persistErrorToastAtRef = useRef(0)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
 
@@ -101,6 +123,13 @@ export default function WhiteboardCanvas({
   const roles = useWhiteboardExcalidrawRoles({ boardId, apiRef, wsRef })
   const handleRoleMessageRef = useRef(roles.handleSocketMessage)
   handleRoleMessageRef.current = roles.handleSocketMessage
+  const onUserFollowRef = useRef(roles.onUserFollow)
+  onUserFollowRef.current = roles.onUserFollow
+  const reassertFollowRef = useRef(roles.reassertFollow)
+  reassertFollowRef.current = roles.reassertFollow
+  const resubscribeFollowRef = useRef(roles.resubscribeFollow)
+  resubscribeFollowRef.current = roles.resubscribeFollow
+  const unsubUserFollowRef = useRef<(() => void) | null>(null)
   const canEditRef = useRef(roles.canEdit)
   canEditRef.current = roles.canEdit
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -131,6 +160,13 @@ export default function WhiteboardCanvas({
       }
     }
   }, [roles.forceFollowLocked])
+
+  useEffect(() => {
+    return () => {
+      unsubUserFollowRef.current?.()
+      unsubUserFollowRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     ensureExcalidrawAssetPath()
@@ -204,6 +240,7 @@ export default function WhiteboardCanvas({
           reconciled as SceneElement[],
           lastElementVersionsRef.current,
         )
+        sceneHydratedRef.current = true
       } finally {
         queueMicrotask(() => {
           applyingRemoteRef.current = false
@@ -218,14 +255,16 @@ export default function WhiteboardCanvas({
       elements: readonly OrderedExcalidrawElement[],
       appState: AppState,
       forceFull: boolean,
-    ) => {
+    ): boolean => {
       const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      if (applyingRemoteRef.current) return
-      if (!canEditRef.current) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false
+      if (!authSentRef.current) return false
+      if (applyingRemoteRef.current) return false
+      if (!canEditRef.current) return false
+      if (!sceneHydratedRef.current) return false
 
       const version = getSceneVersion(elements)
-      if (!forceFull && version === lastSceneVersionRef.current) return
+      if (!forceFull && version === lastSceneVersionRef.current) return true
 
       const asScene = elements as unknown as SceneElement[]
       const dirty = elementsWithIncreasedVersion(
@@ -234,40 +273,71 @@ export default function WhiteboardCanvas({
       )
       if (!forceFull && dirty.length === 0) {
         lastSceneVersionRef.current = version
-        return
+        return true
       }
 
       fullSyncCounterRef.current += 1
       const full = forceFull || fullSyncCounterRef.current % 15 === 0
       const payload = full ? asScene : dirty
-      rememberElementVersions(payload, lastElementVersionsRef.current)
-      lastSceneVersionRef.current = version
 
       let databaseJson: string | undefined
       try {
-        databaseJson = serializeAsJSON(elements, appState, {}, 'database')
+        databaseJson = serializeAsJSON(
+          elements,
+          { ...appState, viewModeEnabled: false },
+          {},
+          'database',
+        )
       } catch {
         databaseJson = undefined
       }
 
-      ws.send(
-        JSON.stringify({
-          type: 'scene:update',
-          elements: payload,
-          full,
-          databaseJson,
-        }),
-      )
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'scene:update',
+            elements: payload,
+            full,
+            databaseJson,
+          }),
+        )
+      } catch {
+        return false
+      }
+
+      rememberElementVersions(payload, lastElementVersionsRef.current)
+      lastSceneVersionRef.current = version
+      return true
     },
     [],
   )
 
-  const flushPending = useCallback(() => {
-    const pending = pendingFlushRef.current
-    pendingFlushRef.current = null
-    if (!pending) return
-    sendSceneUpdate(pending.elements, pending.appState, false)
-  }, [sendSceneUpdate])
+  const flushPending = useCallback(
+    (forceFull = false) => {
+      const pending = pendingFlushRef.current
+      if (!pending) return
+      const sent = sendSceneUpdate(
+        pending.elements,
+        pending.appState,
+        forceFull,
+      )
+      if (sent) pendingFlushRef.current = null
+    },
+    [sendSceneUpdate],
+  )
+
+  const flushNow = useCallback(
+    (forceFull = false) => {
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+      }
+      flushPending(forceFull)
+    },
+    [flushPending],
+  )
+  const flushNowRef = useRef(flushNow)
+  flushNowRef.current = flushNow
 
   const handleChange = useCallback(
     (
@@ -292,12 +362,35 @@ export default function WhiteboardCanvas({
   )
 
   useEffect(() => {
+    const persist = () => {
+      flushNowRef.current(true)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') persist()
+    }
+    window.addEventListener('pagehide', persist)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', persist)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!boardId) return
     let cancelled = false
     let pingTimer: number | null = null
     let resyncTimer: number | null = null
     let reconnectTimer: number | null = null
+    let authRetryTimer: number | null = null
     let attempt = 0
+    let lastSocketJsAt = 0
+
+    const clearAuthRetry = () => {
+      if (authRetryTimer == null) return
+      window.clearInterval(authRetryTimer)
+      authRetryTimer = null
+    }
 
     const clearTimers = () => {
       if (pingTimer != null) {
@@ -310,30 +403,99 @@ export default function WhiteboardCanvas({
       }
     }
 
-    const connect = async () => {
-      if (cancelled) return
+    /**
+     * Send one `wb:auth` frame. `signedIn` without a token tells the server to
+     * keep the socket pending instead of greeting a real Owner as Viewer —
+     * the server cannot otherwise tell "Clerk is still loading" apart from
+     * "this is a guest".
+     */
+    const sendAuthFrame = (ws: WebSocket, token: string) => {
+      if (ws.readyState !== WebSocket.OPEN) return
+      const hostSecret = getHostSecret(boardId)
+      const signedIn = isSignedIn()
+      ws.send(
+        JSON.stringify({
+          type: 'wb:auth',
+          ...(token ? { token } : {}),
+          ...(hostSecret ? { hostSecret } : {}),
+          ...(!token && signedIn ? { signedIn: true } : {}),
+        }),
+      )
+      authSentRef.current = true
+      // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
+      resubscribeFollowRef.current()
+      // Push anything drawn while the socket was down / auth was pending.
+      flushNowRef.current(true)
+    }
+
+    /**
+     * Send `wb:auth` as soon as Clerk has settled, then keep retrying in the
+     * background until a real JWT exists. Auth never blocks the socket or the
+     * canvas: the server sends the full scene on connect, and a late token
+     * upgrades the role in place via `wb:role`.
+     */
+    const sendConnectAuth = async (ws: WebSocket) => {
       await whenAuthReady()
+      if (cancelled || wsRef.current !== ws) return
+      const first = isSignedIn()
+        ? ((await waitForSessionToken(6, 100))?.trim() ?? '')
+        : ''
+      if (cancelled || wsRef.current !== ws) return
+      sendAuthFrame(ws, first)
+      if (first || !isSignedIn()) return
+
+      authRetryTimer = window.setInterval(() => {
+        if (cancelled || wsRef.current !== ws) {
+          if (authRetryTimer != null) window.clearInterval(authRetryTimer)
+          authRetryTimer = null
+          return
+        }
+        if (!isSignedIn()) {
+          if (authRetryTimer != null) window.clearInterval(authRetryTimer)
+          authRetryTimer = null
+          sendAuthFrame(ws, '')
+          return
+        }
+        void getSessionToken().then((value) => {
+          const token = value?.trim() ?? ''
+          if (!token || cancelled || wsRef.current !== ws) return
+          if (authRetryTimer != null) window.clearInterval(authRetryTimer)
+          authRetryTimer = null
+          sendAuthFrame(ws, token)
+        })
+      }, AUTH_RETRY_MS)
+    }
+
+    const connect = () => {
       if (cancelled) return
 
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
+      // Guest identity hint only. Signed-in users are identified by the
+      // verified `wb:auth` JWT; a non-UUID userId is dropped from the URL.
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
         sessionId,
-        hostSecret: getHostSecret(boardId),
         displayName: identity.displayName,
         userId: identity.userId,
       })
 
+      authSentRef.current = false
+      clearAuthRetry()
       const ws = new WebSocket(uri)
       wsRef.current = ws
 
       ws.addEventListener('open', () => {
         attempt = 0
         clearTimers()
+        void sendConnectAuth(ws)
         pingTimer = window.setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('{"type":"ping"}')
+          if (ws.readyState !== WebSocket.OPEN) return
+          ws.send('{"type":"ping"}')
+          // Auto-pong does not wake DO JS. After a gap, replay wb:follow even
+          // if the tab never disconnected.
+          if (Date.now() - lastSocketJsAt >= FOLLOW_SOCKET_GAP_MS) {
+            resubscribeFollowRef.current()
           }
         }, CLIENT_PING_MS)
         resyncTimer = window.setInterval(() => {
@@ -345,9 +507,9 @@ export default function WhiteboardCanvas({
             true,
           )
         }, 30_000)
-        if (apiRef.current) {
-          ws.send(JSON.stringify({ type: 'scene:request' }))
-        }
+        // Pending strokes flush in sendConnectAuth (after wb:auth) — the
+        // server drops messages sent before auth. The full scene arrives
+        // unprompted on every connect, so no scene:request is needed here.
       })
 
       ws.addEventListener('message', (event) => {
@@ -361,7 +523,31 @@ export default function WhiteboardCanvas({
         if (!parsed || typeof parsed !== 'object') return
         const data = parsed as Record<string, unknown>
 
-        if (data.type === 'pong') return
+        if (data.type === 'pong') {
+          // Socket stayed OPEN across a hibernation gap; resubscribe wb:follow.
+          if (Date.now() - lastSocketJsAt >= FOLLOW_SOCKET_GAP_MS) {
+            resubscribeFollowRef.current()
+          }
+          return
+        }
+        lastSocketJsAt = Date.now()
+
+        if (data.type === 'wb:error') {
+          const message =
+            typeof data.message === 'string' && data.message.trim()
+              ? data.message
+              : 'This board is too large to save. The last change was not stored.'
+          const now = Date.now()
+          if (now - persistErrorToastAtRef.current >= 5000) {
+            persistErrorToastAtRef.current = now
+            apiRef.current?.setToast?.({
+              message,
+              duration: 8000,
+              closable: true,
+            })
+          }
+          return
+        }
 
         // PHASE 3.3
         if (handleRoleMessageRef.current(data)) return
@@ -381,7 +567,25 @@ export default function WhiteboardCanvas({
 
       ws.addEventListener('close', () => {
         clearTimers()
-        if (wsRef.current === ws) wsRef.current = null
+        clearAuthRetry()
+        if (wsRef.current === ws) {
+          const api = apiRef.current
+          if (
+            api &&
+            canEditRef.current &&
+            !pendingFlushRef.current &&
+            !applyingRemoteRef.current
+          ) {
+            const elements = api.getSceneElementsIncludingDeleted()
+            if (getSceneVersion(elements) !== lastSceneVersionRef.current) {
+              pendingFlushRef.current = {
+                elements,
+                appState: api.getAppState(),
+              }
+            }
+          }
+          wsRef.current = null
+        }
         if (cancelled) return
         const delay = Math.min(10_000, 500 * 2 ** attempt)
         attempt += 1
@@ -391,16 +595,25 @@ export default function WhiteboardCanvas({
       })
     }
 
+    const onVisibleAfterGap = () => {
+      if (document.visibilityState !== 'visible') return
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (Date.now() - lastSocketJsAt < FOLLOW_SOCKET_GAP_MS) return
+      // Tab stayed connected; still resubscribe wb:follow after a gap.
+      resubscribeFollowRef.current()
+    }
+    document.addEventListener('visibilitychange', onVisibleAfterGap)
+
     void connect()
 
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', onVisibleAfterGap)
       clearTimers()
+      clearAuthRetry()
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
-      if (flushTimerRef.current != null) {
-        window.clearTimeout(flushTimerRef.current)
-        flushTimerRef.current = null
-      }
+      flushNowRef.current(true)
       const ws = wsRef.current
       wsRef.current = null
       try {
@@ -414,6 +627,27 @@ export default function WhiteboardCanvas({
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       apiRef.current = api
+      // New (or remounted, via key={canEdit}) instance starts empty; block
+      // outgoing scene pushes until a server scene has been applied, and drop
+      // anything the previous instance had queued so the empty starting scene
+      // can never be flushed over the stored board.
+      sceneHydratedRef.current = false
+      pendingFlushRef.current = null
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+      }
+      unsubUserFollowRef.current?.()
+      unsubUserFollowRef.current = api.onUserFollow((payload) => {
+        onUserFollowRef.current(payload)
+      })
+      api.updateScene({
+        appState: { viewModeEnabled: !canEditRef.current },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      })
+      requestAnimationFrame(() => {
+        reassertFollowRef.current()
+      })
       const pending = pendingRemoteRef.current
       if (pending) {
         pendingRemoteRef.current = null
@@ -442,8 +676,19 @@ export default function WhiteboardCanvas({
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0 }}>
+    <div
+      ref={wrapRef}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        touchAction: roles.forceFollowLocked ? 'none' : undefined,
+      }}
+    >
+      {/* Mounted before `wb:hello` so the board paints as soon as the scene
+          arrives. Starts view-only; the `key` remount flips Excalidraw out of
+          view mode once a can-edit role lands (0.18.1 can otherwise stick). */}
       <Excalidraw
+        key={roles.canEdit ? 'edit' : 'view'}
         excalidrawAPI={handleApi}
         theme={theme}
         onChange={handleChange}
@@ -453,10 +698,8 @@ export default function WhiteboardCanvas({
         onPaste={media.onPaste}
         isCollaborating
         name={roles.displayName}
-        // PHASE 3.3
         viewModeEnabled={roles.viewModeEnabled}
         collaborators={roles.collaborators}
-        onUserFollow={roles.onUserFollow}
         onScrollChange={roles.onScrollChange}
       />
       {roles.forceFollowLocked ? (
@@ -465,13 +708,33 @@ export default function WhiteboardCanvas({
           style={{
             position: 'absolute',
             inset: 0,
-            zIndex: 6,
+            zIndex: 1,
             background: 'transparent',
             touchAction: 'none',
+            pointerEvents: 'none',
           }}
         />
       ) : null}
-      {roles.viewModeEnabled ? (
+      {!roles.helloReceived ? (
+        <div
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 7,
+            padding: '4px 10px',
+            borderRadius: 2,
+            background: 'var(--primary-color)',
+            color: '#fff',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            pointerEvents: 'none',
+          }}
+        >
+          Connecting…
+        </div>
+      ) : roles.viewModeEnabled ? (
         <div
           style={{
             position: 'absolute',

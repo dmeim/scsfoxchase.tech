@@ -63,7 +63,8 @@ const helpActive =
           >
             <div class="whiteboard-manage-layout" data-wb-manage-layout>
               <div class="whiteboard-manage-col whiteboard-manage-col--left">
-                <form class="whiteboard-manage-name" data-wb-manage-name>
+                <p class="whiteboard-join-label" data-wb-live-title hidden></p>
+                <form class="whiteboard-manage-name" data-wb-manage-name hidden>
                   <label class="whiteboard-join-label" for="wb-manage-title">Name this whiteboard</label>
                   <div class="whiteboard-join-row">
                     <input
@@ -82,9 +83,9 @@ const helpActive =
                   <p class="whiteboard-join-hint" data-wb-manage-hint hidden></p>
                 </form>
 
-                <div class="whiteboard-menu-divider" role="separator"></div>
+                <div class="whiteboard-menu-divider" role="separator" hidden></div>
 
-                <div class="whiteboard-manage-block" data-wb-manage-share>
+                <div class="whiteboard-manage-block" data-wb-manage-share hidden>
                   <div class="whiteboard-manage-share-head">
                     <p class="whiteboard-join-label">Share</p>
                     <label class="whiteboard-switch">
@@ -97,6 +98,21 @@ const helpActive =
                       <span class="whiteboard-switch-track" aria-hidden="true"></span>
                     </label>
                   </div>
+                  <div class="whiteboard-manage-share-head" data-wb-class-can-edit>
+                    <p class="whiteboard-join-label">Group Edit</p>
+                    <label class="whiteboard-switch">
+                      <span class="whiteboard-switch-label" data-wb-class-can-edit-state>Off</span>
+                      <input
+                        type="checkbox"
+                        aria-label="Group Edit — share-code joiners can draw"
+                        data-wb-class-can-edit-toggle
+                      />
+                      <span class="whiteboard-switch-track" aria-hidden="true"></span>
+                    </label>
+                  </div>
+                  <p class="whiteboard-join-hint">
+                    Share-code joiners can draw when Group Edit is on. UUID links stay view-only unless you set Editor on People.
+                  </p>
                   <p class="whiteboard-join-hint" data-wb-share-hint hidden></p>
                 </div>
 
@@ -112,7 +128,7 @@ const helpActive =
                 data-wb-manage-right
                 hidden
               >
-                <div class="whiteboard-manage-block" data-wb-manage-share-tools>
+                <div class="whiteboard-manage-block" data-wb-manage-share-tools hidden>
                   <div class="whiteboard-share-toolbar-wrap">
                     <div class="whiteboard-share-toolbar">
                       <button
@@ -167,9 +183,6 @@ const helpActive =
                     </div>
                   </div>
                   <p class="whiteboard-join-hint whiteboard-share-expiry" data-wb-share-expiry hidden></p>
-                  <p class="whiteboard-join-hint">
-                    Bookmark the board page to come back later.
-                  </p>
                 </div>
 
                 <div class="whiteboard-menu-divider" role="separator"></div>
@@ -192,7 +205,7 @@ const helpActive =
                         <span class="visually-hidden">Force follow target</span>
                         <select
                           class="whiteboard-people-target-select"
-                          aria-label="Who the class follows"
+                          aria-label="Who others follow"
                           data-wb-force-follow-target
                         >
                           <option value="">Me</option>

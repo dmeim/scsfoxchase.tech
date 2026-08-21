@@ -31,11 +31,13 @@ The join field accepts:
 
 | Input | Behavior |
 |-------|----------|
-| Share code `A1B2` | `GET /api/whiteboard/join/:code` → board UUID, then open |
+| Share code `1A2B` | `GET /api/whiteboard/join/:code` → board UUID, then open |
 | Full URL or `/board/{uuid}` path | Parse UUID from path |
 | Bare UUID | Open directly |
 
 Join does **not** add the board to Recents/Library. Invalid input or an unavailable code shows a hint under the field.
+
+A share code (or link / UUID) only **opens** the board. Joiners land as **Viewer** unless **Group Edit** is On (share-code joiners can then draw) or an Owner or Manager sets **Editor** on **People**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
 
 Join parsing: `parseJoinInput` in `src/scripts/whiteboard-library.ts`.  
 Code lookup: `lookupShareCode` in `src/lib/whiteboard-codes.ts`. Details: [share-codes.md](./share-codes.md).
@@ -48,9 +50,9 @@ Shown only while signed in (`[data-wb-cloud-lists]`). Signed-out hub copy explai
 |---------|---------|
 | **Recents** | Up to 8 boards by `lastAccessedAt` from the Google library |
 | **Library** | Full sorted cloud board list |
-| **Assets** | Images/videos from saved boards under `google:{accountId}` |
+| **Assets** | Hidden for now — canvas uploads stay on the board (`assets/{ownerKey}/{fileId}`) and are not a class media library |
 
-Each card supports **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row only. Board delete does not delete Durable Object state or R2 media for classmates still on the board; asset delete also best-effort `DELETE`s the R2 object.
+Recents and Library cards support **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row only. Board delete does not delete Durable Object state or R2 media for classmates still on the board.
 
 While Clerk is loading, empty states show **Loading…** so cloud lists do not flash empty.
 
@@ -79,7 +81,7 @@ Fonts: `board.astro` sets `window.EXCALIDRAW_ASSET_PATH = '/excalidraw/'` in `<h
 `WhiteboardCanvas`:
 
 1. Reads `boardId` from the path (or optional prop).
-2. Opens a native WebSocket to `/api/whiteboard/connect/{uuid}` (plus `sessionId`, optional `hostSecret`, `displayName`, `userId`).
+2. Opens a native WebSocket to `/api/whiteboard/connect/{uuid}` (`sessionId` required; optional `displayName` and guest `userId` on the query). Scratch host proof and Clerk JWT are the first message (`wb:auth`), not the URL. `X-Board-Host` is also accepted on the upgrade if a client can set it.
 3. Merges remote elements with `reconcileElements`; remote applies use `captureUpdate: NEVER`.
 4. Uploads image/GIF bytes to R2 by Excalidraw `fileId`; MP4/WebM become a same-origin `/whiteboard-player` embed. YouTube / Vimeo stay stock.
 5. Handles custom DO messages (`wb:hello`, `wb:participants`, `wb:role`, `wb:forceFollow`, `wb:sceneBounds`) and bridges Follow / roles to the manage panel via `window` events.
@@ -96,15 +98,19 @@ Toggle: **Whiteboard** button opens a dialog panel. Escape / outside click close
 
 ### Name this whiteboard
 
-- Editable title (max 80 chars) → Save → `setBoardTitleActive`.
+- Editable title (max 80 chars) → Save → `setBoardTitleActive`. **Owner/Manager only** (hidden for Editor/Viewer; PATCH title is **403** otherwise).
 - Signed in + already in library (or this browser created it): saved to the Google library.
 - Signed out: title is kept in `sessionStorage` for this scratch tab only — it is not a local library.
 
 ### Share
 
-Open / Closed switch on the left column. When **Open**, the right column shows the share code (click to copy), **New Code**, **Copy Link** (permanent `/board/{uuid}` URL), expiry countdown, and People. See [share-codes.md](./share-codes.md).
+Open / Closed switch on the left column — **Owner/Manager only** (hidden for Editor/Viewer). When **Open**, the right column shows the share code (click to copy), **New Code**, **Copy Link** (permanent `/board/{uuid}` URL), expiry countdown, and People. See [share-codes.md](./share-codes.md).
 
-Anyone who can open the board URL can call the code API (UUID is the capability). Host secret is **not** required for share-code actions.
+**Group Edit** (Owner/Manager; Off by default) is shipped. When On, joiners of the **active share code** land as Editor. UUID-only links stay Viewer. You can still set Editor per person on People.
+
+The code is a join token, not an automatic edit grant. Students who join with it stay **Viewer** unless **Group Edit** is On or you set **Editor** on **People**. UUID links stay Viewer.
+
+Share-code GET / POST / DELETE require Owner or Manager (live session token, scratch host secret, or Clerk matching the Google owner). Leftover host on a Google-owned board is not enough. Viewer gets **403**. Join lookup stays unauthenticated. Closed drops the KV mapping; UUID access remains a separate capability.
 
 ### Follow Me
 
@@ -113,6 +119,8 @@ Owner/Manager control beside the **People** heading (hidden unless this session 
 ### People
 
 Shown only while Share is Open. Columns: **Name** | **Follow** | **Role**. Live list from DO custom messages. See [people-permissions.md](./people-permissions.md).
+
+Use **Group Edit** so share-code joiners can draw without per-person clicks. Use the **Role** column to promote a UUID guest (or one person) from **Viewer** to **Editor**. Do not treat an Open code as group-wide draw access unless Group Edit is On.
 
 ### Whiteboard Library
 
@@ -124,15 +132,15 @@ When a board is **created** on a device, a 32-byte hex secret is stored at:
 
 `localStorage['scsfoxchase.whiteboard.host.' + boardId]`
 
-On WebSocket connect, that secret is sent as `hostSecret`. The Durable Object hashes it (SHA-256) and:
+On connect, that secret is sent in the first WebSocket message (`wb:auth` `hostSecret`) or as `X-Board-Host` — not on the connect query string (query strings hit access logs). The Durable Object hashes it (SHA-256) and:
 
 - First secret seen for the board → stored as host hash; that session is **ephemeral Owner**.
 - Later connects with the same secret → Owner on an unsaved board; without it → guest (**Viewer** by default).
 
 On a **saved** board, Owner is the Google account (`google:{accountId}`), not whoever still holds the creating-browser secret.
 
-**Owner/Manager** manage actions: role changes, Follow Me / force-follow.  
-**Not Owner-gated:** rename (library, when allowed), share Open/Closed / click-code copy / New Code / Copy Link, voluntary Follow.
+**Owner/Manager** manage actions: live title rename, role changes, Follow Me / force-follow, share Open / Closed / click-code copy / New Code / Copy Link.  
+**Not Owner-gated:** voluntary Follow; unauthenticated join lookup; opening `/board/{uuid}` with the link (UUID access is a separate capability from share-code admin).
 
 Joining via link or code does **not** grant the host secret — only the creating browser (unless the secret is copied into another browser’s `localStorage`).
 
