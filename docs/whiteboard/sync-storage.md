@@ -29,6 +29,19 @@ Connect URL query params:
 
 Scratch **host proof** (`hostSecret`) and Clerk JWT are the first WebSocket message (`wb:auth`). The Durable Object also accepts `X-Board-Host` on the upgrade request. Do not put `hostSecret` on the connect query string (access logs). HTTP privileged calls still send host proof as `X-Board-Host` / `Authorization: Bearer`, not as a WebSocket URL param.
 
+Clerk is **never** verified during the upgrade: browsers cannot set WebSocket headers, and a slow Clerk BAPI call there would block the 101 handshake and the initial `scene:sync`. The socket opens, the DO sends the full scene, and identity settles afterwards.
+
+`wb:auth` is repeatable, because Clerk can settle long after connect on a cold Chromebook:
+
+| Client state | `wb:auth` payload | Durable Object |
+|--------------|-------------------|----------------|
+| Signed out (or scratch host) | `hostSecret?` | Resolves role and sends the single `wb:hello` |
+| Signed in, JWT ready | `token`, `hostSecret?` | Same, with Google identity from `verifyToken` |
+| Signed in, JWT not ready | `signedIn: true`, `hostSecret?` | Stays **pending** — no hello — unless host proof alone already earns a can-edit role. The client shows "Connecting…" and retries every second |
+| Signed in, JWT arrives late | `token` on an already-greeted socket | `reauthenticateSocket` upgrades in place via `wb:role`; never a second hello, never a downgrade unless the identity changed |
+
+This is what keeps a real Owner from being greeted as Viewer just because Clerk was slow.
+
 ### Worker routing
 
 `src/worker.ts` matches `/api/whiteboard/connect/:uuid`, validates UUID, requires `Upgrade: websocket`, then:
