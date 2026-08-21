@@ -160,23 +160,20 @@ function nonEmptyToken(value: string | null | undefined): string | null {
 }
 
 /**
- * Signed-in connect must not race Clerk `getToken()` — empty token → Viewer hello.
- * Pass `{ require: true }` from the canvas so a signed-in socket never proceeds
- * with `token: ""` (stays Connecting until a real JWT or sign-out).
+ * Poll Clerk briefly for a session JWT, giving up after `tries`. Always
+ * bounded: the board socket must stay responsive while Clerk is still
+ * loading, so it sends `wb:auth` without a token and re-sends on its own
+ * backoff once one exists (see `sendConnectAuth` in `WhiteboardCanvas.tsx`).
  */
 export async function waitForSessionToken(
 	tries = 20,
 	delayMs = 100,
-	opts?: { require?: boolean },
 ): Promise<string | null> {
-	const requireWhileSignedIn = opts?.require === true
-	let i = 0
-	while (true) {
+	for (let i = 0; ; i++) {
 		const token = nonEmptyToken(await getSessionToken())
 		if (token) return token
 		if (!isSignedIn()) return null
-		if (!requireWhileSignedIn && i >= tries) return null
-		i += 1
+		if (i >= tries) return null
 		await new Promise((resolve) => setTimeout(resolve, delayMs))
 	}
 }
