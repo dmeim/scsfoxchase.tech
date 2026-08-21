@@ -31,7 +31,7 @@ The join field accepts:
 
 | Input | Behavior |
 |-------|----------|
-| Share code `A1B2C3D4` | `GET /api/whiteboard/join/:code` → board UUID, then open |
+| Share code `1A2B` | `GET /api/whiteboard/join/:code` → board UUID, then open |
 | Full URL or `/board/{uuid}` path | Parse UUID from path |
 | Bare UUID | Open directly |
 

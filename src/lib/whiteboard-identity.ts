@@ -261,7 +261,10 @@ export function identityFromClerkUser(user: ClerkLikeUser): WhiteboardIdentity {
 	const google = user.externalAccounts?.find(
 		(account) => {
 			const provider = (account.provider || '').toLowerCase()
-			return provider === 'google' || provider === 'oauth_google'
+			// clerk-js reports `google`; backend/custom OAuth can report
+			// `oauth_google` / `oauth_custom_google`. Must match the Worker
+			// (`isGoogleExternalAccount`) or ownerKey flips between clients.
+			return provider === 'google' || provider.endsWith('_google')
 		},
 	)
 	const googleSub =

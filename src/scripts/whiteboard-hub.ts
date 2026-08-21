@@ -24,12 +24,12 @@ import {
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
 
-/** Eight-character letter-digit code (server `SHARE_CODE_RE`). Not a 4-char token. */
-const HUB_SHARE_CODE_RE = /^([A-Za-z][0-9]){4}$/;
+/** Four-character digit-letter code, `1A2B` form (server `SHARE_CODE_RE`). */
+const HUB_SHARE_CODE_RE = /^([0-9][A-Za-z]){2}$/;
 
 /**
- * Board URL / UUID via `parseJoinInput`; share codes must be eight characters.
- * `whiteboard-library` still classifies four-character tokens as codes — ignore those.
+ * Board URL / UUID via `parseJoinInput`; share codes are `1A2B` form
+ * (digit, letter, digit, letter).
  */
 function parseHubJoinInput(
   raw: string,

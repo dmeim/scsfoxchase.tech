@@ -28,7 +28,7 @@ const DEFAULT_LIVE_TITLE = 'Untitled board'
 const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
 const JOIN_CODE_COOKIE_MAX_AGE = 12 * 60 * 60
 const JOIN_CODE_STORAGE_PREFIX = 'scsfoxchase.whiteboard.joinCode.'
-const JOIN_CODE_RE = /^([A-Z][0-9]){4}$/
+const JOIN_CODE_RE = /^([0-9][A-Z]){2}$/
 
 function writeJoinCodeCookie(boardId: string, code: string) {
   const secure = window.location.protocol === 'https:' ? '; Secure' : ''

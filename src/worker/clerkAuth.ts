@@ -125,7 +125,10 @@ function authorizedPartiesForToken(
 
 function isGoogleExternalAccount(account: { provider?: string | null }): boolean {
 	const provider = (account.provider || '').toLowerCase()
-	return provider === 'google' || provider === 'oauth_google'
+	// Clerk reports `oauth_google`; custom OAuth credentials can report
+	// `oauth_custom_google`. Missing this match flips accountId to the Clerk
+	// user id, which changes ownerKey and "loses" the R2 library index.
+	return provider === 'google' || provider.endsWith('_google')
 }
 
 function jsonError(status: number, message: string): Response {
@@ -142,45 +145,174 @@ function clerkClient(env: Env) {
 	})
 }
 
-async function authFromClerkUserId(
+/**
+ * Cached Clerk profile. `users.getUser` is a BAPI network call — doing it on
+ * every connect/hello/library request hits Clerk rate limits (SDK retries
+ * with backoff → boards appear to hang for a minute) and, worse, a failed
+ * fetch used to silently flip `accountId` from the Google sub to the Clerk
+ * user id, which changes `ownerKey` and "loses" the R2 library index.
+ *
+ * Memory (per isolate, 10 min fresh) + KV (`clerkuser:{id}`, 30 days) keep
+ * identity stable and keep BAPI off the hot path.
+ */
+type CachedClerkProfile = {
+	accountId: string
+	email: string
+	displayName: string
+	avatarUrl?: string
+	fetchedAt: number
+}
+
+const PROFILE_MEMORY_FRESH_MS = 10 * 60 * 1000
+const PROFILE_KV_TTL_SECONDS = 30 * 24 * 60 * 60
+const PROFILE_KV_REFRESH_MS = 24 * 60 * 60 * 1000
+const PROFILE_FETCH_TIMEOUT_MS = 5000
+
+const profileMemoryCache = new Map<string, CachedClerkProfile>()
+
+function profileKvKey(clerkUserId: string): string {
+	return `clerkuser:${clerkUserId}`
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+	return Promise.race([
+		promise,
+		new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+	])
+}
+
+async function fetchProfileFromClerk(
 	clerk: ReturnType<typeof createClerkClient>,
 	clerkUserId: string,
-	env: Env,
-): Promise<ClerkWhiteboardAuth | null> {
-	let email = ''
-	let displayName = 'Signed-in user'
-	let avatarUrl: string | undefined
-	let accountId = clerkUserId
-
+): Promise<CachedClerkProfile | null> {
 	try {
 		const user = await clerk.users.getUser(clerkUserId)
-		email =
+		let email =
 			user.primaryEmailAddress?.emailAddress ||
 			user.emailAddresses[0]?.emailAddress ||
 			''
-		displayName =
-			user.fullName?.trim() ||
-			[user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
-			user.username?.trim() ||
-			email.split('@')[0] ||
-			'Signed-in user'
-		avatarUrl = user.imageUrl || undefined
 		const google = user.externalAccounts.find(isGoogleExternalAccount)
 		const googleSub = (
 			google?.providerUserId ||
 			google?.externalId ||
 			''
 		).trim()
-		if (googleSub) accountId = googleSub
 		if (!email) {
 			const googleEmail = (
 				google as { emailAddress?: string | null } | undefined
 			)?.emailAddress
 			if (googleEmail) email = googleEmail
 		}
+		const displayName =
+			user.fullName?.trim() ||
+			[user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+			user.username?.trim() ||
+			email.split('@')[0] ||
+			'Signed-in user'
+		return {
+			accountId: googleSub || clerkUserId,
+			email,
+			displayName,
+			avatarUrl: user.imageUrl || undefined,
+			fetchedAt: Date.now(),
+		}
 	} catch {
-		// Fall back to Clerk user id if BAPI user fetch fails
+		return null
 	}
+}
+
+async function readKvProfile(
+	env: Env,
+	clerkUserId: string,
+): Promise<CachedClerkProfile | null> {
+	if (!env.WHITEBOARD_CODES) return null
+	try {
+		const raw = await env.WHITEBOARD_CODES.get(profileKvKey(clerkUserId))
+		if (!raw) return null
+		const parsed = JSON.parse(raw) as Partial<CachedClerkProfile>
+		if (typeof parsed.accountId !== 'string' || !parsed.accountId) {
+			return null
+		}
+		return {
+			accountId: parsed.accountId,
+			email: typeof parsed.email === 'string' ? parsed.email : '',
+			displayName:
+				typeof parsed.displayName === 'string' && parsed.displayName
+					? parsed.displayName
+					: 'Signed-in user',
+			avatarUrl:
+				typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : undefined,
+			fetchedAt:
+				typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : 0,
+		}
+	} catch {
+		return null
+	}
+}
+
+async function writeKvProfile(
+	env: Env,
+	clerkUserId: string,
+	profile: CachedClerkProfile,
+): Promise<void> {
+	if (!env.WHITEBOARD_CODES) return
+	try {
+		await env.WHITEBOARD_CODES.put(
+			profileKvKey(clerkUserId),
+			JSON.stringify(profile),
+			{ expirationTtl: PROFILE_KV_TTL_SECONDS },
+		)
+	} catch {
+		// Cache write failures must not fail auth
+	}
+}
+
+async function resolveClerkProfile(
+	clerk: ReturnType<typeof createClerkClient>,
+	clerkUserId: string,
+	env: Env,
+): Promise<CachedClerkProfile | null> {
+	const now = Date.now()
+	const memory = profileMemoryCache.get(clerkUserId)
+	if (memory && now - memory.fetchedAt < PROFILE_MEMORY_FRESH_MS) {
+		return memory
+	}
+
+	const kv = await readKvProfile(env, clerkUserId)
+	if (kv) {
+		profileMemoryCache.set(clerkUserId, kv)
+		if (now - kv.fetchedAt > PROFILE_KV_REFRESH_MS) {
+			void fetchProfileFromClerk(clerk, clerkUserId).then((fresh) => {
+				if (!fresh) return
+				profileMemoryCache.set(clerkUserId, fresh)
+				return writeKvProfile(env, clerkUserId, fresh)
+			})
+		}
+		return kv
+	}
+
+	const fresh = await withTimeout(
+		fetchProfileFromClerk(clerk, clerkUserId),
+		PROFILE_FETCH_TIMEOUT_MS,
+	)
+	if (fresh) {
+		profileMemoryCache.set(clerkUserId, fresh)
+		await writeKvProfile(env, clerkUserId, fresh)
+		return fresh
+	}
+
+	// Stale memory beats an identity flip to the Clerk user id.
+	return memory ?? null
+}
+
+async function authFromClerkUserId(
+	clerk: ReturnType<typeof createClerkClient>,
+	clerkUserId: string,
+	env: Env,
+): Promise<ClerkWhiteboardAuth | null> {
+	const profile = await resolveClerkProfile(clerk, clerkUserId, env)
+	const accountId = profile?.accountId || clerkUserId
+	const email = profile?.email ?? ''
 
 	// Empty email must fail when an allowlist is configured (isEmailAllowed
 	// returns false for blank email once domains/emails are set).
@@ -191,8 +323,8 @@ async function authFromClerkUserId(
 		accountId,
 		ownerKey: `google:${accountId}`,
 		email,
-		displayName,
-		avatarUrl,
+		displayName: profile?.displayName || 'Signed-in user',
+		avatarUrl: profile?.avatarUrl,
 	}
 }
 

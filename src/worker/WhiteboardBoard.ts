@@ -772,7 +772,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		const headerHost = this.connectHostSecretFromHeader(request)
-		const clerkAuth = await tryClerkWhiteboardAuth(request, this.env)
+		// Do not resolve Clerk on the upgrade request. Browsers cannot send
+		// Authorization headers on a WebSocket, and a slow Clerk BAPI call
+		// here blocks the 101 handshake and the initial scene:sync. Role is
+		// decided at first-message `wb:auth` (finishPendingConnectAuth).
+		const clerkAuth: ClerkWhiteboardAuth | null = null
 		const isHost = await this.hostProvesScratchOwner(headerHost, {
 			mint: true,
 			clerkAuth,

@@ -6,7 +6,7 @@ Treat live share codes as **secrets**. Anyone who can read an Open code can join
 
 ## Overview
 
-A share code is an eight-character token: **letter, digit** four times (`A1B2C3D4` form, `([A-Z][0-9]){4}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) **drops the KV mapping** so `GET /api/whiteboard/join/:code` cannot start a new session.
+A share code is a four-character token: **digit, letter** twice (`1A2B` form, `([0-9][A-Z]){2}`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) **drops the KV mapping** so `GET /api/whiteboard/join/:code` cannot start a new session.
 
 **Owner or Manager** only can Open, Closed, rotate, or copy the code. Editor and Viewer get **403** (`Only the Owner or a Manager can manage the share code.`). Proof is a live session token, scratch host secret, or Clerk matching `cloudOwnerKey`. Leftover host secret on a Google-owned board is **not** enough. Knowing the board UUID is **not** share-admin proof.
 
@@ -18,15 +18,15 @@ Join lookup (`GET /api/whiteboard/join/:code`) stays **unauthenticated** (rate-l
 
 | Property | Value |
 |----------|--------|
-| Pattern | Eight characters — letter-digit four times (`A1B2C3D4` form) |
+| Pattern | Four characters — digit-letter twice (`1A2B` form) |
 | Normalization | Trim + uppercase |
 | TTL | **12 hours** (`SHARE_CODE_TTL_SECONDS` / `SHARE_CODE_TTL_MS` in `src/worker/shareCode.ts`) |
-| KV key | `code:{A1B2C3D4}` |
+| KV key | `code:{1A2B}` |
 | KV value | JSON `{ boardId, exp }` with `expirationTtl` matching the TTL |
 
 Helpers: `normalizeShareCode`, `sampleShareCode`, `kvCodeKey` in `src/worker/shareCode.ts`.
 
-Existing four-character codes in KV (from before this format change) no longer parse. Teachers need **Open** / **New code** after deploy so students get an eight-character code.
+Existing codes in KV from before this format change (eight-character `A1B2C3D4` era) no longer parse. Teachers need **Open** / **New code** after deploy so students get a `1A2B`-form code.
 
 ## Storage model
 
@@ -55,7 +55,7 @@ GET /api/whiteboard/join/:code
 **404:** code missing, expired, malformed, or bad board id — message: *That code isn't available…*  
 **429:** join rate limit (see below) — *Too many join attempts. Wait a moment and try again.*
 
-Used by the hub when the join field looks like a share code (`lookupShareCode` in `src/lib/whiteboard-codes.ts`). The hub treats codes as eight-character letter-digit tokens (`src/scripts/whiteboard-hub.ts`).
+Used by the hub when the join field looks like a share code (`lookupShareCode` in `src/lib/whiteboard-codes.ts`). The hub treats codes as 1A2B-form tokens (`src/scripts/whiteboard-hub.ts`).
 
 ### Board code state
 
@@ -79,7 +79,7 @@ DELETE /api/whiteboard/boards/:uuid/code          # closed
 **GET / POST success shape:**
 
 ```json
-{ "code": "<eight-character-code>", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
+{ "code": "<1A2B-form-code>", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
 ```
 
 **Closed / after DELETE:**
@@ -127,7 +127,7 @@ Keep the code off hallway-facing displays; use **Copy Link** when the URL can st
 ## Hub join flow
 
 1. User enters code (or link/UUID) on `/whiteboard`.
-2. Hub classifies as `code` (eight-character letter-digit) or `board`.
+2. Hub classifies as `code` (four-character digit-letter) or `board`.
 3. For codes: `GET /api/whiteboard/join/:code` → UUID.
 4. Navigate to `/board/{uuid}`. Join does **not** write Recents/Library.
 

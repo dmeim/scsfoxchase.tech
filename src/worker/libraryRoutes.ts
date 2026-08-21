@@ -174,6 +174,84 @@ function sortByAccessed<T extends { lastAccessedAt: string }>(
 	)
 }
 
+/**
+ * Index keys this Clerk session may have written under. When the Google sub
+ * lookup failed in the past, entries were saved under `google:{clerkUserId}`
+ * instead of `google:{sub}`. GET must merge both so boards do not "vanish"
+ * when identity resolution flips; missing rows are migrated into the
+ * canonical key.
+ */
+function candidateOwnerKeys(auth: {
+	ownerKey: string
+	clerkUserId: string
+}): string[] {
+	return [...new Set([auth.ownerKey, `google:${auth.clerkUserId}`])]
+}
+
+async function readMergedBoards(
+	bucket: R2Bucket,
+	auth: { ownerKey: string; clerkUserId: string },
+): Promise<BoardEntry[]> {
+	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
+	const { entries } = await readJsonArray(
+		bucket,
+		boardsObjectKey(canonical!),
+		isBoardEntry,
+	)
+	let merged = entries
+	for (const key of legacyKeys) {
+		const legacy = await readJsonArray(
+			bucket,
+			boardsObjectKey(key),
+			isBoardEntry,
+		)
+		if (legacy.entries.length === 0) continue
+		const known = new Set(merged.map((entry) => entry.id))
+		const missing = legacy.entries.filter((entry) => !known.has(entry.id))
+		if (missing.length === 0) continue
+		merged = [...merged, ...missing]
+		// Best-effort migration into the canonical index; legacy file stays.
+		await mutateJsonArray(
+			bucket,
+			boardsObjectKey(canonical!),
+			isBoardEntry,
+			(boards) => {
+				let next = boards
+				for (const entry of missing) next = upsertBoardEntry(next, entry)
+				return next
+			},
+		)
+	}
+	return merged
+}
+
+async function readMergedAssets(
+	bucket: R2Bucket,
+	auth: { ownerKey: string; clerkUserId: string },
+): Promise<AssetEntry[]> {
+	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
+	const { entries } = await readJsonArray(
+		bucket,
+		assetsObjectKey(canonical!),
+		isAssetEntry,
+	)
+	let merged = entries
+	for (const key of legacyKeys) {
+		const legacy = await readJsonArray(
+			bucket,
+			assetsObjectKey(key),
+			isAssetEntry,
+		)
+		if (legacy.entries.length === 0) continue
+		const known = new Set(merged.map((entry) => entry.id))
+		merged = [
+			...merged,
+			...legacy.entries.filter((entry) => !known.has(entry.id)),
+		]
+	}
+	return merged
+}
+
 /** Recents/Library membership for this Clerk ownerKey (R2 index, not DO Owner). */
 export async function libraryIndexContainsBoard(
 	env: Env,
@@ -445,11 +523,7 @@ export async function handleLibraryRequest(
 
 	if (boardsList) {
 		if (request.method === 'GET') {
-			const { entries } = await readJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				isBoardEntry,
-			)
+			const entries = await readMergedBoards(bucket, authResult.auth)
 			return json(200, { boards: sortByAccessed(entries), ownerKey }, request)
 		}
 		if (request.method === 'PUT') {
@@ -501,18 +575,22 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid board id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const written = await mutateJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				isBoardEntry,
-				(boards) => boards.filter((entry) => entry.id !== boardId),
-			)
-			if (!written.ok) {
-				return json(
-					409,
-					{ error: 'Library index conflict, retry' },
-					request,
+			// Remove from every candidate key or a merged legacy row would
+			// resurrect the board on the next GET.
+			for (const key of candidateOwnerKeys(authResult.auth)) {
+				const written = await mutateJsonArray(
+					bucket,
+					boardsObjectKey(key),
+					isBoardEntry,
+					(boards) => boards.filter((entry) => entry.id !== boardId),
 				)
+				if (!written.ok) {
+					return json(
+						409,
+						{ error: 'Library index conflict, retry' },
+						request,
+					)
+				}
 			}
 			return json(200, { ok: true }, request)
 		}
@@ -521,11 +599,7 @@ export async function handleLibraryRequest(
 
 	if (assetsList) {
 		if (request.method === 'GET') {
-			const { entries } = await readJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				isAssetEntry,
-			)
+			const entries = await readMergedAssets(bucket, authResult.auth)
 			return json(200, { assets: sortByAccessed(entries), ownerKey }, request)
 		}
 		if (request.method === 'PUT') {
@@ -576,18 +650,20 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid asset id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const written = await mutateJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				isAssetEntry,
-				(assets) => assets.filter((entry) => entry.id !== assetId),
-			)
-			if (!written.ok) {
-				return json(
-					409,
-					{ error: 'Library index conflict, retry' },
-					request,
+			for (const key of candidateOwnerKeys(authResult.auth)) {
+				const written = await mutateJsonArray(
+					bucket,
+					assetsObjectKey(key),
+					isAssetEntry,
+					(assets) => assets.filter((entry) => entry.id !== assetId),
 				)
+				if (!written.ok) {
+					return json(
+						409,
+						{ error: 'Library index conflict, retry' },
+						request,
+					)
+				}
 			}
 			return json(200, { ok: true }, request)
 		}

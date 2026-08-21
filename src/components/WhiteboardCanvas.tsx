@@ -95,6 +95,12 @@ export default function WhiteboardCanvas({
     elements: SceneElement[]
     appState: SceneAppState | null
   } | null>(null)
+  /**
+   * True once this Excalidraw instance has applied a server scene. Outgoing
+   * updates are blocked until then — a freshly (re)mounted empty canvas must
+   * never push a full (empty) scene over the stored board.
+   */
+  const sceneHydratedRef = useRef(false)
   const persistErrorToastAtRef = useRef(0)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
@@ -220,6 +226,7 @@ export default function WhiteboardCanvas({
           reconciled as SceneElement[],
           lastElementVersionsRef.current,
         )
+        sceneHydratedRef.current = true
       } finally {
         queueMicrotask(() => {
           applyingRemoteRef.current = false
@@ -239,6 +246,7 @@ export default function WhiteboardCanvas({
       if (!ws || ws.readyState !== WebSocket.OPEN) return false
       if (applyingRemoteRef.current) return false
       if (!canEditRef.current) return false
+      if (!sceneHydratedRef.current) return false
 
       const version = getSceneVersion(elements)
       if (!forceFull && version === lastSceneVersionRef.current) return true
@@ -556,6 +564,9 @@ export default function WhiteboardCanvas({
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       apiRef.current = api
+      // New (or remounted, via key={canEdit}) instance starts empty; block
+      // outgoing scene pushes until a server scene has been applied.
+      sceneHydratedRef.current = false
       unsubUserFollowRef.current?.()
       unsubUserFollowRef.current = api.onUserFollow((payload) => {
         onUserFollowRef.current(payload)

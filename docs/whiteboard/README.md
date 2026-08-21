@@ -13,7 +13,7 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 | Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Share-code joiners land as **Viewer** unless **Group Edit** is On; UUID-only stays **Viewer** | [hub-and-board.md](./hub-and-board.md) |
 | Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; R2 files by `fileId` | [sync-storage.md](./sync-storage.md) |
 | Auth + library | Clerk Google sign-in; cloud-only Recents / Library / Assets; scratch boards expire in 24h | [auth-libraries.md](./auth-libraries.md) |
-| Share codes | Short `A1B2C3D4` codes in KV; Open / Closed / Copy / New; hub join. A code opens the board; join is view-only unless **Group Edit** is On. UUID-only stays **Viewer**. A join code alone does not mean students can draw | [share-codes.md](./share-codes.md) |
+| Share codes | Short `1A2B` codes in KV; Open / Closed / Copy / New; hub join. A code opens the board; join is view-only unless **Group Edit** is On. UUID-only stays **Viewer**. A join code alone does not mean students can draw | [share-codes.md](./share-codes.md) |
 | People + permissions | Owner / Manager / Editor / Viewer; Follow (pan to unfollow); Follow Me (camera locked). **Group Edit** (share-code joiners land as Editor when On) or set **Editor** on People. UUID-only stays **Viewer** | [people-permissions.md](./people-permissions.md) |
 
 ## Routes
@@ -44,7 +44,7 @@ Product family spelling: `scsfoxchase-tech_whiteboards` (underscore). R2 bucket 
 |---------|----------|--------|
 | `WHITEBOARDS` | Durable Object class `WhiteboardBoard` (SQLite) | `wrangler.jsonc` → `durable_objects` |
 | `WHITEBOARD_ASSETS` | R2 bucket `scsfoxchase-tech-whiteboards` | Media + cloud library JSON |
-| `WHITEBOARD_CODES` | KV namespace | `code:{A1B2C3D4}` → `{ boardId, exp }` (TTL 12h) |
+| `WHITEBOARD_CODES` | KV namespace | `code:{1A2B}` → `{ boardId, exp }` (TTL 12h) |
 
 Clerk secrets / vars (not in `wrangler.jsonc`): `CLERK_SECRET_KEY`, `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`. See `.dev.vars.example` and `DEPLOYMENT.md`. No whiteboard license key.
 
