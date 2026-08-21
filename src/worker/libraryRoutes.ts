@@ -133,6 +133,62 @@ function sortByAccessed<T extends { lastAccessedAt: string }>(
 }
 
 /**
+ * Index keys this Clerk session may have written under. When the Google sub
+ * lookup failed in the past, entries were saved under `google:{clerkUserId}`
+ * instead of `google:{sub}`. GET must merge both so boards do not "vanish"
+ * when identity resolution flips; missing rows are migrated into the
+ * canonical key.
+ */
+function candidateOwnerKeys(auth: {
+	ownerKey: string
+	clerkUserId: string
+}): string[] {
+	return [...new Set([auth.ownerKey, `google:${auth.clerkUserId}`])]
+}
+
+async function readMergedBoards(
+	bucket: R2Bucket,
+	auth: { ownerKey: string; clerkUserId: string },
+): Promise<BoardEntry[]> {
+	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
+	let merged = await readJsonArray(
+		bucket,
+		boardsObjectKey(canonical!),
+		isBoardEntry,
+	)
+	for (const key of legacyKeys) {
+		const legacy = await readJsonArray(bucket, boardsObjectKey(key), isBoardEntry)
+		if (legacy.length === 0) continue
+		const known = new Set(merged.map((entry) => entry.id))
+		const missing = legacy.filter((entry) => !known.has(entry.id))
+		if (missing.length === 0) continue
+		merged = [...merged, ...missing]
+		// Best-effort migration into the canonical index; the legacy file stays.
+		await writeJsonArray(bucket, boardsObjectKey(canonical!), merged)
+	}
+	return merged
+}
+
+async function readMergedAssets(
+	bucket: R2Bucket,
+	auth: { ownerKey: string; clerkUserId: string },
+): Promise<AssetEntry[]> {
+	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
+	let merged = await readJsonArray(
+		bucket,
+		assetsObjectKey(canonical!),
+		isAssetEntry,
+	)
+	for (const key of legacyKeys) {
+		const legacy = await readJsonArray(bucket, assetsObjectKey(key), isAssetEntry)
+		if (legacy.length === 0) continue
+		const known = new Set(merged.map((entry) => entry.id))
+		merged = [...merged, ...legacy.filter((entry) => !known.has(entry.id))]
+	}
+	return merged
+}
+
+/**
  * Best-effort Phase 2 meta claim. Fails closed if the creating browser has
  * not connected yet (host hash missing → 403); the client retries PATCH.
  */
@@ -202,6 +258,7 @@ export async function handleLibraryRequest(
 
 	const { ownerKey } = authResult.auth
 	const bucket = env.WHITEBOARD_ASSETS
+	const ownerKeys = candidateOwnerKeys(authResult.auth)
 
 	const boardsList = url.pathname.match(
 		/^\/api\/whiteboard\/library\/boards\/?$/i,
@@ -219,7 +276,7 @@ export async function handleLibraryRequest(
 	if (boardsList) {
 		if (request.method === 'GET') {
 			const boards = sortByAccessed(
-				await readJsonArray(bucket, boardsObjectKey(ownerKey), isBoardEntry),
+				await readMergedBoards(bucket, authResult.auth),
 			)
 			return json(200, { boards, ownerKey }, request)
 		}
@@ -260,16 +317,21 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid board id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const boards = await readJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				isBoardEntry,
-			)
-			await writeJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				boards.filter((entry) => entry.id !== boardId),
-			)
+			// Remove from every key this account may have written under, or a
+			// later merged GET would resurrect the row.
+			for (const key of ownerKeys) {
+				const boards = await readJsonArray(
+					bucket,
+					boardsObjectKey(key),
+					isBoardEntry,
+				)
+				if (!boards.some((entry) => entry.id === boardId)) continue
+				await writeJsonArray(
+					bucket,
+					boardsObjectKey(key),
+					boards.filter((entry) => entry.id !== boardId),
+				)
+			}
 			return json(200, { ok: true }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
@@ -278,7 +340,7 @@ export async function handleLibraryRequest(
 	if (assetsList) {
 		if (request.method === 'GET') {
 			const assets = sortByAccessed(
-				await readJsonArray(bucket, assetsObjectKey(ownerKey), isAssetEntry),
+				await readMergedAssets(bucket, authResult.auth),
 			)
 			return json(200, { assets, ownerKey }, request)
 		}
@@ -326,16 +388,19 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid asset id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const assets = await readJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				isAssetEntry,
-			)
-			await writeJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				assets.filter((entry) => entry.id !== assetId),
-			)
+			for (const key of ownerKeys) {
+				const assets = await readJsonArray(
+					bucket,
+					assetsObjectKey(key),
+					isAssetEntry,
+				)
+				if (!assets.some((entry) => entry.id === assetId)) continue
+				await writeJsonArray(
+					bucket,
+					assetsObjectKey(key),
+					assets.filter((entry) => entry.id !== assetId),
+				)
+			}
 			return json(200, { ok: true }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)

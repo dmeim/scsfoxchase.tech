@@ -4,13 +4,13 @@ Short join codes for classroom boards: Open / Closed, Copy, New, hub join, and K
 
 ## Overview
 
-A share code is a four-character token **`[A-Z][0-9][A-Z][0-9]`** (e.g. `A1B2`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the mapping. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
+A share code is a four-character token **`([0-9][A-Z]){2}`** (e.g. `1A2B`). While **Open**, the code resolves to a board UUID for 12 hours. **Closed** (or expiry) removes the mapping. Anyone with the board UUID can open, close, copy, or rotate codes — the UUID is the capability (same as opening `/board/{uuid}`). Host secret is not required for share-code HTTP APIs.
 
 ## Format and TTL
 
 | Property | Value |
 |----------|--------|
-| Pattern | `A1B2` — letter, digit, letter, digit |
+| Pattern | `1A2B` — digit, letter, digit, letter |
 | Normalization | Trim + uppercase |
 | TTL | **12 hours** (`SHARE_CODE_TTL_SECONDS` / `SHARE_CODE_TTL_MS` in `src/worker/shareCode.ts`) |
 | KV key | `code:{CODE}` |
@@ -56,7 +56,7 @@ DELETE /api/whiteboard/boards/:uuid/code          # closed
 **GET / POST success shape:**
 
 ```json
-{ "code": "A1B2", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
+{ "code": "1A2B", "expiresAt": "2026-07-20T23:00:00.000Z", "open": true }
 ```
 
 **Closed / after DELETE:**

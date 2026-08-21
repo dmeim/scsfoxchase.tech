@@ -532,7 +532,7 @@ function initWhiteboardHub() {
 
     if (!parsed) {
       showActionHint(
-        'Enter a share code (like A1B2), paste a board link (/board/…), or a UUID.',
+        'Enter a share code (like 1A2B), paste a board link (/board/…), or a UUID.',
       );
       joinInput?.focus();
       return;
