@@ -101,6 +101,12 @@ export default function WhiteboardCanvas({
    * never push a full (empty) scene over the stored board.
    */
   const sceneHydratedRef = useRef(false)
+  /**
+   * True once `wb:auth` has been sent on the current socket. The server drops
+   * every message until auth, so sends before this would be lost while still
+   * being marked as delivered by version bookkeeping.
+   */
+  const authSentRef = useRef(false)
   const persistErrorToastAtRef = useRef(0)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
@@ -244,6 +250,7 @@ export default function WhiteboardCanvas({
     ): boolean => {
       const ws = wsRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return false
+      if (!authSentRef.current) return false
       if (applyingRemoteRef.current) return false
       if (!canEditRef.current) return false
       if (!sceneHydratedRef.current) return false
@@ -381,52 +388,57 @@ export default function WhiteboardCanvas({
       }
     }
 
-    const connect = async () => {
-      if (cancelled) return
+    /**
+     * Send `wb:auth` once Clerk has settled. Runs in parallel with the open
+     * socket — the server already sent the full scene on connect, so board
+     * contents download while Clerk is still loading. Signed-in sockets wait
+     * for a real JWT (an empty token would finalize the session as Viewer).
+     */
+    const sendConnectAuth = async (ws: WebSocket) => {
       await whenAuthReady()
+      if (cancelled || wsRef.current !== ws) return
+      const sessionToken = isSignedIn()
+        ? ((await waitForSessionToken(20, 100, { require: true })) ?? '')
+        : ''
+      if (cancelled || wsRef.current !== ws) return
+      if (ws.readyState !== WebSocket.OPEN) return
+      const hostSecret = getHostSecret(boardId)
+      ws.send(
+        JSON.stringify({
+          type: 'wb:auth',
+          ...(sessionToken ? { token: sessionToken } : {}),
+          ...(hostSecret ? { hostSecret } : {}),
+        }),
+      )
+      authSentRef.current = true
+      // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
+      resubscribeFollowRef.current()
+      // Push anything drawn while the socket was down / auth was pending.
+      flushNowRef.current(true)
+    }
+
+    const connect = () => {
       if (cancelled) return
 
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
-      const sessionToken = isSignedIn()
-        ? await waitForSessionToken(20, 100, { require: true })
-        : ((await waitForSessionToken()) ?? '')
-      if (cancelled) return
-      if (isSignedIn() && !sessionToken) {
-        reconnectTimer = window.setTimeout(() => {
-          void connect()
-        }, 500)
-        return
-      }
-      const hostSecret = getHostSecret(boardId)
+      // Guest identity hint only. Signed-in users are identified by the
+      // verified `wb:auth` JWT; a non-UUID userId is dropped from the URL.
       const uri = buildWhiteboardConnectUrl(window.location.origin, {
         boardId,
         sessionId,
         displayName: identity.displayName,
-        userId: sessionToken ? '' : identity.userId,
+        userId: identity.userId,
       })
 
+      authSentRef.current = false
       const ws = new WebSocket(uri)
       wsRef.current = ws
 
       ws.addEventListener('open', () => {
         attempt = 0
         clearTimers()
-        if (ws.readyState === WebSocket.OPEN) {
-          if (isSignedIn() && !sessionToken) {
-            ws.close(4001, 'missing session token')
-            return
-          }
-          ws.send(
-            JSON.stringify({
-              type: 'wb:auth',
-              ...(sessionToken ? { token: sessionToken } : {}),
-              ...(hostSecret ? { hostSecret } : {}),
-            }),
-          )
-          // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
-          resubscribeFollowRef.current()
-        }
+        void sendConnectAuth(ws)
         pingTimer = window.setInterval(() => {
           if (ws.readyState !== WebSocket.OPEN) return
           ws.send('{"type":"ping"}')
@@ -445,10 +457,9 @@ export default function WhiteboardCanvas({
             true,
           )
         }, 30_000)
-        flushNowRef.current(true)
-        if (apiRef.current) {
-          ws.send(JSON.stringify({ type: 'scene:request' }))
-        }
+        // Pending strokes flush in sendConnectAuth (after wb:auth) — the
+        // server drops messages sent before auth. The full scene arrives
+        // unprompted on every connect, so no scene:request is needed here.
       })
 
       ws.addEventListener('message', (event) => {

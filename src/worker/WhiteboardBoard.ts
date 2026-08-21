@@ -386,9 +386,9 @@ function normalizeAttachment(
 		? raw.role
 		: isHost
 			? 'owner'
-			: raw?.canEdit === false
-				? 'viewer'
-				: 'editor'
+			: raw?.canEdit === true
+				? 'editor'
+				: 'viewer'
 	return {
 		sessionId: raw?.sessionId ?? sessionId,
 		isHost,
