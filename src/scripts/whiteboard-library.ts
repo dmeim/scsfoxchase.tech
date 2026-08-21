@@ -16,6 +16,7 @@ import { getBoardSessionAuth } from '../lib/whiteboard-participants';
 import {
   getActiveIdentity,
   getAuthHeaders,
+  identityMatchIds,
   isSignedIn,
   onAuthChange,
   waitForSessionToken,
@@ -390,8 +391,8 @@ export async function touchBoardActive(
  * `null` means unknown (fail open for hub Owner rename if meta is down).
  */
 async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null> {
-  const ownerKey = getOwnerKey();
-  if (!ownerKey.startsWith('google:')) return false;
+  const identity = getActiveIdentity();
+  if (!identity) return false;
   try {
     if (isSignedIn()) await waitForSessionToken();
     const headers = await getAuthHeaders();
@@ -404,7 +405,9 @@ async function thisAccountIsCloudOwner(boardId: string): Promise<boolean | null>
       cloudOwnerKey?: unknown;
     };
     if (typeof body.cloudOwnerKey === 'string') {
-      return body.cloudOwnerKey === ownerKey;
+      // DO meta may hold google:{sub} while this session resolved
+      // google:{clerkUserId} (or the reverse). Both are the same person.
+      return identityMatchIds(identity).includes(body.cloudOwnerKey);
     }
     // Hidden key is unknown (Owner GET and guest GET can look the same).
     return null;
@@ -492,10 +495,8 @@ export async function renameBoardActive(
     rememberScratchTitle(boardId, cleaned);
     return untitledEntry(boardId, cleaned);
   }
-  const hostSecret = getHostSecret(boardId);
-  if (!hostSecret && (await thisAccountIsCloudOwner(boardId)) === false) {
-    return untitledEntry(boardId, cleaned);
-  }
+  // The Durable Object decides who may rename (Owner/Manager, 403 otherwise).
+  // Guessing that here produced silent no-ops that still reported success.
   const liveTitle = await patchLiveBoardTitle(boardId, cleaned);
   try {
     return await setBoardTitleActive(boardId, liveTitle);
