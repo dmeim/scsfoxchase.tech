@@ -26,6 +26,10 @@ import {
 	readBoardIdFromPath,
 } from '../scripts/whiteboard-library'
 import { getBoardSessionAuth } from './whiteboard-participants'
+import {
+	WHITEBOARD_PREVIEW_KIND,
+	WHITEBOARD_PREVIEW_KIND_HEADER,
+} from './whiteboard-preview-url'
 
 export const ASSETS_KEY = 'scsfoxchase.whiteboard.assets'
 
@@ -385,6 +389,8 @@ export async function uploadCanvasBytes(opts: {
 	fileId: string
 	bytes: Blob
 	mimeType: string
+	kind?: 'preview'
+	keepalive?: boolean
 }): Promise<void> {
 	assertUploadAllowed(
 		new File([opts.bytes], opts.fileId, { type: opts.mimeType }),
@@ -394,10 +400,14 @@ export async function uploadCanvasBytes(opts: {
 		'Content-Type': opts.mimeType,
 		...(await assetWriteHeaders(opts.ownerKey)),
 	}
+	if (opts.kind === 'preview') {
+		headers[WHITEBOARD_PREVIEW_KIND_HEADER] = WHITEBOARD_PREVIEW_KIND
+	}
 	const res = await fetch(url, {
 		method: 'PUT',
 		headers,
 		body: opts.bytes,
+		keepalive: opts.keepalive === true,
 	})
 	if (!res.ok) {
 		let message = `Upload failed (${res.status})`

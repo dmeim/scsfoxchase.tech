@@ -66,7 +66,7 @@ export async function fetchCloudBoards(): Promise<WhiteboardLibraryEntry[]> {
 
 export async function upsertCloudBoard(
 	entry: WhiteboardLibraryEntry,
-	options: { hostSecret?: string | null } = {},
+	options: { hostSecret?: string | null; keepalive?: boolean } = {},
 ): Promise<WhiteboardLibraryEntry> {
 	const headers = new Headers()
 	if (options.hostSecret) {
@@ -76,6 +76,7 @@ export async function upsertCloudBoard(
 		method: 'PUT',
 		headers,
 		body: JSON.stringify(entry),
+		keepalive: options.keepalive === true,
 	})
 	const body = await readJson<{ board: WhiteboardLibraryEntry }>(res)
 	return body.board

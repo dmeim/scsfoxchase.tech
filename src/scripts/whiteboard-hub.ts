@@ -50,7 +50,7 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
   const idAttr = escapeAttr(entry.id);
   const href = `/board/${encodeURIComponent(entry.id)}`;
   const preview = entry.previewDataUrl
-    ? `<img src="${escapeAttr(entry.previewDataUrl)}" alt="" class="wb-card-preview-img" />`
+    ? `<img src="${escapeAttr(entry.previewDataUrl)}" alt="" class="wb-card-preview-img" loading="lazy" />`
     : `<div class="wb-card-preview-placeholder" aria-hidden="true"></div>`;
 
   return `
@@ -494,10 +494,38 @@ function bindCardMenus(root: Element) {
 
 let cardMenusBound = false;
 
+function swapBrokenPreviewImage(img: HTMLImageElement) {
+  const slot = img.closest('.wb-card-preview');
+  if (!slot || slot.querySelector('.wb-card-preview-placeholder')) return;
+  img.remove();
+  const placeholder = document.createElement('div');
+  placeholder.className = 'wb-card-preview-placeholder';
+  placeholder.setAttribute('aria-hidden', 'true');
+  slot.appendChild(placeholder);
+}
+
+function bindPreviewImageFallback() {
+  document.addEventListener(
+    'error',
+    (event) => {
+      const img = event.target;
+      if (
+        !(img instanceof HTMLImageElement) ||
+        !img.classList.contains('wb-card-preview-img')
+      ) {
+        return;
+      }
+      swapBrokenPreviewImage(img);
+    },
+    true,
+  );
+}
+
 function bindCardMenusOnce(root: Element) {
   if (cardMenusBound) return;
   cardMenusBound = true;
   bindCardMenus(root);
+  bindPreviewImageFallback();
 
   document.addEventListener('click', (event) => {
     const target = event.target;

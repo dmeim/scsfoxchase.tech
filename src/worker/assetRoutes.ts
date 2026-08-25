@@ -15,7 +15,14 @@
  * local:* PUT/DELETE are rejected. Guessing a fileId is not enough.
  * GET stays unauthenticated so connected players can load media; SVG is
  * served as an attachment with nosniff (not a navigable executable document).
+ * Hub board previews PUT with X-Whiteboard-Kind: preview (short cache, not
+ * immutable). Asset ids stay raw UUIDs — no /previews/ path or .jpg suffix.
  */
+import {
+	PREVIEW_CACHE_CONTROL,
+	WHITEBOARD_PREVIEW_KIND,
+	WHITEBOARD_PREVIEW_KIND_HEADER,
+} from '../lib/whiteboard-preview-url'
 import { UNSAVED_BOARD_TTL_MS } from '../lib/whiteboard-sync'
 import { requireClerkWhiteboardAuth } from './clerkAuth'
 import type { WhiteboardBoard } from './WhiteboardBoard'
@@ -127,7 +134,20 @@ const ALLOWED_CORS_ORIGINS = new Set([
 ])
 
 const CORS_ALLOW_HEADERS =
-	'Content-Type, Content-Length, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth, X-Board-Id'
+	'Content-Type, Content-Length, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth, X-Board-Id, X-Whiteboard-Kind'
+
+function isPreviewKindRequest(request: Request): boolean {
+	return (
+		request.headers.get(WHITEBOARD_PREVIEW_KIND_HEADER)?.trim().toLowerCase() ===
+		WHITEBOARD_PREVIEW_KIND
+	)
+}
+
+function assetCacheControl(kind: string): string {
+	if (kind === WHITEBOARD_PREVIEW_KIND) return PREVIEW_CACHE_CONTROL
+	if (kind === 'temp') return 'private, max-age=3600'
+	return 'public, max-age=31536000, immutable'
+}
 
 function corsHeaders(request: Request): HeadersInit {
 	const origin = request.headers.get('Origin')
@@ -876,14 +896,15 @@ export async function handleAssetRequest(
 			)
 		}
 
-		const kind = isTempOwnerKey(ownerKey) ? 'temp' : 'persistent'
+		const kind = isPreviewKindRequest(request)
+			? WHITEBOARD_PREVIEW_KIND
+			: isTempOwnerKey(ownerKey)
+				? 'temp'
+				: 'persistent'
 		await env.WHITEBOARD_ASSETS.put(key, body, {
 			httpMetadata: {
 				contentType,
-				cacheControl:
-					kind === 'temp'
-						? 'private, max-age=3600'
-						: 'public, max-age=31536000, immutable',
+				cacheControl: assetCacheControl(kind),
 			},
 			customMetadata: {
 				ownerKey,
@@ -968,11 +989,17 @@ export async function handleAssetRequest(
 			)
 			headers.set('Content-Security-Policy', "default-src 'none'; sandbox")
 		}
-		if (isTempOwnerKey(servedOwnerKey)) {
-			headers.set('Cache-Control', 'private, max-age=3600')
-		} else {
-			headers.set('Cache-Control', 'public, max-age=31536000, immutable')
-		}
+		const metaKind = object.customMetadata?.kind || ''
+		headers.set(
+			'Cache-Control',
+			assetCacheControl(
+				metaKind === WHITEBOARD_PREVIEW_KIND
+					? WHITEBOARD_PREVIEW_KIND
+					: isTempOwnerKey(servedOwnerKey)
+						? 'temp'
+						: 'persistent',
+			),
+		)
 		Object.entries(corsHeaders(request)).forEach(([k, v]) => {
 			headers.set(k, v)
 		})

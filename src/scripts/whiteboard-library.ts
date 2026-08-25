@@ -12,6 +12,7 @@ import {
   markBoardSavedToLibrary,
   upsertCloudBoard,
 } from '../lib/whiteboard-cloud';
+import { parsePreviewAsset } from '../lib/whiteboard-preview-url';
 import { getBoardSessionAuth } from '../lib/whiteboard-participants';
 import {
   getActiveIdentity,
@@ -322,6 +323,7 @@ export async function getEntryActive(
 export async function upsertEntryActive(
   patch: Pick<WhiteboardLibraryEntry, 'id'> &
     Partial<Omit<WhiteboardLibraryEntry, 'id'>>,
+  options: { keepalive?: boolean } = {},
 ): Promise<WhiteboardLibraryEntry> {
   if (!isSignedIn()) {
     if (patch.title) rememberScratchTitle(patch.id, patch.title);
@@ -342,7 +344,10 @@ export async function upsertEntryActive(
         ? patch.previewDataUrl
         : existing?.previewDataUrl,
   };
-  const saved = await upsertCloudBoard(next, { hostSecret });
+  const saved = await upsertCloudBoard(next, {
+    hostSecret,
+    keepalive: options.keepalive,
+  });
   scheduleSavedToLibrary(patch.id, hostSecret);
   return saved;
 }
@@ -564,6 +569,19 @@ export async function createBoardActive(title = defaultBoardTitle()): Promise<{
 /** Remove from the signed-in cloud library. No-op when signed out. */
 export async function removeBoardActive(boardId: string): Promise<void> {
   if (isSignedIn()) {
+    const existing = await getEntryActive(boardId);
+    const preview = parsePreviewAsset(existing?.previewDataUrl);
+    if (preview) {
+      try {
+        const url = `/api/whiteboard/assets/${encodeURIComponent(preview.ownerKey)}/${encodeURIComponent(preview.assetId)}`;
+        await fetch(url, {
+          method: 'DELETE',
+          headers: await getAuthHeaders(),
+        });
+      } catch {
+        // Index delete below still proceeds; Worker DELETE also tries R2.
+      }
+    }
     await deleteCloudBoard(boardId);
     return;
   }

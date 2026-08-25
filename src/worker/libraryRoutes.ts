@@ -10,6 +10,8 @@
  * write is not treated as durable success until DO `savedToLibrary` is true.
  * Index files use R2 etags (If-Match / If-None-Match) with retry.
  */
+import { parsePreviewAsset } from '../lib/whiteboard-preview-url'
+import { r2ObjectKey } from './assetRoutes'
 import { requireClerkWhiteboardAuth } from './clerkAuth'
 
 const UUID_RE =
@@ -575,6 +577,17 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid board id' }, request)
 		}
 		if (request.method === 'DELETE') {
+			const existing = (await readMergedBoards(bucket, authResult.auth)).find(
+				(entry) => entry.id === boardId,
+			)
+			const preview = parsePreviewAsset(existing?.previewDataUrl)
+			if (preview) {
+				try {
+					await bucket.delete(r2ObjectKey(preview.ownerKey, preview.assetId))
+				} catch {
+					// Still drop the index row; an orphaned JPEG is acceptable.
+				}
+			}
 			// Remove from every candidate key or a merged legacy row would
 			// resurrect the board on the next GET.
 			for (const key of candidateOwnerKeys(authResult.auth)) {

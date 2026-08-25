@@ -43,6 +43,13 @@ import {
   getBoardConnectIdentity,
   useWhiteboardExcalidrawRoles,
 } from '../lib/whiteboard-excalidraw-roles'
+import {
+  exportBoardPreview,
+  PREVIEW_IDLE_MS,
+  PREVIEW_KEEPALIVE_MAX_BYTES,
+  previewExportBlockReason,
+  uploadBoardPreview,
+} from '../lib/whiteboard-preview'
 
 declare global {
   interface Window {
@@ -124,6 +131,12 @@ export default function WhiteboardCanvas({
    */
   const helloOnSocketRef = useRef(false)
   const persistErrorToastAtRef = useRef(0)
+  const previewTimerRef = useRef<number | null>(null)
+  const lastPreviewBlobRef = useRef<Blob | null>(null)
+  const lastPreviewVersionRef = useRef(0)
+  const lastUploadedPreviewVersionRef = useRef(0)
+  const previewSkipOwnerRef = useRef(false)
+  const previewUploadingRef = useRef(false)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
 
@@ -347,6 +360,79 @@ export default function WhiteboardCanvas({
   const flushNowRef = useRef(flushNow)
   flushNowRef.current = flushNow
 
+  const clearPreviewTimer = useCallback(() => {
+    if (previewTimerRef.current == null) return
+    window.clearTimeout(previewTimerRef.current)
+    previewTimerRef.current = null
+  }, [])
+
+  const uploadCachedPreview = useCallback(
+    (keepalive: boolean) => {
+      if (!boardId || previewSkipOwnerRef.current) return
+      const blob = lastPreviewBlobRef.current
+      const version = lastPreviewVersionRef.current
+      if (!blob || version === 0) return
+      if (version === lastUploadedPreviewVersionRef.current) return
+      if (keepalive && blob.size > PREVIEW_KEEPALIVE_MAX_BYTES) return
+      previewUploadingRef.current = true
+      void uploadBoardPreview({ boardId, blob, keepalive })
+        .then((status) => {
+          if (status === 'skipped-not-owner') {
+            previewSkipOwnerRef.current = true
+            return
+          }
+          if (status === 'uploaded') {
+            lastUploadedPreviewVersionRef.current = version
+          }
+        })
+        .catch(() => {
+          // Keep the blob; a later idle or hide can retry.
+        })
+        .finally(() => {
+          previewUploadingRef.current = false
+        })
+    },
+    [boardId],
+  )
+  const uploadCachedPreviewRef = useRef(uploadCachedPreview)
+  uploadCachedPreviewRef.current = uploadCachedPreview
+
+  const captureBoardPreviewRef = useRef<() => void>(() => {})
+  const captureBoardPreview = useCallback(() => {
+    const api = apiRef.current
+    if (!api || !canEditRef.current || !sceneHydratedRef.current) return
+    if (previewSkipOwnerRef.current) return
+    const blocked = previewExportBlockReason(api)
+    if (blocked === 'empty') return
+    if (blocked === 'files') {
+      previewTimerRef.current = window.setTimeout(() => {
+        previewTimerRef.current = null
+        captureBoardPreviewRef.current()
+      }, PREVIEW_IDLE_MS)
+      return
+    }
+    const version = getSceneVersion(api.getSceneElementsIncludingDeleted())
+    void exportBoardPreview(api).then((blob) => {
+      if (!blob) return
+      lastPreviewBlobRef.current = blob
+      lastPreviewVersionRef.current = version
+      if (document.visibilityState === 'visible') {
+        uploadCachedPreviewRef.current(false)
+      }
+    })
+  }, [])
+  captureBoardPreviewRef.current = captureBoardPreview
+
+  const schedulePreviewCapture = useCallback(() => {
+    if (previewSkipOwnerRef.current) return
+    if (!isSignedIn()) return
+    clearPreviewTimer()
+    previewTimerRef.current = window.setTimeout(() => {
+      previewTimerRef.current = null
+      captureBoardPreviewRef.current()
+    }, PREVIEW_IDLE_MS)
+  }, [clearPreviewTimer])
+
   const handleChange = useCallback(
     (
       elements: readonly OrderedExcalidrawElement[],
@@ -362,18 +448,20 @@ export default function WhiteboardCanvas({
       const version = getSceneVersion(elements)
       if (version === lastSceneVersionRef.current) return
       pendingFlushRef.current = { elements, appState }
+      schedulePreviewCapture()
       if (flushTimerRef.current != null) return
       flushTimerRef.current = window.setTimeout(() => {
         flushTimerRef.current = null
         flushPending()
       }, SCENE_FLUSH_MS)
     },
-    [flushPending, media.syncFiles],
+    [flushPending, media.syncFiles, schedulePreviewCapture],
   )
 
   useEffect(() => {
     const persist = () => {
       flushNowRef.current(true)
+      uploadCachedPreviewRef.current(true)
     }
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') persist()
@@ -659,6 +747,7 @@ export default function WhiteboardCanvas({
       clearAuthRetry()
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
       flushNowRef.current(true)
+      uploadCachedPreviewRef.current(true)
       const ws = wsRef.current
       wsRef.current = null
       try {
@@ -681,6 +770,10 @@ export default function WhiteboardCanvas({
       if (flushTimerRef.current != null) {
         window.clearTimeout(flushTimerRef.current)
         flushTimerRef.current = null
+      }
+      if (previewTimerRef.current != null) {
+        window.clearTimeout(previewTimerRef.current)
+        previewTimerRef.current = null
       }
       // Version bookkeeping belongs to the old instance. Left in place, the new
       // empty instance's first onChange looks like a real edit and queues an
