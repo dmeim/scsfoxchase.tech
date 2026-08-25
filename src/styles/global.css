@@ -206,6 +206,42 @@ header h1 {
     align-items: center;
 }
 
+.header-fullscreen-btn {
+    color: var(--primary-color);
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-family: inherit;
+    line-height: 0;
+}
+
+.header-fullscreen-btn[hidden] {
+    display: none;
+}
+
+.header-fullscreen-btn:focus-visible {
+    outline: 2px solid var(--secondary-color);
+    outline-offset: -2px;
+}
+
+.header-fullscreen-btn .header-fullscreen-icon-exit {
+    display: none;
+}
+
+.header-fullscreen-btn[data-fullscreen="true"] .header-fullscreen-icon-enter {
+    display: none;
+}
+
+.header-fullscreen-btn[data-fullscreen="true"] .header-fullscreen-icon-exit {
+    display: inline-flex;
+}
+
 .header-auth {
     display: inline-flex;
     align-items: center;
@@ -960,10 +996,11 @@ nav ul li a {
     height: 1em;
 }
 
-/* Frosted chips: brand (logo+title), nav links, and theme toggle share the same glass */
+/* Frosted chips: brand (logo+title), nav links, theme toggle, fullscreen */
 .header-brand,
 nav ul li a,
-.theme-toggle {
+.theme-toggle,
+.header-fullscreen-btn {
     background: rgba(255, 255, 255, 0.72);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -973,7 +1010,8 @@ nav ul li a,
 
 [data-theme="dark"] .header-brand,
 [data-theme="dark"] nav ul li a,
-[data-theme="dark"] .theme-toggle {
+[data-theme="dark"] .theme-toggle,
+[data-theme="dark"] .header-fullscreen-btn {
     background: rgba(0, 0, 0, 0.58);
     border-color: rgba(255, 255, 255, 0.12);
     color: var(--light-text);
@@ -981,26 +1019,30 @@ nav ul li a,
 
 .header-brand:hover,
 nav ul li a:hover,
-nav ul li a.active {
+nav ul li a.active,
+.header-fullscreen-btn:hover {
     background: rgba(255, 255, 255, 0.9);
 }
 
 [data-theme="dark"] .header-brand:hover,
 [data-theme="dark"] nav ul li a:hover,
-[data-theme="dark"] nav ul li a.active {
+[data-theme="dark"] nav ul li a.active,
+[data-theme="dark"] .header-fullscreen-btn:hover {
     background: rgba(0, 0, 0, 0.78);
 }
 
 /* Text hover: yellow in light, green in dark — logo image is unaffected */
 .header-brand:hover,
 .header-brand:hover h1,
-nav ul li a:hover {
+nav ul li a:hover,
+.header-fullscreen-btn:hover {
     color: var(--secondary-color);
 }
 
 [data-theme="dark"] .header-brand:hover,
 [data-theme="dark"] .header-brand:hover h1,
-[data-theme="dark"] nav ul li a:hover {
+[data-theme="dark"] nav ul li a:hover,
+[data-theme="dark"] .header-fullscreen-btn:hover {
     color: var(--primary-color);
 }
 
@@ -1862,6 +1904,11 @@ footer {
         width: 84px;
         height: 28px;
         font-size: 0.75rem;
+    }
+
+    .header-fullscreen-btn {
+        width: 28px;
+        height: 28px;
     }
 
     /* Search bars: stack vertically with consistent spacing */

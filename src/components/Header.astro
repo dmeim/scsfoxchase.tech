@@ -5,6 +5,8 @@ import {
   iconGamepad2,
   iconMessageCircleQuestion,
   iconLayoutFreeform,
+  iconMaximize2,
+  iconMinimize2,
 } from '../scripts/icons';
 
 interface Props {
@@ -32,6 +34,17 @@ const helpActive =
         <h1>St. Cecilia Technology</h1>
       </a>
       <div id="theme-toggle-host" class="theme-toggle-host"></div>
+      <button
+        type="button"
+        id="header-fullscreen-btn"
+        class="header-fullscreen-btn"
+        aria-label="Enter full screen"
+        title="Enter full screen"
+        hidden
+      >
+        <span class="header-chip-icon header-fullscreen-icon-enter" set:html={iconMaximize2} />
+        <span class="header-chip-icon header-fullscreen-icon-exit" set:html={iconMinimize2} />
+      </button>
     </div>
 
     <div

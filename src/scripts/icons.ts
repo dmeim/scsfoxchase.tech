@@ -75,6 +75,16 @@ export const iconLayoutFreeform = svg(
   '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="4" rx="1"/><rect width="7" height="7" x="4" y="14" rx="1"/>'
 );
 
+/** Lucide Maximize2 — header enter full screen */
+export const iconMaximize2 = svg(
+  '<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>'
+);
+
+/** Lucide Minimize2 — header exit full screen */
+export const iconMinimize2 = svg(
+  '<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>'
+);
+
 /** Lucide WifiOff — offline page title */
 export const iconWifiOff = svg(
   '<path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/>'
