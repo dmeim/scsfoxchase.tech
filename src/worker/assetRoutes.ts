@@ -11,8 +11,9 @@
  * through the Durable Object alarm; the legacy PUT path may run a guarded
  * best-effort sweep as maintenance.
  *
- * PUT/DELETE google:*: matching Clerk Owner only. A board session is not
- * account proof for an arbitrary legacy owner key. Viewers are read-only.
+ * Account-global PUT/DELETE google:*: matching Clerk Owner only. Legacy
+ * canvas PUTs with X-Board-Id accept verified live board proof only when the
+ * key exactly matches that board's stored Owner. Viewers are read-only.
  * temp:* requires a host secret or a live can-edit board session.
  * local:* PUT/DELETE are rejected. Guessing a fileId is not enough.
  * GET stays unauthenticated so connected players can load media; SVG is
@@ -260,6 +261,16 @@ function boardIdForAssetWrite(
 	return null
 }
 
+/**
+ * Compatibility-only board context for legacy canvas PUTs. Do not use this
+ * parser for the board-scoped route or for account/library operations.
+ */
+export function parseLegacyCanvasBoardContext(request: Request): string | null {
+	if (request.method !== 'PUT' || isPreviewKindRequest(request)) return null
+	const boardId = request.headers.get('X-Board-Id')?.trim() || ''
+	return isAssetUuid(boardId) ? boardId : null
+}
+
 async function verifyBoardWriteAccess(
 	env: Env,
 	boardId: string,
@@ -307,20 +318,73 @@ async function assertBoardAssetWrite(
 }
 
 /**
- * Saved-board legacy PUT/DELETE requires the Clerk account encoded by the
- * `google:` owner key. New board media uses the board-scoped route, so editor
- * session proof is intentionally not accepted here.
+ * Account-global saved-board legacy PUT/DELETE requires the Clerk account
+ * encoded by the `google:` owner key. During the compatibility window, an old
+ * canvas PUT may instead use verified board proof, but only for that board's
+ * stored owner key.
  */
 async function assertGoogleAssetWrite(
 	request: Request,
 	env: Env,
 	ownerKey: string,
 ): Promise<Response | null> {
-	// Legacy Google keys are account-global. A board Editor proof identifies a
-	// board, not the account encoded in an arbitrary ownerKey, so it cannot be
-	// accepted for this namespace. Current canvas media uses board-scoped routes;
-	// previews and legacy owner operations carry the matching Clerk session.
-	return assertGoogleOwnerWrite(request, env, ownerKey)
+	const suppliedBoardId = request.headers.get('X-Board-Id')?.trim() || ''
+	if (
+		request.method === 'PUT' &&
+		!isPreviewKindRequest(request) &&
+		suppliedBoardId &&
+		!isAssetUuid(suppliedBoardId)
+	) {
+		return jsonError(400, 'Invalid board id', request)
+	}
+	const boardId = parseLegacyCanvasBoardContext(request)
+	if (!boardId) {
+		// Without explicit board context this remains an account-global legacy
+		// mutation and must be authorized by the matching Clerk owner.
+		return assertGoogleOwnerWrite(request, env, ownerKey)
+	}
+
+	const hostSecret = extractHostSecret(request)
+	const session = extractSessionProof(request)
+	if (!hostSecret && !session) {
+		return jsonError(
+			401,
+			'Host secret or editor session required',
+			request,
+		)
+	}
+
+	try {
+		const result = await verifyBoardWriteAccess(
+			env,
+			boardId,
+			hostSecret,
+			session,
+		)
+		if (!result.ok) return jsonError(result.status, result.error, request)
+	} catch {
+		return jsonError(503, 'Could not verify board write access', request)
+	}
+
+	let revealedOwnerKey: string | null
+	try {
+		revealedOwnerKey = await readRevealedCloudOwnerKey(
+			boardStub(env, boardId),
+			request,
+			boardId,
+			{
+				hostSecret,
+				authorization: request.headers.get('Authorization'),
+				session,
+			},
+		)
+	} catch {
+		return jsonError(503, 'Could not verify board owner', request)
+	}
+	if (revealedOwnerKey !== ownerKey) {
+		return jsonError(403, 'ownerKey does not match this board', request)
+	}
+	return null
 }
 
 async function assertTempWrite(
@@ -410,6 +474,35 @@ function jsonOk(
 type BoundedBody =
 	| { bytes: Uint8Array; tooLarge: false }
 	| { bytes: Uint8Array; tooLarge: true }
+
+async function r2ObjectExisted(
+	bucket: R2Bucket,
+	key: string,
+): Promise<boolean | null> {
+	try {
+		return (await bucket.head(key)) !== null
+	} catch {
+		// Do not delete an object during cleanup when its prior state is unknown.
+		return null
+	}
+}
+
+async function cleanupLegacyCanvasUpload(
+	bucket: R2Bucket,
+	objects: Array<{ key: string; existedBefore: boolean | null }>,
+): Promise<void> {
+	await Promise.all(
+		objects
+			.filter((object) => object.existedBefore === false)
+			.map(async ({ key }) => {
+				try {
+					await bucket.delete(key)
+				} catch {
+					// Cleanup is best-effort; the request still reports the original failure.
+				}
+			}),
+	)
+}
 
 /** Read at most `limit + 1` bytes so oversized requests never buffer fully. */
 async function readBodyWithLimit(
@@ -617,7 +710,11 @@ async function readRevealedCloudOwnerKey(
 	stub: DurableObjectStub<WhiteboardBoard>,
 	request: Request,
 	boardId: string,
-	proof: { hostSecret?: string | null; authorization?: string | null },
+	proof: {
+		hostSecret?: string | null
+		authorization?: string | null
+		session?: { sessionId: string; authToken: string } | null
+	},
 ): Promise<string | null> {
 	const forwardUrl = new URL(request.url)
 	forwardUrl.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
@@ -631,6 +728,11 @@ async function readRevealedCloudOwnerKey(
 	const authorization = proof.authorization?.trim()
 	if (authorization) {
 		headers.set('Authorization', authorization)
+	}
+	const session = proof.session
+	if (session?.sessionId && session.authToken) {
+		headers.set('X-Board-Session', session.sessionId)
+		headers.set('X-Board-Auth', session.authToken)
 	}
 	const origin = request.headers.get('Origin')
 	if (origin) headers.set('Origin', origin)
@@ -1120,7 +1222,12 @@ export async function handleAssetRequest(
 			: isTempOwnerKey(ownerKey)
 				? 'temp'
 				: 'persistent'
-		await env.WHITEBOARD_ASSETS.put(key, body, {
+		const legacyBoardId = parseLegacyCanvasBoardContext(request)
+		const canonicalKey = legacyBoardId
+			? boardAssetR2Key(legacyBoardId, assetId)
+			: null
+		const createdAt = new Date().toISOString()
+		const legacyPutOptions: R2PutOptions = {
 			httpMetadata: {
 				contentType,
 				cacheControl: assetCacheControl(kind),
@@ -1129,9 +1236,51 @@ export async function handleAssetRequest(
 				ownerKey,
 				assetId,
 				kind,
-				createdAt: new Date().toISOString(),
+				createdAt,
 			},
-		})
+		}
+
+		if (legacyBoardId && canonicalKey) {
+			const [legacyExistedBefore, canonicalExistedBefore] = await Promise.all([
+				r2ObjectExisted(env.WHITEBOARD_ASSETS, key),
+				r2ObjectExisted(env.WHITEBOARD_ASSETS, canonicalKey),
+			])
+			const cleanupObjects = [
+				{ key, existedBefore: legacyExistedBefore },
+				{ key: canonicalKey, existedBefore: canonicalExistedBefore },
+			]
+
+			try {
+				await env.WHITEBOARD_ASSETS.put(key, body, legacyPutOptions)
+				await env.WHITEBOARD_ASSETS.put(canonicalKey, body, {
+					httpMetadata: {
+						contentType,
+						cacheControl: 'public, max-age=31536000, immutable',
+					},
+					customMetadata: {
+						boardId: legacyBoardId,
+						assetId,
+						kind: 'board',
+						createdAt,
+					},
+				})
+				await boardStub(env, legacyBoardId).registerBoardAssetManifest({
+					boardId: legacyBoardId,
+					fileId: assetId,
+					r2Key: canonicalKey,
+					mimeType: contentType,
+					size: body.byteLength,
+				})
+			} catch {
+				await cleanupLegacyCanvasUpload(
+					env.WHITEBOARD_ASSETS,
+					cleanupObjects,
+				)
+				return jsonError(503, 'Could not store board asset', request)
+			}
+		} else {
+			await env.WHITEBOARD_ASSETS.put(key, body, legacyPutOptions)
+		}
 
 		if (kind === 'temp' && ctx) {
 			ctx.waitUntil(expireTempR2Objects(env).then(() => undefined))
