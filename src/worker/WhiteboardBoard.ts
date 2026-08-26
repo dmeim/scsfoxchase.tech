@@ -32,6 +32,7 @@ import {
 	parseStoredSceneElements,
 	roleCanEdit,
 	sessionCanEdit,
+	sceneAssetNotReadyError,
 	sceneTooLargeError,
 	type AssignableRole,
 	type BoardPublicMeta,
@@ -82,6 +83,22 @@ const SCENE_TABLE_V2_SQL = `
 		updated_at INTEGER NOT NULL
 	)
 `
+
+const ASSET_MANIFEST_TABLE_SQL = `
+	CREATE TABLE IF NOT EXISTS whiteboard_asset_manifest (
+		file_id TEXT PRIMARY KEY,
+		r2_key TEXT NOT NULL,
+		mime_type TEXT NOT NULL,
+		size_bytes INTEGER NOT NULL,
+		etag TEXT,
+		status TEXT NOT NULL CHECK (status IN ('ready', 'deleted')),
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	)
+`
+
+const MAX_ASSET_BYTES = 8 * 1024 * 1024
+const ASSET_MIME_RE = /^(image|video)\/[a-z0-9.+-]+$/i
 
 export type WipeStoredDataResult = {
 	objectId: string
@@ -250,6 +267,28 @@ type ParticipantPublic = {
 type LiveScene = {
 	elements: SceneElement[]
 	appState: SceneAppState
+}
+
+export type BoardAssetManifest = {
+	fileId: string
+	r2Key: string
+	mimeType: string
+	size: number
+	etag: string | null
+	status: 'ready' | 'deleted'
+	createdAt: number
+	updatedAt: number
+}
+
+type AssetManifestRow = {
+	file_id: string
+	r2_key: string
+	mime_type: string
+	size_bytes: number
+	etag: string | null
+	status: string
+	created_at: number
+	updated_at: number
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -461,6 +500,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				await this.clearAllStorage()
 			}
 			migrateExcalidrawSceneTable(this.ctx.storage)
+			this.ctx.storage.sql.exec(ASSET_MANIFEST_TABLE_SQL)
 		})
 	}
 
@@ -479,6 +519,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		} catch {
 			// no alarm set
 		}
+		const boardId = await this.ctx.storage.get<string>(META_BOARD_ID_KEY)
+		await this.cleanupBoardAssets(boardId)
 		await this.ctx.storage.deleteAll()
 		this.resetLiveState()
 	}
@@ -508,6 +550,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			await this.clearActiveCodeKeys()
 			await this.clearAllStorage()
 			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
+			this.ctx.storage.sql.exec(ASSET_MANIFEST_TABLE_SQL)
 			return {
 				objectId: this.ctx.id.toString(),
 				tablesBefore,
@@ -560,6 +603,144 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				? "Not allowed to write this board's assets"
 				: 'Host secret or editor session required',
 		}
+	}
+
+	/**
+	 * Register a board-scoped binary after its R2 PUT has completed. The
+	 * operation is an upsert so retries after a lost HTTP response are safe.
+	 */
+	async registerBoardAssetManifest(opts: {
+		boardId: string
+		fileId: string
+		r2Key: string
+		mimeType: string
+		size: number
+		etag?: string | null
+	}): Promise<BoardAssetManifest> {
+		const boardId = typeof opts.boardId === 'string' ? opts.boardId.trim() : ''
+		const fileId = typeof opts.fileId === 'string' ? opts.fileId.trim() : ''
+		const mimeType =
+			typeof opts.mimeType === 'string' ? opts.mimeType.trim().toLowerCase() : ''
+		const r2Key = typeof opts.r2Key === 'string' ? opts.r2Key.trim() : ''
+		if (!BOARD_UUID_RE.test(boardId) || !BOARD_UUID_RE.test(fileId)) {
+			throw new Error('Invalid board asset id')
+		}
+		if (r2Key !== `boards/${boardId}/assets/${fileId}`) {
+			throw new Error('Invalid board asset key')
+		}
+		if (!ASSET_MIME_RE.test(mimeType)) {
+			throw new Error('Invalid board asset mime type')
+		}
+		if (
+			!Number.isInteger(opts.size) ||
+			opts.size <= 0 ||
+			opts.size > MAX_ASSET_BYTES
+		) {
+			throw new Error('Invalid board asset size')
+		}
+
+		const storedBoardId =
+			(await this.ctx.storage.get<string>(META_BOARD_ID_KEY)) ?? null
+		if (storedBoardId && storedBoardId !== boardId) {
+			throw new Error('Board id does not match this Durable Object')
+		}
+		if (!storedBoardId) {
+			await this.ctx.storage.put(META_BOARD_ID_KEY, boardId)
+		}
+
+		const existing = this.readBoardAssetManifestRow(fileId)
+		const now = Date.now()
+		const createdAt = existing?.created_at ?? now
+		const etag =
+			typeof opts.etag === 'string' && opts.etag.trim()
+				? opts.etag.trim()
+				: null
+		if (existing) {
+			this.ctx.storage.sql.exec(
+				`UPDATE whiteboard_asset_manifest
+				 SET r2_key = ?, mime_type = ?, size_bytes = ?, etag = ?,
+				     status = 'ready', updated_at = ?
+				 WHERE file_id = ?`,
+				r2Key,
+				mimeType,
+				opts.size,
+				etag,
+				now,
+				fileId,
+			)
+		} else {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO whiteboard_asset_manifest
+				 (file_id, r2_key, mime_type, size_bytes, etag, status, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, 'ready', ?, ?)`,
+				fileId,
+				r2Key,
+				mimeType,
+				opts.size,
+				etag,
+				createdAt,
+				now,
+			)
+		}
+		const manifest = this.readBoardAssetManifestRow(fileId)
+		if (!manifest || manifest.status !== 'ready') {
+			throw new Error('Could not register board asset manifest')
+		}
+		return this.boardAssetManifestFromRow(manifest)
+	}
+
+	/** Public read used by the Worker to gate board-scoped asset GET/HEAD. */
+	async getBoardAssetManifest(opts: {
+		fileId: string
+	}): Promise<BoardAssetManifest | null> {
+		const fileId = typeof opts.fileId === 'string' ? opts.fileId.trim() : ''
+		if (!BOARD_UUID_RE.test(fileId)) return null
+		const row = this.readBoardAssetManifestRow(fileId)
+		if (!row || row.status !== 'ready') return null
+		return this.boardAssetManifestFromRow(row)
+	}
+
+	/**
+	 * Mark a board asset deleted only when no live scene element references it.
+	 * The R2 delete happens in the Worker after this check/transition.
+	 */
+	async deleteBoardAssetManifest(opts: {
+		fileId: string
+	}): Promise<
+		| { ok: true; deleted: boolean }
+		| { ok: false; status: number; error: string }
+	> {
+		const fileId = typeof opts.fileId === 'string' ? opts.fileId.trim() : ''
+		if (!BOARD_UUID_RE.test(fileId)) {
+			return { ok: false, status: 400, error: 'Invalid fileId' }
+		}
+		const scene = await this.loadScene()
+		const referenced = scene.elements.some(
+			(element) =>
+				!element.isDeleted &&
+				element.type === 'image' &&
+				element.fileId === fileId,
+		)
+		if (referenced) {
+			return {
+				ok: false,
+				status: 409,
+				error: 'Asset is referenced by this board',
+			}
+		}
+
+		const row = this.readBoardAssetManifestRow(fileId)
+		if (!row || row.status === 'deleted') {
+			return { ok: true, deleted: false }
+		}
+		this.ctx.storage.sql.exec(
+			`UPDATE whiteboard_asset_manifest
+			 SET status = 'deleted', updated_at = ?
+			 WHERE file_id = ?`,
+			Date.now(),
+			fileId,
+		)
+		return { ok: true, deleted: true }
 	}
 
 	/**
@@ -1442,6 +1623,67 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return this.sceneCache
 	}
 
+	private readBoardAssetManifestRow(
+		fileId: string,
+	): AssetManifestRow | null {
+		const row = this.ctx.storage.sql
+			.exec<AssetManifestRow>(
+				`SELECT file_id, r2_key, mime_type, size_bytes, etag, status,
+				        created_at, updated_at
+				 FROM whiteboard_asset_manifest
+				 WHERE file_id = ?`,
+				fileId,
+			)
+			.toArray()[0]
+		return row ?? null
+	}
+
+	private boardAssetManifestFromRow(row: AssetManifestRow): BoardAssetManifest {
+		return {
+			fileId: row.file_id,
+			r2Key: row.r2_key,
+			mimeType: row.mime_type,
+			size: row.size_bytes,
+			etag: row.etag,
+			status: row.status === 'deleted' ? 'deleted' : 'ready',
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		}
+	}
+
+	private async validateNewImageAssetReferences(
+		existing: SceneElement[],
+		accepted: SceneElement[],
+	): Promise<void> {
+		const existingById = new Map(existing.map((element) => [element.id, element]))
+		const fileIds = new Set<string>()
+		for (const element of accepted) {
+			if (
+				element.isDeleted ||
+				element.type !== 'image' ||
+				typeof element.fileId !== 'string' ||
+				!element.fileId
+			) {
+				continue
+			}
+			const previous = existingById.get(element.id)
+			const previousFileId =
+				previous &&
+				!previous.isDeleted &&
+				previous.type === 'image' &&
+				typeof previous.fileId === 'string'
+					? previous.fileId
+					: null
+			if (previousFileId !== element.fileId) fileIds.add(element.fileId)
+		}
+
+		for (const fileId of fileIds) {
+			if (!(await this.getBoardAssetManifest({ fileId }))) {
+				throw sceneAssetNotReadyError()
+			}
+		}
+	}
+
 	private persistScene(scene: LiveScene): void {
 		if (scene.elements.length > MAX_SCENE_ELEMENTS) {
 			throw sceneTooLargeError()
@@ -1523,6 +1765,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private notifyScenePersistError(
 		fromSessionId: string,
 		error: ScenePersistError,
+		mutationId?: string | null,
 	): void {
 		const payload = {
 			type: 'wb:error' as const,
@@ -1530,7 +1773,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			message: error.message,
 		}
 		const origin = this.sessionIdToWs.get(fromSessionId)
-		if (origin) sendJson(origin, payload)
+		if (origin) {
+			sendJson(
+				origin,
+				mutationId ? { ...payload, mutationId } : payload,
+			)
+		}
 		for (const [sessionId, ws] of this.sessionIdToWs) {
 			if (sessionId === fromSessionId) continue
 			const attachment = normalizeAttachment(
@@ -1557,6 +1805,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			const parsed = parseDatabaseScene(databaseJson)
 			if (parsed) appState = parsed.appState
 		}
+		await this.validateNewImageAssetReferences(scene.elements, accepted)
 		const nextScene: LiveScene = { elements: next, appState }
 		this.persistScene(nextScene)
 
@@ -2339,6 +2588,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.ctx.storage.sql.exec('DELETE FROM excalidraw_scene')
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
+		await this.cleanupBoardAssets(
+			(await this.ctx.storage.get<string>(META_BOARD_ID_KEY)) ?? undefined,
+		)
 		await this.cleanupTempAssets()
 		await this.clearActiveCodeKeys()
 		await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
@@ -2347,6 +2599,40 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			{ type: 'scene:sync', elements: [], appState: {} },
 			null,
 		)
+	}
+
+	/** Best-effort deletion for board-scoped binaries; legacy owner keys are untouched. */
+	private async cleanupBoardAssets(boardId?: string): Promise<void> {
+		const id = typeof boardId === 'string' ? boardId.trim() : ''
+		if (!BOARD_UUID_RE.test(id)) return
+		try {
+			this.ctx.storage.sql.exec(
+				`UPDATE whiteboard_asset_manifest
+				 SET status = 'deleted', updated_at = ?`,
+				Date.now(),
+			)
+		} catch {
+			// The manifest may not exist while migrating an older Durable Object.
+		}
+		if (!this.env.WHITEBOARD_ASSETS) return
+		try {
+			let cursor: string | undefined
+			do {
+				const listed = await this.env.WHITEBOARD_ASSETS.list({
+					prefix: `boards/${id}/assets/`,
+					cursor,
+					limit: 100,
+				})
+				await Promise.all(
+					listed.objects.map((object) =>
+						this.env.WHITEBOARD_ASSETS.delete(object.key),
+					),
+				)
+				cursor = listed.truncated ? listed.cursor : undefined
+			} while (cursor)
+		} catch {
+			// R2 cleanup is best-effort; scene/manifest cleanup still completes.
+		}
 	}
 
 	/** Phase 3.2 stores `meta:tempAssetPrefix`; we best-effort delete that R2 prefix. */
@@ -2466,6 +2752,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			if (!sessionCanEdit(attachment.role, await this.readClassCanEdit())) {
 				return
 			}
+			const mutationId =
+				typeof data.mutationId === 'string' && data.mutationId.length <= 256
+					? data.mutationId
+					: null
 			try {
 				if (
 					typeof data.databaseJson === 'string' &&
@@ -2484,8 +2774,15 @@ export class WhiteboardBoard extends DurableObject<Env> {
 					databaseJson,
 					data.full === true,
 				)
+				if (mutationId !== null) {
+					sendJson(ws, { type: 'scene:ack', mutationId })
+				}
 			} catch (err) {
-				this.notifyScenePersistError(sessionId, asScenePersistError(err))
+				this.notifyScenePersistError(
+					sessionId,
+					asScenePersistError(err),
+					mutationId,
+				)
 			}
 		}
 	}

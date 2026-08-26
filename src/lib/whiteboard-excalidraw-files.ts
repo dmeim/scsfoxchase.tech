@@ -4,6 +4,7 @@
  */
 import {
 	createElement,
+	newElementWith,
 	useCallback,
 	useEffect,
 	useRef,
@@ -26,19 +27,27 @@ import type {
 } from '@excalidraw/excalidraw/types'
 import {
 	assetResolveUrl,
+	boardPlayerPath,
+	uploadBoardAssetBytes,
 	claimTempCanvasAssets,
+	fetchBoardAssetBytes,
 	fetchBoardAssetMeta,
+	hasBoardAsset,
 	fetchCanvasBytes,
 	ownerKeyForBoardMeta,
 	parsePlayerPath,
-	playerPath,
 	registerTempAssetPrefix,
 	tempOwnerKey,
-	uploadCanvasBytes,
 	type BoardAssetMeta,
 } from './whiteboard-assets'
 import { getActiveIdentity, getAuthHeaders } from './whiteboard-identity'
 import { getBoardSessionAuth } from './whiteboard-participants'
+import {
+	useWhiteboardUploadOutbox,
+	type WhiteboardUploadElementSnapshot,
+	type WhiteboardServerSceneHydration,
+	type UseWhiteboardUploadOutboxResult,
+} from './whiteboard-upload-outbox'
 
 /** Same event `whiteboard-excalidraw-roles` publishes after `wb:hello`. */
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
@@ -87,10 +96,57 @@ function referencedImageFileIds(
 	return ids
 }
 
+function imageElementSnapshots(
+	elements: readonly OrderedExcalidrawElement[],
+	fileId: string,
+): WhiteboardUploadElementSnapshot[] {
+	return elements
+		.filter(
+			(element) =>
+				!element.isDeleted &&
+				element.type === 'image' &&
+				element.fileId === fileId,
+		)
+		.map((element) => ({
+			elementId: element.id,
+			element,
+			elementVersion: element.version,
+		}))
+}
+
+function sceneVersionForElements(
+	elements: readonly OrderedExcalidrawElement[],
+): number {
+	return elements.reduce(
+		(version, element) => Math.max(version, element.version),
+		0,
+	)
+}
+
+function removeLiveImageElements(
+	api: ExcalidrawImperativeAPI,
+	fileId: string,
+): void {
+	const elements = api.getSceneElementsIncludingDeleted()
+	const next = elements.map((element) =>
+		element.type === 'image' &&
+			element.fileId === fileId &&
+			!element.isDeleted
+			? newElementWith(element, { isDeleted: true })
+			: element,
+	)
+	if (next.some((element, index) => element !== elements[index])) {
+		api.updateScene({
+			elements: next,
+			captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+		})
+	}
+}
+
 function referencedPlayerFiles(
-	elements: readonly { type?: string; isDeleted?: boolean; link?: string | null }[],
-): { fileId: string; ownerKey: string }[] {
-	const out: { fileId: string; ownerKey: string }[] = []
+	 elements: readonly { type?: string; isDeleted?: boolean; link?: string | null }[],
+): { fileId: string; ownerKey: string; boardId?: string }[] {
+	const out: { fileId: string; ownerKey: string; boardId?: string }[] = []
 	for (const el of elements) {
 		if (el.isDeleted || el.type !== 'embeddable') continue
 		const parsed = parsePlayerPath(el.link || '')
@@ -138,11 +194,10 @@ export function renderWhiteboardEmbeddable(
 	const parsed = parsePlayerPath(link)
 	if (!parsed) return null
 	const ownerKey = options?.ownerKey || parsed.ownerKey
-	const params = new URLSearchParams({
-		owner: ownerKey,
-		id: parsed.fileId,
-	})
-	if (options?.boardId) params.set('board', options.boardId)
+	const boardId = options?.boardId || parsed.boardId
+	const params = new URLSearchParams({ id: parsed.fileId })
+	if (ownerKey) params.set('owner', ownerKey)
+	if (boardId) params.set('board', boardId)
 	return createElement('iframe', {
 		src: `/whiteboard-player?${params.toString()}`,
 		title: 'Video',
@@ -286,10 +341,12 @@ function ownerKeysToTry(
 	return [...new Set([google, temp, baked].filter(Boolean) as string[])]
 }
 
-export function useWhiteboardExcalidrawFiles(
-	boardId: string,
-	apiRef: RefObject<ExcalidrawImperativeAPI | null>,
-): {
+export type WhiteboardFileSyncOptions = {
+	sceneVersion?: number
+	sceneState?: unknown
+}
+
+export type WhiteboardExcalidrawFilesApi = {
 	generateIdForFile: (file: File) => Promise<string>
 	validateEmbeddable: (link: string) => boolean | undefined
 	renderEmbeddable: (
@@ -303,8 +360,28 @@ export function useWhiteboardExcalidrawFiles(
 	syncFiles: (
 		elements: readonly OrderedExcalidrawElement[],
 		files: BinaryFiles,
+		options?: WhiteboardFileSyncOptions,
 	) => void
-} {
+	/** Durable upload state and controls for WhiteboardCanvas/UI integration. */
+	uploadOutbox: UseWhiteboardUploadOutboxResult
+	markServerSceneHydrated: (
+		input?: WhiteboardServerSceneHydration,
+	) => Promise<string[]>
+	resetServerSceneHydration: () => void
+	getRecoveryData: UseWhiteboardUploadOutboxResult['getRecoveryData']
+	updatePendingElementSnapshots: UseWhiteboardUploadOutboxResult['updateElementSnapshots']
+	getUploadState: UseWhiteboardUploadOutboxResult['getUploadState']
+	markSceneAcknowledged: UseWhiteboardUploadOutboxResult['markSceneAcknowledged']
+	retryUpload: UseWhiteboardUploadOutboxResult['retryUpload']
+	retryAllUploads: UseWhiteboardUploadOutboxResult['retryAllUploads']
+	removeUpload: UseWhiteboardUploadOutboxResult['removeUpload']
+}
+
+export function useWhiteboardExcalidrawFiles(
+	boardId: string,
+	apiRef: RefObject<ExcalidrawImperativeAPI | null>,
+): WhiteboardExcalidrawFilesApi {
+	const uploadOutbox = useWhiteboardUploadOutbox(boardId)
 	const metaRef = useRef<BoardAssetMeta>({
 		savedToLibrary: false,
 		cloudOwnerKey: null,
@@ -424,23 +501,49 @@ export function useWhiteboardExcalidrawFiles(
 	}, [apiRef, boardId])
 
 	const putImageFile = useCallback(
-		async (fileId: string, file: BinaryFileData) => {
-			const ownerKey = await loadCanvasOwnerKey()
-			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
-				prefixRegisteredRef.current = true
-				void registerTempAssetPrefix(boardId).catch(() => {
-					prefixRegisteredRef.current = false
+		async (
+			fileId: string,
+			file: BinaryFileData,
+			elementSnapshots: readonly WhiteboardUploadElementSnapshot[],
+			options: WhiteboardFileSyncOptions,
+		) => {
+			let durablyStaged = false
+			try {
+				const blob = await dataURLToBlob(file.dataURL)
+				const latestStaging = uploadOutbox.outbox.getStaging(fileId)
+				// The element may have been deleted while DataURL conversion was in
+				// flight. Do not create an orphaned uploaded job after that deletion;
+				// the tombstone will be persisted and can clear any already-durable
+				// job after its scene acknowledgement or server hydration.
+				if (latestStaging && latestStaging.latestElementSnapshots?.length === 0) {
+					uploadOutbox.outbox.completeStaging(fileId)
+					return
+				}
+				await uploadOutbox.outbox.stage({
+					boardId,
+					fileId,
+					blob,
+					mimeType: file.mimeType,
+					latestElementSnapshots:
+						latestStaging?.latestElementSnapshots ?? elementSnapshots,
+					latestElementState:
+						latestStaging?.latestElementState ?? options.sceneState,
+					sceneVersion:
+						latestStaging?.sceneVersion ?? options.sceneVersion,
 				})
+				durablyStaged = true
+				uploadOutbox.outbox.completeStaging(fileId)
+				await uploadOutbox.outbox.waitForUpload(fileId)
+			} catch (error) {
+				if (!durablyStaged) {
+					uploadOutbox.outbox.failStaging(fileId)
+					const api = apiRef.current
+					if (api) removeLiveImageElements(api, fileId)
+				}
+				throw error
 			}
-			const blob = await dataURLToBlob(file.dataURL)
-			await uploadCanvasBytes({
-				ownerKey,
-				fileId,
-				bytes: blob,
-				mimeType: file.mimeType,
-			})
 		},
-		[boardId, loadCanvasOwnerKey],
+		[apiRef, boardId, uploadOutbox.outbox],
 	)
 
 	const failedAtRef = useRef(new Map<string, number>())
@@ -449,6 +552,19 @@ export function useWhiteboardExcalidrawFiles(
 		async (fileId: string) => {
 			const api = apiRef.current
 			if (!api) return false
+			const boardFound = await fetchBoardAssetBytes(boardId, fileId)
+			if (boardFound && IMAGE_MIME.has(boardFound.mimeType)) {
+				const dataURL = await blobToDataURL(boardFound.blob)
+				api.addFiles([
+					{
+						id: asFileId(fileId),
+						mimeType: asImageMime(boardFound.mimeType),
+						dataURL: asDataURL(dataURL),
+						created: Date.now(),
+					},
+				])
+				return true
+			}
 			if (
 				metaRef.current.savedToLibrary &&
 				!isGoogleOwnerKey(metaRef.current.cloudOwnerKey)
@@ -476,7 +592,15 @@ export function useWhiteboardExcalidrawFiles(
 	)
 
 	const hydrateVideo = useCallback(
-		async (fileId: string, bakedOwner: string) => {
+		async (fileId: string, bakedOwner: string, bakedBoardId?: string) => {
+			if (bakedBoardId) {
+				// Board-scoped links must never be redirected through a different
+				// board's manifest. Links to another board remain readable as
+				// already-persisted embeds and need no local upload probe.
+				return bakedBoardId === boardId
+					? hasBoardAsset(boardId, fileId)
+					: true
+			}
 			if (
 				metaRef.current.savedToLibrary &&
 				!isGoogleOwnerKey(metaRef.current.cloudOwnerKey)
@@ -507,24 +631,54 @@ export function useWhiteboardExcalidrawFiles(
 		(
 			elements: readonly OrderedExcalidrawElement[],
 			files: BinaryFiles,
+			options: WhiteboardFileSyncOptions = {},
 		) => {
 			if (!boardId) return
 			rememberGoogleOwner(googleOwnerFromElements(elements))
 			const referenced = referencedImageFileIds(elements)
+			const sceneVersion =
+				options.sceneVersion ?? sceneVersionForElements(elements)
 			const now = Date.now()
 			for (const fileId of referenced) {
+				const elementSnapshots = imageElementSnapshots(elements, fileId)
+				const existing = files[fileId]
+				const alreadyInflight = inflightRef.current.has(fileId)
+				const failedAt = failedAtRef.current.get(fileId) ?? 0
+				if (
+					existing?.dataURL &&
+					!readyRef.current.has(fileId) &&
+					(alreadyInflight || now - failedAt >= 1000)
+				) {
+					uploadOutbox.outbox.beginStaging({
+						boardId,
+						fileId,
+						latestElementSnapshots: elementSnapshots,
+						latestElementState: options.sceneState,
+						sceneVersion,
+					})
+				}
+				void uploadOutbox.outbox
+					.updateElementSnapshots(fileId, {
+						latestElementSnapshots: elementSnapshots,
+						latestElementState: options.sceneState,
+						sceneVersion: options.sceneVersion,
+					})
+					.catch(() => undefined)
 				if (readyRef.current.has(fileId) || inflightRef.current.has(fileId)) {
 					continue
 				}
-				const failedAt = failedAtRef.current.get(fileId) ?? 0
 				if (now - failedAt < 1000) continue
 				inflightRef.current.add(fileId)
-				const existing = files[fileId]
 				void (async () => {
 					try {
 						if (existing?.dataURL) {
 							try {
-								await putImageFile(fileId, existing)
+								await putImageFile(
+									fileId,
+									existing,
+									elementSnapshots,
+									{ ...options, sceneVersion },
+								)
 							} catch {
 								if (!toastedUploadRef.current.has(fileId)) {
 									toastedUploadRef.current.add(fileId)
@@ -550,6 +704,18 @@ export function useWhiteboardExcalidrawFiles(
 				})()
 			}
 
+			// A deletion can occur while DataURL conversion is still pending.
+			// Keep that transient file blocked until the conversion either stages
+			// durably or removes the local element.
+			for (const fileId of uploadOutbox.outbox.getStagingFileIds()) {
+				if (referenced.includes(fileId)) continue
+				uploadOutbox.outbox.updateStaging(fileId, {
+					latestElementSnapshots: [],
+					latestElementState: options.sceneState,
+					sceneVersion,
+				})
+			}
+
 			for (const parsed of referencedPlayerFiles(elements)) {
 				const readyKey = `video:${parsed.fileId}`
 				if (
@@ -561,9 +727,13 @@ export function useWhiteboardExcalidrawFiles(
 				const failedAt = failedAtRef.current.get(readyKey) ?? 0
 				if (now - failedAt < 1000) continue
 				inflightRef.current.add(readyKey)
-				void (async () => {
-					try {
-						const ok = await hydrateVideo(parsed.fileId, parsed.ownerKey)
+					void (async () => {
+						try {
+							const ok = await hydrateVideo(
+								parsed.fileId,
+								parsed.ownerKey,
+								parsed.boardId,
+							)
 						if (!ok) throw new Error('video asset not in R2 yet')
 						readyRef.current.add(readyKey)
 						failedAtRef.current.delete(readyKey)
@@ -583,21 +753,14 @@ export function useWhiteboardExcalidrawFiles(
 		async (videoFiles: File[]) => {
 			const api = apiRef.current
 			if (!api || videoFiles.length === 0) return
-			const ownerKey = await loadCanvasOwnerKey()
-			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
-				prefixRegisteredRef.current = true
-				void registerTempAssetPrefix(boardId).catch(() => {
-					prefixRegisteredRef.current = false
-				})
-			}
 			const appState = api.getAppState()
 			const existing = api.getSceneElementsIncludingDeleted()
 			const added = []
 			for (const [index, file] of videoFiles.entries()) {
 				const fileId = crypto.randomUUID()
 				try {
-					await uploadCanvasBytes({
-						ownerKey,
+					await uploadBoardAssetBytes({
+						boardId,
 						fileId,
 						bytes: file,
 						mimeType: (file.type || 'video/mp4').split(';')[0].trim(),
@@ -606,9 +769,8 @@ export function useWhiteboardExcalidrawFiles(
 					api.setToast?.({ message: 'Video upload failed', duration: 4000 })
 					continue
 				}
-				resolvedVideoOwnerRef.current.set(fileId, ownerKey)
 				const origin = viewportCenter(appState, 640, 360)
-				const link = playerPath(ownerKey, fileId)
+				const link = boardPlayerPath(boardId, fileId)
 				added.push(
 					...convertToExcalidrawElements([
 						{
@@ -632,7 +794,7 @@ export function useWhiteboardExcalidrawFiles(
 				captureUpdate: CaptureUpdateAction.IMMEDIATELY,
 			})
 		},
-		[apiRef, boardId, loadCanvasOwnerKey],
+			[apiRef, boardId],
 	)
 
 	useEffect(() => {
@@ -675,6 +837,11 @@ export function useWhiteboardExcalidrawFiles(
 		(element: ExcalidrawEmbeddableElement, _appState: AppState) => {
 			const parsed = parsePlayerPath(element.link || '')
 			if (!parsed) return renderWhiteboardEmbeddable(element)
+			if (parsed.boardId) {
+				return renderWhiteboardEmbeddable(element, {
+					boardId: parsed.boardId,
+				})
+			}
 			const resolved =
 				resolvedVideoOwnerRef.current.get(parsed.fileId) ||
 				(isGoogleOwnerKey(googleOwnerRef.current)
@@ -695,5 +862,15 @@ export function useWhiteboardExcalidrawFiles(
 		renderEmbeddable,
 		onPaste,
 		syncFiles,
+		uploadOutbox,
+		markServerSceneHydrated: uploadOutbox.markServerSceneHydrated,
+		resetServerSceneHydration: uploadOutbox.resetServerSceneHydration,
+		getRecoveryData: uploadOutbox.getRecoveryData,
+		updatePendingElementSnapshots: uploadOutbox.updateElementSnapshots,
+		getUploadState: uploadOutbox.getUploadState,
+		markSceneAcknowledged: uploadOutbox.markSceneAcknowledged,
+		retryUpload: uploadOutbox.retryUpload,
+		retryAllUploads: uploadOutbox.retryAllUploads,
+		removeUpload: uploadOutbox.removeUpload,
 	}
 }

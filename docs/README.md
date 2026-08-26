@@ -88,7 +88,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | `/form/*` | Individual forms |
 | `/guide/{slug}` | Guide articles |
 | `/inventory` | Staff device inventory lookup + QR |
-| `/whiteboard` | Whiteboard hub (create, join; Recents/Assets/Library when signed in) |
+| `/whiteboard` | Whiteboard hub (create, join; cloud Recents/Library when signed in; canvas assets stay board-scoped) |
 | `/board/{uuid}` | Live multiplayer board (Excalidraw + DO WebSocket) |
 | `/offline` | Canonical offline fallback |
 | `/oldgames` | Legacy game catalog |
@@ -103,7 +103,8 @@ Whiteboard HTTP/WebSocket APIs (Worker, not prerendered pages):
 | `/api/whiteboard/boards/:uuid/meta` | Saved-to-library + Google Owner (lifts 24h TTL) |
 | `/api/whiteboard/boards/:uuid/participants/:sessionId` | PATCH role (Owner / Manager) |
 | `/api/whiteboard/boards/:uuid/force-follow` | PATCH Follow User / force-follow (Owner / Manager) |
-| `/api/whiteboard/assets/:ownerKey/:assetId` | R2 media PUT/GET/DELETE |
+| `/api/whiteboard/boards/:uuid/assets/:fileId` | Board-scoped R2 media with Durable Object manifest |
+| `/api/whiteboard/assets/:ownerKey/:assetId` | Legacy owner-key R2 media PUT/GET/DELETE |
 | `/api/whiteboard/library/boards` | Cloud board index (Clerk) |
 | `/api/whiteboard/library/assets` | Cloud asset index (Clerk) |
 

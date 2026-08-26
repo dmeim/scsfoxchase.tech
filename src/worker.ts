@@ -13,6 +13,7 @@ import { handle } from '@astrojs/cloudflare/handler'
 import {
 	claimTempAssetsFromMetaResponse,
 	handleAssetRequest,
+	isBoardAssetPath,
 } from './worker/assetRoutes'
 import { handleCodeRequest } from './worker/codeRoutes'
 import { handleLibraryRequest } from './worker/libraryRoutes'
@@ -97,8 +98,11 @@ export default {
 			if (forceFollowResponse) return forceFollowResponse
 		}
 
-		// PHASE 3.2 — R2 asset upload / download / delete / claim / expire-temp
-		if (url.pathname.startsWith('/api/whiteboard/assets')) {
+		// PHASE 3.2/ToDo 1 — legacy and board-scoped R2 assets
+		if (
+			url.pathname.startsWith('/api/whiteboard/assets') ||
+			isBoardAssetPath(url.pathname)
+		) {
 			const assetResponse = await handleAssetRequest(request, env, ctx)
 			if (assetResponse) return assetResponse
 		}

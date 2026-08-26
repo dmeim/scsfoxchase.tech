@@ -1,6 +1,6 @@
 # Auth and cloud library
 
-Clerk Google sign-in, owner keys, and how Recents / Library / Assets work as a **signed-in cloud library only**. There is no dual local/cloud board library.
+Clerk Google sign-in, owner keys, and how Recents / Library / Assets work as a **signed-in cloud library only**. Board-scoped canvas assets are separate from that library. There is no dual local/cloud board library.
 
 ## Overview
 
@@ -9,7 +9,8 @@ Clerk Google sign-in, owner keys, and how Recents / Library / Assets work as a *
 - **Save / reopen from Library** requires Google sign-in. Signed-in **create autosaves** to the cloud library. That Google account is **Owner**.
 - Signed-out create is a **live scratch board** (URL + Durable Object). The creating browser is **ephemeral Owner** (host secret) so roles and Follow still work. It is not in anyone’s library.
 - “Leave and lose work” means **never saved to the cloud library**, not “destroy on refresh.” Chromebooks refresh. The scene stays in the DO; **unsaved boards and their temp R2 objects are deleted after 24 hours**.
-- Sign in on a scratch board this browser created and Save: that Google account **claims Owner**, temp R2 files move under `google:{accountId}`, 24h TTL comes off.
+- Sign in on a scratch board this browser created and Save: that Google account **claims Owner**, legacy `temp:{boardId}` R2 files move under `google:{accountId}`, and the 24h TTL comes off. New board-scoped files stay at `boards/{boardId}/assets/{fileId}`.
+- New canvas image uploads use the board-scoped route and a Durable Object manifest. The Hub Assets index is a separate metadata list and is not updated by canvas uploads.
 
 Join by share code, link, or UUID still works with **no account**. Role is decided on connect. Share-code joiners land as **Editor**. UUID-only stays **Viewer**. **Group Edit** (default Off) is a live draw gate: Editors can draw only while it is On. Owner or Manager can still set **Editor** on **People**.
 
@@ -46,17 +47,21 @@ Used by:
 
 Secrets / vars: `CLERK_SECRET_KEY` (Worker secret), `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`. Local: `.dev.vars` (see `.dev.vars.example`). There is no `PUBLIC_TLDRAW_LICENSE_KEY`.
 
+Board-scoped canvas PUT/DELETE uses the board's Durable Object access check: a valid scratch host secret or a live Owner/Manager/Editor session token is required, and Viewers are rejected. The board route does not authorize a write from an arbitrary Clerk token or owner key alone. GET/HEAD is public after the DO manifest confirms the asset exists.
+
 ## Owner keys
 
-| Mode | Owner key | How it is chosen |
-|------|-----------|------------------|
-| Signed-in saved board | `google:{accountId}` | Google OAuth `sub` when present; otherwise Clerk `user.id` |
-| Unsaved / signed-out canvas files | `temp:{boardId}` | Board UUID; 24h TTL on R2 |
+| Mode | Key / identifier | How it is chosen |
+|------|------------------|------------------|
+| New canvas image asset | `boards/{boardId}/assets/{fileId}` | Board UUID plus Excalidraw file id; tracked by the board DO manifest |
+| Legacy signed-in canvas media | `assets/google:{accountId}/{fileId}` | Google OAuth `sub` when present; otherwise Clerk `user.id` |
+| Legacy scratch canvas media | `assets/temp:{boardId}/{fileId}` | Board UUID; subject to the 24h scratch lifetime |
+| Legacy leftover media | `assets/local:{deviceId}/{fileId}` | Read compatibility only; no new writes |
 | Guest identity (not a library) | `deviceInstallId` in `localStorage` | Stable per browser for generated display names and Follow `userId` |
 
-`getOwnerKey()` in `src/scripts/whiteboard-library.ts` returns the signed-in Google key or `local:{deviceInstallId}`. Live canvas files do not use that signed-out key; they use `ownerKeyForBoardMeta` → `temp:` or `google:`. The hub no longer uploads under `local:`.
+`getOwnerKey()` in `src/scripts/whiteboard-library.ts` still returns the signed-in Google key or `local:{deviceInstallId}` for legacy/library code. New canvas image and video uploads do not use that value: `whiteboard-excalidraw-files.ts` uses the board id and board-scoped routes/outbox. Existing legacy video/player links may still use `temp:` or `google:` owner keys, and those reads remain compatible. The hub no longer uploads under `local:`.
 
-R2 media keys: `assets/{ownerKey}/{assetId}`.  
+R2 media keys: `boards/{boardId}/assets/{fileId}` for new canvas image assets; `assets/{ownerKey}/{assetId}` for legacy media.
 Cloud indexes: `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json`.
 
 Clearing site data creates a new `deviceInstallId` and a new guest name. It does not wipe a Google library.
@@ -65,11 +70,12 @@ Clearing site data creates a new `deviceInstallId` and a new guest name. It does
 
 | Surface | Signed out | Signed in |
 |---------|------------|-----------|
-| Recents / Library hub | Hidden | `GET/PUT/DELETE /api/whiteboard/library/boards`. Assets strip hidden (canvas PUT does not index `assets.json`) |
+| Recents / Library hub | Hidden | `GET/PUT/DELETE /api/whiteboard/library/boards`. The Assets strip is hidden; canvas PUT does not index `assets.json` |
 | Create | Scratch DO + host secret; 24h TTL | Autosave to cloud; Owner = this Google account |
 | Join | Opens the board. Share-code joiners land as **Editor**; UUID-only stays **Viewer**. **Group Edit** Off = Editors view-only. Owner/Manager can still set **Editor** on **People** | Same; does **not** add Recents unless you already own it or Save a scratch you created |
 | Save / claim | N/A (sign in first) | Creating-browser host secret + Clerk → Owner, lift TTL, move temp R2 |
-| Canvas files | `temp:{boardId}` | `google:{accountId}` after save |
+| New canvas images | Board-scoped `boards/{boardId}/assets/{fileId}`; scratch cleanup follows the board DO lifetime | Same board-scoped key; Save does not move it |
+| Legacy canvas files | `temp:{boardId}` | `google:{accountId}` after save/claim |
 
 Hub and manage panel wait for `whenAuthReady()` so signed-in users do not miss cloud upserts. `onAuthChange` re-renders hub lists when identity flips. Signing in on a scratch tab this browser created claims the board (`bindBoardPageScratchClaim`).
 
@@ -100,6 +106,16 @@ All require a valid Clerk session. Indexes are scoped to the authenticated `owne
 | `GET` | `/api/whiteboard/boards/:uuid/meta` | `{ savedToLibrary, cloudOwnerKey, unsavedExpiresAt, … }` |
 | `PATCH` | `/api/whiteboard/boards/:uuid/meta` | Host secret; `savedToLibrary` + `cloudOwnerKey` lifts 24h TTL |
 
+The board-scoped asset routes are not part of the Clerk-owned index API:
+
+| Method | Path | Auth / behavior |
+|--------|------|----------------|
+| `PUT` | `/api/whiteboard/boards/:uuid/assets/:fileId` | Board host proof or live can-edit session; writes R2, then the DO manifest |
+| `GET` / `HEAD` | `/api/whiteboard/boards/:uuid/assets/:fileId` | Public read, but only for a `ready` manifest row and matching R2 object |
+| `DELETE` | `/api/whiteboard/boards/:uuid/assets/:fileId` | Board host proof or live can-edit session; `409` if a live image references the file |
+
+The legacy `/api/whiteboard/assets/:ownerKey/:assetId` route remains for old media and player links. `POST /api/whiteboard/assets/claim` copies legacy `temp:{boardId}` objects to the Google owner; it does not move board-scoped objects.
+
 Client wrappers: `src/lib/whiteboard-cloud.ts`.
 
 ## Key files
@@ -110,8 +126,9 @@ Client wrappers: `src/lib/whiteboard-cloud.ts`.
 | `src/lib/whiteboard-identity.ts` | Identity, tokens, allowlist helpers |
 | `src/worker/clerkAuth.ts` | Worker session verification |
 | `src/worker/libraryRoutes.ts` | Cloud board/asset indexes |
-| `src/worker/assetRoutes.ts` | Google write auth + temp claim |
+| `src/worker/assetRoutes.ts` | Board-scoped manifest-gated assets, legacy Google/temp write auth, and temp claim |
 | `src/scripts/whiteboard-library.ts` | Cloud create / touch / claim, host secret |
-| `src/lib/whiteboard-assets.ts` | Temp/google owner keys + hub asset index |
+| `src/lib/whiteboard-assets.ts` | Board-scoped asset requests, legacy temp/Google owner keys, and Hub Assets index |
+| `src/lib/whiteboard-upload-outbox.ts` | IndexedDB queue for board-scoped image uploads and retry state |
 | `src/lib/whiteboard-cloud.ts` | Authenticated library fetch client |
 | `.dev.vars.example` / `.env.example` | Clerk env templates (no license key) |

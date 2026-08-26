@@ -3,8 +3,10 @@ import {
   CaptureUpdateAction,
   Excalidraw,
   getSceneVersion,
+  newElementWith,
   reconcileElements,
   restoreElements,
+  sceneCoordsToViewportCoords,
   serializeAsJSON,
 } from '@excalidraw/excalidraw'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
@@ -24,6 +26,7 @@ import {
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
   elementsWithIncreasedVersion,
+  elementWins,
   getOrCreateSessionId,
   mergeSceneElements,
   rememberElementVersions,
@@ -31,6 +34,10 @@ import {
   type SceneAppState,
   type SceneElement,
 } from '../lib/whiteboard-sync'
+import type {
+  WhiteboardUploadElementSnapshot,
+  WhiteboardUploadJob,
+} from '../lib/whiteboard-upload-outbox'
 import {
   getHostSecret,
   touchBoardActive,
@@ -64,6 +71,105 @@ const UUID_RE =
 const AUTH_RETRY_MS = 1000
 const AUTH_RETRY_MAX_MS = 10_000
 const AUTH_RETRY_GIVE_UP_MS = 60_000
+const UPLOAD_SUCCESS_FADE_MS = 150
+
+type InFlightSceneMutation = {
+  elements: SceneElement[]
+  sceneVersion: number
+  fileIds: string[]
+  deletedFileIds: string[]
+}
+
+type UploadOverlayItem = {
+  element: OrderedExcalidrawElement
+  job: WhiteboardUploadJob
+  left: number
+  top: number
+  width: number
+  height: number
+  angle: number
+  largeEnough: boolean
+  success: boolean
+}
+
+function blobToDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Failed to read recovered upload'))
+    }
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('Failed to read recovered upload'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+function isUploadFailed(job: WhiteboardUploadJob): boolean {
+  return (
+    job.state === 'failed' ||
+    job.state === 'auth-blocked' ||
+    job.state === 'permanent-failure'
+  )
+}
+
+function isSceneElementSnapshot(
+  value: unknown,
+): value is OrderedExcalidrawElement {
+  if (!value || typeof value !== 'object') return false
+  const element = value as Partial<OrderedExcalidrawElement>
+  return (
+    typeof element.id === 'string' &&
+    typeof element.version === 'number' &&
+    typeof element.versionNonce === 'number' &&
+    typeof element.type === 'string'
+  )
+}
+
+function sceneImageFileIds(
+  elements: readonly { type?: string; fileId?: unknown }[],
+): string[] {
+  return [
+    ...new Set(
+      elements.flatMap((element) =>
+        element.type === 'image' &&
+        typeof element.fileId === 'string' &&
+        element.fileId
+          ? [element.fileId]
+          : [],
+      ),
+    ),
+  ]
+}
+
+function sceneImageTombstoneFileIds(
+  elements: readonly {
+    type?: string
+    isDeleted?: boolean
+    fileId?: unknown
+  }[],
+): string[] {
+  return [
+    ...new Set(
+      elements.flatMap((element) =>
+        element.isDeleted &&
+        element.type === 'image' &&
+        typeof element.fileId === 'string' &&
+        element.fileId
+          ? [element.fileId]
+          : [],
+      ),
+    ),
+  ]
+}
+
+function uploadSceneState(appState: AppState): SceneAppState {
+  return {
+    ...(typeof appState.viewBackgroundColor === 'string'
+      ? { viewBackgroundColor: appState.viewBackgroundColor }
+      : {}),
+  }
+}
 
 function readBoardIdFromLocation(): string | undefined {
   if (typeof window === 'undefined') return undefined
@@ -100,8 +206,14 @@ export default function WhiteboardCanvas({
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const applyingRemoteRef = useRef(false)
-  const lastSceneVersionRef = useRef(0)
-  const lastElementVersionsRef = useRef(new Map<string, number>())
+  /** Versions the server has confirmed, never merely versions sent locally. */
+  const acknowledgedSceneVersionRef = useRef(0)
+  const acknowledgedElementVersionsRef = useRef(new Map<string, number>())
+  /** Each mutation remains here until its matching scene:ack arrives. */
+  const inFlightMutationsRef = useRef(
+    new Map<string, InFlightSceneMutation>(),
+  )
+  const socketSceneHydratedRef = useRef(false)
   const flushTimerRef = useRef<number | null>(null)
   const pendingFlushRef = useRef<{
     elements: readonly OrderedExcalidrawElement[]
@@ -111,6 +223,7 @@ export default function WhiteboardCanvas({
   const pendingRemoteRef = useRef<{
     elements: SceneElement[]
     appState: SceneAppState | null
+    isServerScene: boolean
   } | null>(null)
   /**
    * True once this Excalidraw instance has applied a server scene. Outgoing
@@ -139,6 +252,33 @@ export default function WhiteboardCanvas({
   const previewUploadingRef = useRef(false)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
+  const uploadSnapshotRef = useRef(media.uploadOutbox)
+  uploadSnapshotRef.current = media.uploadOutbox
+  const markServerSceneHydratedRef = useRef(media.markServerSceneHydrated)
+  markServerSceneHydratedRef.current = media.markServerSceneHydrated
+  const resetServerSceneHydrationRef = useRef(media.resetServerSceneHydration)
+  resetServerSceneHydrationRef.current = media.resetServerSceneHydration
+  const getRecoveryDataRef = useRef(media.getRecoveryData)
+  getRecoveryDataRef.current = media.getRecoveryData
+  const updatePendingSnapshotsRef = useRef(
+    media.updatePendingElementSnapshots,
+  )
+  updatePendingSnapshotsRef.current = media.updatePendingElementSnapshots
+  const markSceneAcknowledgedRef = useRef(media.markSceneAcknowledged)
+  markSceneAcknowledgedRef.current = media.markSceneAcknowledged
+  const retryUploadRef = useRef(media.retryUpload)
+  retryUploadRef.current = media.retryUpload
+  const retryAllUploadsRef = useRef(media.retryAllUploads)
+  retryAllUploadsRef.current = media.retryAllUploads
+  const [uploadOverlayRevision, setUploadOverlayRevision] = useState(0)
+  const [socketConnected, setSocketConnected] = useState(false)
+  const [socketSceneReady, setSocketSceneReady] = useState(false)
+  const [uploadSavedUntil, setUploadSavedUntil] = useState(0)
+  const uploadReadyAtRef = useRef(new Map<string, number>())
+  const uploadFadeTimerRef = useRef<number | null>(null)
+  const uploadSavedTimerRef = useRef<number | null>(null)
+  const recoveredFileIdsRef = useRef(new Set<string>())
+  const recoveryInFlightRef = useRef(false)
 
   // PHASE 3.3
   const roles = useWhiteboardExcalidrawRoles({ boardId, apiRef, wsRef })
@@ -147,10 +287,14 @@ export default function WhiteboardCanvas({
   const onUserFollowRef = useRef(roles.onUserFollow)
   onUserFollowRef.current = roles.onUserFollow
   const reassertFollowRef = useRef(roles.reassertFollow)
-  reassertFollowRef.current = roles.reassertFollow
+  reassertFollowRef.current = () => {
+    roles.reassertFollow()
+    setUploadOverlayRevision((revision) => revision + 1)
+  }
   const resubscribeFollowRef = useRef(roles.resubscribeFollow)
   resubscribeFollowRef.current = roles.resubscribeFollow
   const unsubUserFollowRef = useRef<(() => void) | null>(null)
+  const unsubScrollChangeRef = useRef<(() => void) | null>(null)
   const canEditRef = useRef(roles.canEdit)
   canEditRef.current = roles.canEdit
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -159,6 +303,13 @@ export default function WhiteboardCanvas({
     const el = wrapRef.current
     if (!el || !roles.forceFollowLocked) return
     const stop = (event: Event) => {
+      const target = event.target
+      if (
+        target instanceof Element &&
+        target.closest('.wb-upload-control')
+      ) {
+        return
+      }
       event.preventDefault()
       event.stopPropagation()
     }
@@ -186,6 +337,8 @@ export default function WhiteboardCanvas({
     return () => {
       unsubUserFollowRef.current?.()
       unsubUserFollowRef.current = null
+      unsubScrollChangeRef.current?.()
+      unsubScrollChangeRef.current = null
     }
   }, [])
 
@@ -218,7 +371,11 @@ export default function WhiteboardCanvas({
   }, [boardId])
 
   const applyRemoteElements = useCallback(
-    (remoteElements: SceneElement[], remoteAppState: SceneAppState | null) => {
+    (
+      remoteElements: SceneElement[],
+      remoteAppState: SceneAppState | null,
+      isServerScene = false,
+    ) => {
       const api = apiRef.current
       if (!api) {
         const pending = pendingRemoteRef.current
@@ -226,11 +383,13 @@ export default function WhiteboardCanvas({
           pendingRemoteRef.current = {
             elements: remoteElements,
             appState: remoteAppState,
+            isServerScene,
           }
         } else {
           pendingRemoteRef.current = {
             elements: mergeSceneElements(pending.elements, remoteElements).next,
             appState: remoteAppState ?? pending.appState,
+            isServerScene: pending.isServerScene || isServerScene,
           }
         }
         return
@@ -239,10 +398,13 @@ export default function WhiteboardCanvas({
       try {
         const local = api.getSceneElementsIncludingDeleted()
         const localAppState = api.getAppState()
-        const restored = restoreElements(remoteElements, local)
+        const restored = restoreElements(
+          remoteElements as unknown as Parameters<typeof restoreElements>[0],
+          local,
+        )
         const reconciled = reconcileElements(
           local,
-          restored as Parameters<typeof reconcileElements>[1],
+          restored as unknown as Parameters<typeof reconcileElements>[1],
           localAppState,
         )
         const viewBackgroundColor =
@@ -256,15 +418,159 @@ export default function WhiteboardCanvas({
             : {}),
           captureUpdate: CaptureUpdateAction.NEVER,
         })
-        lastSceneVersionRef.current = getSceneVersion(reconciled)
-        rememberElementVersions(
-          reconciled as SceneElement[],
-          lastElementVersionsRef.current,
+        const inFlightRemoteVersions = new Map<string, number>()
+        for (const mutation of inFlightMutationsRef.current.values()) {
+          for (const element of mutation.elements) {
+            const previous = inFlightRemoteVersions.get(element.id) ?? 0
+            if (element.version > previous) {
+              inFlightRemoteVersions.set(element.id, element.version)
+            }
+          }
+        }
+        const acknowledgedRemoteElements = remoteElements.filter(
+          (element) =>
+            element.version >
+            (inFlightRemoteVersions.get(element.id) ?? -1),
         )
-        sceneHydratedRef.current = true
+        rememberElementVersions(
+          acknowledgedRemoteElements,
+          acknowledgedElementVersionsRef.current,
+        )
+        acknowledgedSceneVersionRef.current = Math.max(
+          acknowledgedSceneVersionRef.current,
+          getSceneVersion(
+            acknowledgedRemoteElements as unknown as OrderedExcalidrawElement[],
+          ),
+        )
+        if (isServerScene || sceneHydratedRef.current) {
+          sceneHydratedRef.current = true
+        }
+        setUploadOverlayRevision((revision) => revision + 1)
       } finally {
         queueMicrotask(() => {
           applyingRemoteRef.current = false
+        })
+      }
+    },
+    [],
+  )
+
+  const recoverPendingUploads = useCallback(async () => {
+    const api = apiRef.current
+    if (!api || !sceneHydratedRef.current || recoveryInFlightRef.current) {
+      return
+    }
+    const recovery = getRecoveryDataRef.current()
+    if (recovery.length === 0) return
+
+    recoveryInFlightRef.current = true
+    try {
+      const current = api.getSceneElementsIncludingDeleted()
+      const byId = new Map(current.map((element) => [element.id, element]))
+      const liveRecovery = new Map<string, OrderedExcalidrawElement>()
+      const recoveryFileIds = new Set<string>()
+
+      for (const item of recovery) {
+        for (const snapshot of item.latestElementSnapshots) {
+          if (!isSceneElementSnapshot(snapshot.element)) continue
+          const element = snapshot.element
+          if (
+            element.isDeleted ||
+            element.type !== 'image' ||
+            element.fileId !== item.fileId
+          ) {
+            continue
+          }
+          const existing = byId.get(element.id)
+          // A local/server deletion is authoritative for this recovery pass;
+          // an old outbox snapshot must never resurrect it.
+          if (existing?.isDeleted) continue
+          const previous = liveRecovery.get(element.id) ?? existing
+          if (
+            !previous ||
+            elementWins(
+              element as unknown as SceneElement,
+              previous as unknown as SceneElement,
+            )
+          ) {
+            liveRecovery.set(element.id, element)
+          }
+          recoveryFileIds.add(item.fileId)
+        }
+      }
+
+      const filesToAdd = []
+      const existingFiles = api.getFiles()
+      for (const job of uploadSnapshotRef.current.jobs) {
+        if (!recoveryFileIds.has(job.fileId)) continue
+        if (recoveredFileIdsRef.current.has(job.fileId)) continue
+        if (existingFiles[job.fileId]) {
+          recoveredFileIdsRef.current.add(job.fileId)
+          continue
+        }
+        try {
+          filesToAdd.push({
+            id: job.fileId as Parameters<typeof api.addFiles>[0][number]['id'],
+            mimeType: job.mimeType as Parameters<typeof api.addFiles>[0][number]['mimeType'],
+            dataURL: (await blobToDataURL(job.blob)) as Parameters<typeof api.addFiles>[0][number]['dataURL'],
+            created: job.createdAt,
+          })
+          recoveredFileIdsRef.current.add(job.fileId)
+        } catch {
+          // Keep the durable Blob for a later recovery attempt.
+        }
+      }
+      if (filesToAdd.length > 0) api.addFiles(filesToAdd)
+      if (liveRecovery.size > 0) {
+        for (const [elementId, element] of liveRecovery) {
+          byId.set(elementId, element)
+        }
+        const next = [...byId.values()]
+        api.updateScene({
+          elements: next,
+          captureUpdate: CaptureUpdateAction.NEVER,
+        })
+      }
+      setUploadOverlayRevision((revision) => revision + 1)
+    } finally {
+      recoveryInFlightRef.current = false
+    }
+  }, [])
+
+  const updatePendingSnapshotsForScene = useCallback(
+    (
+      elements: readonly OrderedExcalidrawElement[],
+      appState: AppState,
+    ) => {
+      const sceneVersion = getSceneVersion(elements)
+      for (const job of uploadSnapshotRef.current.jobs) {
+        const latestElementSnapshots: WhiteboardUploadElementSnapshot[] =
+          elements
+            .filter(
+              (element) =>
+                !element.isDeleted &&
+                element.type === 'image' &&
+                element.fileId === job.fileId,
+            )
+            .map((element) => ({
+              elementId: element.id,
+              element,
+              elementVersion: element.version,
+            }))
+        const snapshotsChanged =
+          latestElementSnapshots.length !== job.latestElementSnapshots.length ||
+          latestElementSnapshots.some(
+            (snapshot, index) =>
+              snapshot.elementId !==
+                job.latestElementSnapshots[index]?.elementId ||
+              snapshot.elementVersion !==
+                job.latestElementSnapshots[index]?.elementVersion,
+          )
+        if (!snapshotsChanged) continue
+        void updatePendingSnapshotsRef.current(job.fileId, {
+          latestElementSnapshots,
+          latestElementState: uploadSceneState(appState),
+          sceneVersion,
         })
       }
     },
@@ -276,6 +582,7 @@ export default function WhiteboardCanvas({
       elements: readonly OrderedExcalidrawElement[],
       appState: AppState,
       forceFull: boolean,
+      requiredElementIds?: ReadonlySet<string>,
     ): boolean => {
       const ws = wsRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return false
@@ -283,28 +590,84 @@ export default function WhiteboardCanvas({
       if (applyingRemoteRef.current) return false
       if (!canEditRef.current) return false
       if (!sceneHydratedRef.current) return false
+      if (!socketSceneHydratedRef.current) return false
 
+      // The outbox is the source of truth for publication safety. Uploaded
+      // jobs may be sent once for their scene acknowledgement; all other
+      // durable pending/failed references stay out of both payload paths.
+      const uploadSnapshot = uploadSnapshotRef.current
+      if (!uploadSnapshot.ready) return false
+      if (uploadSnapshot.storageError) return false
+      const pendingFileIds = new Set(uploadSnapshot.pendingFileIds)
+      const pendingElementIds = new Set(uploadSnapshot.pendingElementIds)
+      const uploadedFileIds = new Set(
+        uploadSnapshot.jobs
+          .filter((job) => job.state === 'uploaded')
+          .map((job) => job.fileId),
+      )
+      const blockedFileIds = new Set(
+        [...pendingFileIds].filter((fileId) => !uploadedFileIds.has(fileId)),
+      )
+      const blockedElementIds = new Set(
+        [...pendingElementIds].filter((elementId) =>
+          uploadSnapshot.jobs.some(
+            (job) =>
+              job.state !== 'uploaded' &&
+              job.latestElementSnapshots.some(
+                (snapshot) => snapshot.elementId === elementId,
+              ),
+          ),
+        ),
+      )
+      const publicationElements = elements.filter((element) => {
+        if (element.isDeleted || element.type !== 'image') return true
+        const fileId = typeof element.fileId === 'string' ? element.fileId : ''
+        return !blockedFileIds.has(fileId) && !blockedElementIds.has(element.id)
+      })
       const version = getSceneVersion(elements)
-      if (!forceFull && version === lastSceneVersionRef.current) return true
-
-      const asScene = elements as unknown as SceneElement[]
+      const asScene = publicationElements as unknown as SceneElement[]
       const dirty = elementsWithIncreasedVersion(
         asScene,
-        lastElementVersionsRef.current,
+        acknowledgedElementVersionsRef.current,
       )
-      if (!forceFull && dirty.length === 0) {
-        lastSceneVersionRef.current = version
-        return true
+
+      const inFlightVersions = new Map<string, number>()
+      for (const mutation of inFlightMutationsRef.current.values()) {
+        for (const element of mutation.elements) {
+          const previous = inFlightVersions.get(element.id) ?? 0
+          if (element.version > previous) {
+            inFlightVersions.set(element.id, element.version)
+          }
+        }
       }
+      const required = requiredElementIds
+        ? asScene.filter(
+            (element) =>
+              requiredElementIds.has(element.id) &&
+              element.version > (inFlightVersions.get(element.id) ?? 0),
+          )
+        : []
+      const notAlreadyInFlight = dirty.filter(
+        (element) =>
+          element.version > (inFlightVersions.get(element.id) ?? 0),
+      )
+      const pendingElements = [
+        ...notAlreadyInFlight,
+        ...required.filter(
+          (element) =>
+            !notAlreadyInFlight.some((candidate) => candidate.id === element.id),
+        ),
+      ]
+      if (!forceFull && pendingElements.length === 0) return false
 
       fullSyncCounterRef.current += 1
       const full = forceFull || fullSyncCounterRef.current % 15 === 0
-      const payload = full ? asScene : dirty
+      const payload = full ? asScene : pendingElements
 
       let databaseJson: string | undefined
       try {
         databaseJson = serializeAsJSON(
-          elements,
+          publicationElements,
           { ...appState, viewModeEnabled: false },
           {},
           'database',
@@ -314,20 +677,26 @@ export default function WhiteboardCanvas({
       }
 
       try {
+        const mutationId = crypto.randomUUID()
         ws.send(
           JSON.stringify({
             type: 'scene:update',
             elements: payload,
             full,
             databaseJson,
+            mutationId,
           }),
         )
+        inFlightMutationsRef.current.set(mutationId, {
+          elements: payload.map((element) => ({ ...element })),
+          sceneVersion: version,
+          fileIds: sceneImageFileIds(payload),
+          deletedFileIds: sceneImageTombstoneFileIds(payload),
+        })
       } catch {
         return false
       }
 
-      rememberElementVersions(payload, lastElementVersionsRef.current)
-      lastSceneVersionRef.current = version
       return true
     },
     [],
@@ -359,6 +728,155 @@ export default function WhiteboardCanvas({
   )
   const flushNowRef = useRef(flushNow)
   flushNowRef.current = flushNow
+
+  const forceSendReadyUploads = useCallback(() => {
+    const api = apiRef.current
+    if (!api) return false
+    const readyFileIds = new Set(
+      uploadSnapshotRef.current.jobs
+        .filter((job) => job.state === 'uploaded')
+        .map((job) => job.fileId),
+    )
+    if (readyFileIds.size === 0) return false
+    const elementIds = new Set<string>()
+    for (const element of api.getSceneElementsIncludingDeleted()) {
+      if (
+        !element.isDeleted &&
+        element.type === 'image' &&
+        typeof element.fileId === 'string' &&
+        readyFileIds.has(element.fileId)
+      ) {
+        elementIds.add(element.id)
+      }
+    }
+    if (elementIds.size === 0) return false
+    const sent = sendSceneUpdate(
+      api.getSceneElementsIncludingDeleted(),
+      api.getAppState(),
+      false,
+      elementIds,
+    )
+    if (sent) pendingFlushRef.current = null
+    return sent
+  }, [apiRef, sendSceneUpdate])
+
+  const handleScenePersistError = useCallback(
+    (mutationId: string, code?: string) => {
+      const mutation = inFlightMutationsRef.current.get(mutationId)
+      if (!mutation) return
+      inFlightMutationsRef.current.delete(mutationId)
+
+      const api = apiRef.current
+      if (!api || !canEditRef.current || !sceneHydratedRef.current) return
+      // Requeue the current scene. Asset-not-ready errors remain blocked by
+      // the outbox until the durable upload reaches R2, then the upload-state
+      // effect calls forceSendReadyUploads(). Other persistence failures get
+      // one normal retry without waiting for a reconnect.
+      pendingFlushRef.current = {
+        elements: api.getSceneElementsIncludingDeleted(),
+        appState: api.getAppState(),
+      }
+      if (code === 'asset_not_ready') {
+        forceSendReadyUploads()
+        return
+      }
+      if (flushTimerRef.current != null) return
+      flushTimerRef.current = window.setTimeout(() => {
+        flushTimerRef.current = null
+        flushNowRef.current()
+      }, SCENE_FLUSH_MS)
+    },
+    [forceSendReadyUploads],
+  )
+
+  const handleSceneAcknowledgement = useCallback((mutationId: string) => {
+    const mutation = inFlightMutationsRef.current.get(mutationId)
+    if (!mutation) return
+    inFlightMutationsRef.current.delete(mutationId)
+    rememberElementVersions(
+      mutation.elements,
+      acknowledgedElementVersionsRef.current,
+    )
+    acknowledgedSceneVersionRef.current = Math.max(
+      acknowledgedSceneVersionRef.current,
+      mutation.sceneVersion,
+    )
+    const sentImageVersions = new Map<string, Map<string, number>>()
+    for (const element of mutation.elements) {
+      if (
+        element.type !== 'image' ||
+        typeof element.fileId !== 'string'
+      ) {
+        continue
+      }
+      const versions = sentImageVersions.get(element.fileId) ?? new Map()
+      versions.set(
+        element.id,
+        Math.max(versions.get(element.id) ?? 0, element.version),
+      )
+      sentImageVersions.set(element.fileId, versions)
+    }
+    const currentElements =
+      apiRef.current?.getSceneElementsIncludingDeleted() ?? []
+    const trackedFileIds = [
+      ...new Set([...mutation.fileIds, ...mutation.deletedFileIds]),
+    ]
+    const acknowledgedFileIds = trackedFileIds.filter((fileId) => {
+      const sentVersions = sentImageVersions.get(fileId)
+      if (!sentVersions) return false
+      const currentReferences = currentElements.filter(
+        (element) =>
+          !element.isDeleted &&
+          element.type === 'image' &&
+          element.fileId === fileId,
+      )
+      if (currentReferences.length === 0) {
+        return mutation.deletedFileIds.includes(fileId)
+      }
+      return currentReferences.every(
+        (element) => (sentVersions.get(element.id) ?? -1) >= element.version,
+      )
+    })
+    const acknowledgedUploadIds = acknowledgedFileIds.filter((fileId) =>
+      uploadSnapshotRef.current.jobs.some((job) => job.fileId === fileId),
+    )
+    if (acknowledgedUploadIds.length > 0) {
+      const savedUntil = Date.now() + 1500
+      setUploadSavedUntil(savedUntil)
+      if (uploadSavedTimerRef.current != null) {
+        window.clearTimeout(uploadSavedTimerRef.current)
+      }
+      uploadSavedTimerRef.current = window.setTimeout(() => {
+        uploadSavedTimerRef.current = null
+        setUploadSavedUntil(0)
+      }, 1500)
+    }
+    void markSceneAcknowledgedRef.current({
+      boardId,
+      sceneVersion: mutation.sceneVersion,
+      fileIds: acknowledgedFileIds,
+      deletedFileIds: mutation.deletedFileIds.filter((fileId) =>
+        acknowledgedFileIds.includes(fileId),
+      ),
+    })
+  }, [boardId])
+
+  const markServerSceneApplied = useCallback(() => {
+    if (!apiRef.current || !sceneHydratedRef.current) return
+    socketSceneHydratedRef.current = true
+    setSocketSceneReady(true)
+    const serverElements = apiRef.current.getSceneElementsIncludingDeleted()
+    const hydration = markServerSceneHydratedRef.current({
+      sceneVersion: getSceneVersion(serverElements),
+      deletedFileIds: sceneImageTombstoneFileIds(serverElements),
+    })
+    void hydration
+      .then(() => recoverPendingUploads())
+      .finally(() => {
+        flushNowRef.current(true)
+        forceSendReadyUploads()
+      })
+  }, [forceSendReadyUploads, recoverPendingUploads])
 
   const clearPreviewTimer = useCallback(() => {
     if (previewTimerRef.current == null) return
@@ -440,13 +958,20 @@ export default function WhiteboardCanvas({
       files: BinaryFiles,
     ) => {
       // PHASE 3.2 — upload/hydrate R2 files; do not gate on remote-apply.
-      media.syncFiles(elements, files)
+      const sceneVersion = getSceneVersion(elements)
+      media.syncFiles(elements, files, {
+        sceneVersion,
+        sceneState: uploadSceneState(appState),
+      })
+      // syncFiles marks newly observed Data URLs synchronously. Refresh this
+      // render-independent view before the same onChange can be flushed.
+      uploadSnapshotRef.current = media.uploadOutbox.outbox.getSnapshot()
+      updatePendingSnapshotsForScene(elements, appState)
+      setUploadOverlayRevision((revision) => revision + 1)
       if (applyingRemoteRef.current) return
       if (!canEditRef.current) return
       // Nothing this instance holds is trustworthy until a server scene lands.
       if (!sceneHydratedRef.current) return
-      const version = getSceneVersion(elements)
-      if (version === lastSceneVersionRef.current) return
       pendingFlushRef.current = { elements, appState }
       schedulePreviewCapture()
       if (flushTimerRef.current != null) return
@@ -455,11 +980,19 @@ export default function WhiteboardCanvas({
         flushPending()
       }, SCENE_FLUSH_MS)
     },
-    [flushPending, media.syncFiles, schedulePreviewCapture],
+    [
+      flushPending,
+      media.syncFiles,
+      media.uploadOutbox.outbox,
+      schedulePreviewCapture,
+      updatePendingSnapshotsForScene,
+    ],
   )
 
   useEffect(() => {
     const persist = () => {
+      // pagehide cannot await conversion or IndexedDB. The synchronous
+      // staging guard makes flushNow refuse any not-yet-durable image.
       flushNowRef.current(true)
       uploadCachedPreviewRef.current(true)
     }
@@ -528,8 +1061,6 @@ export default function WhiteboardCanvas({
       if (token || !signedIn) authSentRef.current = true
       // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
       resubscribeFollowRef.current()
-      // Push anything drawn while the socket was down / auth was pending.
-      flushNowRef.current(true)
     }
 
     /**
@@ -607,6 +1138,9 @@ export default function WhiteboardCanvas({
 
       authSentRef.current = false
       helloOnSocketRef.current = false
+      socketSceneHydratedRef.current = false
+      setSocketSceneReady(false)
+      resetServerSceneHydrationRef.current()
       lastAuthTokenSent = ''
       clearAuthRetry()
       const ws = new WebSocket(uri)
@@ -614,6 +1148,7 @@ export default function WhiteboardCanvas({
 
       ws.addEventListener('open', () => {
         attempt = 0
+        setSocketConnected(true)
         clearTimers()
         void sendConnectAuth(ws)
         pingTimer = window.setInterval(() => {
@@ -627,16 +1162,22 @@ export default function WhiteboardCanvas({
         }, CLIENT_PING_MS)
         resyncTimer = window.setInterval(() => {
           const api = apiRef.current
-          if (!api || ws.readyState !== WebSocket.OPEN) return
+          if (
+            !api ||
+            ws.readyState !== WebSocket.OPEN ||
+            !socketSceneHydratedRef.current
+          ) {
+            return
+          }
           sendSceneUpdate(
             api.getSceneElementsIncludingDeleted(),
             api.getAppState(),
             true,
           )
         }, 30_000)
-        // Pending strokes flush in sendConnectAuth (after wb:auth) — the
-        // server drops messages sent before auth. The full scene arrives
-        // unprompted on every connect, so no scene:request is needed here.
+        // Publication waits for the current socket's scene:sync. The full
+        // scene arrives unprompted on every connect, after which recovery and
+        // any pending local work are flushed.
       })
 
       ws.addEventListener('message', (event) => {
@@ -666,6 +1207,12 @@ export default function WhiteboardCanvas({
         }
 
         if (data.type === 'wb:error') {
+          if (typeof data.mutationId === 'string' && data.mutationId) {
+            handleScenePersistError(
+              data.mutationId,
+              typeof data.code === 'string' ? data.code : undefined,
+            )
+          }
           const message =
             typeof data.message === 'string' && data.message.trim()
               ? data.message
@@ -682,6 +1229,13 @@ export default function WhiteboardCanvas({
           return
         }
 
+        if (data.type === 'scene:ack') {
+          if (typeof data.mutationId === 'string' && data.mutationId) {
+            handleSceneAcknowledgement(data.mutationId)
+          }
+          return
+        }
+
         // PHASE 3.3
         if (handleRoleMessageRef.current(data)) return
 
@@ -693,7 +1247,10 @@ export default function WhiteboardCanvas({
             data.appState && typeof data.appState === 'object'
               ? (data.appState as SceneAppState)
               : null
-          applyRemoteElements(elements, appState)
+          const isServerScene = data.type === 'scene:sync'
+          const hasCanvas = Boolean(apiRef.current)
+          applyRemoteElements(elements, appState, isServerScene)
+          if (isServerScene && hasCanvas) markServerSceneApplied()
           return
         }
       })
@@ -702,6 +1259,11 @@ export default function WhiteboardCanvas({
         clearTimers()
         clearAuthRetry()
         if (wsRef.current === ws) {
+          setSocketConnected(false)
+          socketSceneHydratedRef.current = false
+          setSocketSceneReady(false)
+          resetServerSceneHydrationRef.current()
+          inFlightMutationsRef.current.clear()
           const api = apiRef.current
           if (
             api &&
@@ -710,7 +1272,9 @@ export default function WhiteboardCanvas({
             !applyingRemoteRef.current
           ) {
             const elements = api.getSceneElementsIncludingDeleted()
-            if (getSceneVersion(elements) !== lastSceneVersionRef.current) {
+            if (
+              getSceneVersion(elements) > acknowledgedSceneVersionRef.current
+            ) {
               pendingFlushRef.current = {
                 elements,
                 appState: api.getAppState(),
@@ -749,6 +1313,11 @@ export default function WhiteboardCanvas({
       flushNowRef.current(true)
       uploadCachedPreviewRef.current(true)
       const ws = wsRef.current
+      setSocketConnected(false)
+      socketSceneHydratedRef.current = false
+      setSocketSceneReady(false)
+      resetServerSceneHydrationRef.current()
+      inFlightMutationsRef.current.clear()
       wsRef.current = null
       try {
         ws?.close()
@@ -756,7 +1325,126 @@ export default function WhiteboardCanvas({
         // ignore
       }
     }
-  }, [applyRemoteElements, boardId, sendSceneUpdate])
+  }, [
+    applyRemoteElements,
+    boardId,
+    handleSceneAcknowledgement,
+    handleScenePersistError,
+    markServerSceneApplied,
+    sendSceneUpdate,
+  ])
+
+  useEffect(() => {
+    const api = apiRef.current
+    if (api) {
+      updatePendingSnapshotsForScene(
+        api.getSceneElementsIncludingDeleted(),
+        api.getAppState(),
+      )
+    }
+    let changed = false
+    const now = Date.now()
+    for (const job of media.uploadOutbox.jobs) {
+      if (job.state === 'uploaded') {
+        if (!uploadReadyAtRef.current.has(job.fileId)) {
+          uploadReadyAtRef.current.set(job.fileId, now)
+          changed = true
+        }
+      } else if (uploadReadyAtRef.current.delete(job.fileId)) {
+        changed = true
+      }
+    }
+    for (const fileId of uploadReadyAtRef.current.keys()) {
+      if (!media.uploadOutbox.jobs.some((job) => job.fileId === fileId)) {
+        uploadReadyAtRef.current.delete(fileId)
+        changed = true
+      }
+    }
+    if (uploadFadeTimerRef.current != null) {
+      window.clearTimeout(uploadFadeTimerRef.current)
+      uploadFadeTimerRef.current = null
+    }
+    const fadeAt = [...uploadReadyAtRef.current.values()]
+      .map((readyAt) => readyAt + UPLOAD_SUCCESS_FADE_MS)
+      .filter((value) => value > now)
+      .sort((a, b) => a - b)[0]
+    if (fadeAt !== undefined) {
+      uploadFadeTimerRef.current = window.setTimeout(() => {
+        uploadFadeTimerRef.current = null
+        setUploadOverlayRevision((revision) => revision + 1)
+      }, Math.max(0, fadeAt - now))
+    }
+    if (changed) setUploadOverlayRevision((revision) => revision + 1)
+
+    if (sceneHydratedRef.current && media.uploadOutbox.recoveryReady) {
+      void recoverPendingUploads().finally(() => {
+        forceSendReadyUploads()
+      })
+    }
+  }, [
+    forceSendReadyUploads,
+    media.uploadOutbox.jobs,
+    media.uploadOutbox.recoveryReady,
+    recoverPendingUploads,
+    updatePendingSnapshotsForScene,
+  ])
+
+  useEffect(() => {
+    const refresh = () =>
+      setUploadOverlayRevision((revision) => revision + 1)
+    window.addEventListener('resize', refresh)
+    return () => {
+      window.removeEventListener('resize', refresh)
+      if (uploadFadeTimerRef.current != null) {
+        window.clearTimeout(uploadFadeTimerRef.current)
+        uploadFadeTimerRef.current = null
+      }
+      if (uploadSavedTimerRef.current != null) {
+        window.clearTimeout(uploadSavedTimerRef.current)
+        uploadSavedTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const handleRetryUpload = useCallback((fileId: string) => {
+    void retryUploadRef.current(fileId)
+  }, [])
+
+  const handleRemoveUpload = useCallback((job: WhiteboardUploadJob) => {
+    const api = apiRef.current
+    const elementIds = new Set(
+      job.latestElementSnapshots.map((snapshot) => snapshot.elementId),
+    )
+    if (api && elementIds.size > 0) {
+      const elements = api.getSceneElementsIncludingDeleted()
+      const next = elements.map((element) =>
+        elementIds.has(element.id) &&
+        element.type === 'image' &&
+        element.fileId === job.fileId &&
+        !element.isDeleted
+          ? newElementWith(element, { isDeleted: true })
+          : element,
+      )
+      if (next.some((element, index) => element !== elements[index])) {
+        api.updateScene({
+          elements: next,
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        })
+      }
+    }
+  }, [])
+
+  const handleRetryAllUploads = useCallback(() => {
+    void retryAllUploadsRef.current()
+  }, [])
+
+  const handleScrollChange = useCallback(
+    (_scrollX: number, _scrollY: number, _zoom: AppState['zoom']) => {
+      roles.onScrollChange()
+      setUploadOverlayRevision((revision) => revision + 1)
+    },
+    [roles.onScrollChange],
+  )
 
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
@@ -766,7 +1454,14 @@ export default function WhiteboardCanvas({
       // anything the previous instance had queued so the empty starting scene
       // can never be flushed over the stored board.
       sceneHydratedRef.current = false
+      socketSceneHydratedRef.current = false
+      setSocketSceneReady(false)
+      resetServerSceneHydrationRef.current()
       pendingFlushRef.current = null
+      inFlightMutationsRef.current.clear()
+      acknowledgedSceneVersionRef.current = 0
+      acknowledgedElementVersionsRef.current.clear()
+      recoveredFileIdsRef.current.clear()
       if (flushTimerRef.current != null) {
         window.clearTimeout(flushTimerRef.current)
         flushTimerRef.current = null
@@ -775,14 +1470,13 @@ export default function WhiteboardCanvas({
         window.clearTimeout(previewTimerRef.current)
         previewTimerRef.current = null
       }
-      // Version bookkeeping belongs to the old instance. Left in place, the new
-      // empty instance's first onChange looks like a real edit and queues an
-      // empty snapshot that a later forceFull flush would push as the scene.
-      lastSceneVersionRef.current = 0
-      lastElementVersionsRef.current.clear()
       unsubUserFollowRef.current?.()
       unsubUserFollowRef.current = api.onUserFollow((payload) => {
         onUserFollowRef.current(payload)
+      })
+      unsubScrollChangeRef.current?.()
+      unsubScrollChangeRef.current = api.onScrollChange(() => {
+        setUploadOverlayRevision((revision) => revision + 1)
       })
       api.updateScene({
         appState: { viewModeEnabled: !canEditRef.current },
@@ -794,13 +1488,103 @@ export default function WhiteboardCanvas({
       const pending = pendingRemoteRef.current
       if (pending) {
         pendingRemoteRef.current = null
-        applyRemoteElements(pending.elements, pending.appState)
+        applyRemoteElements(
+          pending.elements,
+          pending.appState,
+          pending.isServerScene,
+        )
+        if (pending.isServerScene) markServerSceneApplied()
+        else if (!sceneHydratedRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'scene:request' }))
+        }
       } else if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'scene:request' }))
       }
     },
-    [applyRemoteElements],
+    [applyRemoteElements, markServerSceneApplied],
   )
+
+  const uploadOverlayItems: UploadOverlayItem[] = []
+  const canvasApi = apiRef.current
+  if (canvasApi) {
+    const appState = canvasApi.getAppState()
+    const sceneElements = canvasApi.getSceneElementsIncludingDeleted()
+    const elementsById = new Map(
+      sceneElements.map((element) => [element.id, element]),
+    )
+    const now = Date.now()
+    const seenElementIds = new Set<string>()
+    for (const job of media.uploadOutbox.jobs) {
+      const success = job.state === 'uploaded'
+      const readyAt = uploadReadyAtRef.current.get(job.fileId)
+      if (
+        success &&
+        readyAt !== undefined &&
+        now - readyAt >= UPLOAD_SUCCESS_FADE_MS
+      ) {
+        continue
+      }
+      if (!success && !isUploadFailed(job) && job.state !== 'pending' && job.state !== 'uploading') {
+        continue
+      }
+      for (const snapshot of job.latestElementSnapshots) {
+        if (seenElementIds.has(snapshot.elementId)) continue
+        const element = elementsById.get(snapshot.elementId)
+        if (
+          !element ||
+          element.isDeleted ||
+          element.type !== 'image' ||
+          element.fileId !== job.fileId
+        ) {
+          continue
+        }
+        const zoom = appState.zoom.value
+        const position = sceneCoordsToViewportCoords(
+          { sceneX: element.x, sceneY: element.y },
+          appState,
+        )
+        const width = Math.max(1, Math.abs(element.width * zoom))
+        const height = Math.max(1, Math.abs(element.height * zoom))
+        uploadOverlayItems.push({
+          element,
+          job,
+          left: position.x - appState.offsetLeft,
+          top: position.y - appState.offsetTop,
+          width,
+          height,
+          angle: element.angle,
+          largeEnough: width >= 96 && height >= 48,
+          success,
+        })
+        seenElementIds.add(snapshot.elementId)
+      }
+    }
+  }
+
+  const uploadSnapshot = media.uploadOutbox
+  const hasUploadWork =
+    uploadSnapshot.pendingCount > 0 || uploadSnapshot.awaitingSceneAckCount > 0
+  const uploadStatus = uploadSnapshot.storageError
+    ? {
+        kind: 'blocking',
+        message:
+          'Uploads cannot be saved for offline recovery. Do not reload this board.',
+      }
+    : uploadSnapshot.failedCount > 0
+      ? {
+          kind: 'failed',
+          message: `${uploadSnapshot.failedCount} upload${uploadSnapshot.failedCount === 1 ? '' : 's'} failed`,
+        }
+      : uploadSavedUntil > Date.now()
+        ? { kind: 'saved', message: 'Uploads saved' }
+        : (!socketConnected || !socketSceneReady) && hasUploadWork
+          ? { kind: 'waiting', message: 'Waiting for connection…' }
+          : hasUploadWork
+            ? {
+                kind: 'saving',
+                message: `Saving ${uploadSnapshot.pendingCount + uploadSnapshot.awaitingSceneAckCount} file${uploadSnapshot.pendingCount + uploadSnapshot.awaitingSceneAckCount === 1 ? '' : 's'}…`,
+              }
+            : null
 
   if (!boardId) {
     return (
@@ -843,8 +1627,82 @@ export default function WhiteboardCanvas({
         name={roles.displayName}
         viewModeEnabled={roles.viewModeEnabled}
         collaborators={roles.collaborators}
-        onScrollChange={roles.onScrollChange}
+        onScrollChange={handleScrollChange}
       />
+      <div
+        className="wb-upload-overlay-layer"
+        data-revision={uploadOverlayRevision}
+        aria-hidden={uploadOverlayItems.length === 0 ? true : undefined}
+      >
+        {uploadOverlayItems.map((item) => {
+          const failed = isUploadFailed(item.job)
+          const className = [
+            'wb-upload-overlay',
+            item.success
+              ? 'wb-upload-overlay--success'
+              : failed
+                ? 'wb-upload-overlay--failed'
+                : 'wb-upload-overlay--pending',
+          ].join(' ')
+          return (
+            <div
+              key={`${item.job.fileId}:${item.element.id}`}
+              className={className}
+              style={{
+                left: item.left,
+                top: item.top,
+                width: item.width,
+                height: item.height,
+                transform: `rotate(${item.angle}rad)`,
+              }}
+              title={failed ? item.job.error?.message : undefined}
+            >
+              {item.success ? (
+                <span className="wb-upload-success-mark" aria-label="Upload saved">
+                  ✓
+                </span>
+              ) : failed ? (
+                <>
+                  <span className="wb-upload-failed-badge">Upload failed</span>
+                  <span className="wb-upload-controls">
+                    <button
+                      type="button"
+                      className="wb-upload-control wb-upload-retry"
+                      aria-label={`Retry upload for ${item.job.fileId}`}
+                      onClick={() => handleRetryUpload(item.job.fileId)}
+                    >
+                      Retry
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-upload-control wb-upload-remove"
+                      aria-label={`Remove failed upload for ${item.job.fileId}`}
+                      onClick={() => handleRemoveUpload(item.job)}
+                    >
+                      Remove
+                    </button>
+                  </span>
+                </>
+              ) : (
+                <span
+                  className={`wb-upload-loader${item.largeEnough ? '' : ' wb-upload-loader--compact'}`}
+                  role="status"
+                  aria-label="Uploading"
+                >
+                  {item.largeEnough ? (
+                    <>
+                      <span className="wb-upload-loader-bar" />
+                      <span>Uploading</span>
+                    </>
+                  ) : (
+                    <span className="wb-upload-spinner" />
+                  )}
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
       {roles.forceFollowLocked ? (
         <div
           aria-hidden
@@ -857,6 +1715,24 @@ export default function WhiteboardCanvas({
             pointerEvents: 'none',
           }}
         />
+      ) : null}
+      {uploadStatus ? (
+        <div
+          className={`wb-upload-status wb-upload-status--${uploadStatus.kind}`}
+          role={uploadStatus.kind === 'blocking' ? 'alert' : undefined}
+          aria-live={uploadStatus.kind === 'blocking' ? 'assertive' : 'polite'}
+        >
+          <span>{uploadStatus.message}</span>
+          {uploadStatus.kind === 'failed' ? (
+            <button
+              type="button"
+              className="wb-upload-status-retry wb-upload-control"
+              onClick={handleRetryAllUploads}
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {!roles.helloReceived ? (
         <div

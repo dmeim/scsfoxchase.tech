@@ -1,16 +1,18 @@
 /**
  * R2 asset upload / download / delete for whiteboard media.
  * Keys: assets/{ownerKey}/{assetId}
+ * Board-scoped keys: boards/{boardId}/assets/{fileId}
  *   google:{accountId} — signed-in saved boards
  *   temp:{boardId}     — unsaved / signed-out scratch (24h TTL unless savedToLibrary)
  *   local:{deviceId}   — leftover hub objects (GET only; no new writes)
  * Routes: PUT|GET|DELETE /api/whiteboard/assets/{ownerKey}/{assetId}
  *         POST /api/whiteboard/assets/claim
- *         POST /api/whiteboard/assets/expire-temp
+ * There is no public global temp-asset sweep route. Expiry is board-scoped
+ * through the Durable Object alarm; the legacy PUT path may run a guarded
+ * best-effort sweep as maintenance.
  *
- * PUT/DELETE google:*: matching Clerk Owner, or a live Owner/Manager/Editor
- * WebSocket session (`X-Board-Session` / `X-Board-Auth`) and/or host proof
- * for that board (`X-Board-Id`). Viewers are read-only.
+ * PUT/DELETE google:*: matching Clerk Owner only. A board session is not
+ * account proof for an arbitrary legacy owner key. Viewers are read-only.
  * temp:* requires a host secret or a live can-edit board session.
  * local:* PUT/DELETE are rejected. Guessing a fileId is not enough.
  * GET stays unauthenticated so connected players can load media; SVG is
@@ -73,6 +75,37 @@ export function r2ObjectKey(ownerKey: string, assetId: string): string {
 	return `assets/${ownerKey}/${assetId}`
 }
 
+export function boardAssetR2Key(boardId: string, fileId: string): string {
+	return `boards/${boardId}/assets/${fileId}`
+}
+
+export type BoardAssetPath = { boardId: string; fileId: string }
+
+function decodePathPart(value: string): string | null {
+	try {
+		return decodeURIComponent(value)
+	} catch {
+		return null
+	}
+}
+
+export function parseBoardAssetPath(pathname: string): BoardAssetPath | null {
+	const match = pathname.match(
+		/^\/api\/whiteboard\/boards\/([^/]+)\/assets\/([^/]+)\/?$/i,
+	)
+	if (!match) return null
+	const boardId = decodePathPart(match[1]!)
+	const fileId = decodePathPart(match[2]!)
+	if (!boardId || !fileId || !isAssetUuid(boardId) || !isAssetUuid(fileId)) {
+		return null
+	}
+	return { boardId, fileId }
+}
+
+export function isBoardAssetPath(pathname: string): boolean {
+	return /^\/api\/whiteboard\/boards\/[^/]+\/assets(?:\/|$)/i.test(pathname)
+}
+
 function boardIdFromTempR2Key(key: string): string | null {
 	const prefix = 'assets/temp:'
 	if (!key.startsWith(prefix)) return null
@@ -119,8 +152,9 @@ export function parseAssetPath(
 	const rest = pathname.slice(prefix.length).replace(/\/$/, '')
 	const slash = rest.lastIndexOf('/')
 	if (slash <= 0) return null
-	const ownerKey = decodeURIComponent(rest.slice(0, slash))
-	const assetId = decodeURIComponent(rest.slice(slash + 1))
+	const ownerKey = decodePathPart(rest.slice(0, slash))
+	const assetId = decodePathPart(rest.slice(slash + 1))
+	if (!ownerKey || !assetId) return null
 	if (!isOwnerKey(ownerKey) || !isAssetUuid(assetId)) return null
 	return { ownerKey, assetId }
 }
@@ -212,13 +246,6 @@ function extractSessionProof(
 	return { sessionId, authToken }
 }
 
-function boardIdFromRequest(request: Request): string | null {
-	const headerId = request.headers.get('X-Board-Id')?.trim() || ''
-	if (UUID_RE.test(headerId)) return headerId
-	const queryId = new URL(request.url).searchParams.get('boardId')?.trim() || ''
-	return UUID_RE.test(queryId) ? queryId : null
-}
-
 function boardIdForAssetWrite(
 	request: Request,
 	ownerKey: string,
@@ -229,9 +256,6 @@ function boardIdForAssetWrite(
 		const headerId = request.headers.get('X-Board-Id')?.trim() || ''
 		if (headerId && headerId !== fromKey) return null
 		return fromKey
-	}
-	if (ownerKey.startsWith('google:')) {
-		return boardIdFromRequest(request)
 	}
 	return null
 }
@@ -252,97 +276,51 @@ async function verifyBoardWriteAccess(
 	})
 }
 
-async function tryRevealCloudOwnerKey(
+async function assertBoardAssetWrite(
 	request: Request,
 	env: Env,
 	boardId: string,
-	hostSecret: string | null,
-): Promise<string | null> {
-	const stub = boardStub(env, boardId)
-	try {
-		const viaClerk = await readRevealedCloudOwnerKey(stub, request, boardId, {
-			authorization: request.headers.get('Authorization'),
-		})
-		if (viaClerk) return viaClerk
-	} catch {
-		// Guest editors have no matching Clerk; session path still proceeds.
+): Promise<Response | null> {
+	const suppliedBoardId = request.headers.get('X-Board-Id')?.trim() || ''
+	const queryBoardId = new URL(request.url).searchParams.get('boardId')?.trim() || ''
+	if (
+		(suppliedBoardId && suppliedBoardId !== boardId) ||
+		(queryBoardId && queryBoardId !== boardId)
+	) {
+		return jsonError(403, 'Board proof does not match this board', request)
 	}
-	if (!hostSecret) return null
+
+	const hostSecret = extractHostSecret(request)
+	const session = extractSessionProof(request)
 	try {
-		return await readRevealedCloudOwnerKey(stub, request, boardId, {
+		const result = await verifyBoardWriteAccess(
+			env,
+			boardId,
 			hostSecret,
-		})
+			session,
+		)
+		if (result.ok) return null
+		return jsonError(result.status, result.error, request)
 	} catch {
-		return null
+		return jsonError(503, 'Could not verify board write access', request)
 	}
 }
 
 /**
- * Saved-board canvas PUT/DELETE: Owner Clerk match, or a live can-edit
- * session / host proof on this board. Do not use Clerk-owner as the sole gate
- * (student Editors are signed in as a different google: account).
+ * Saved-board legacy PUT/DELETE requires the Clerk account encoded by the
+ * `google:` owner key. New board media uses the board-scoped route, so editor
+ * session proof is intentionally not accepted here.
  */
 async function assertGoogleAssetWrite(
 	request: Request,
 	env: Env,
 	ownerKey: string,
 ): Promise<Response | null> {
-	if (!ownerKey.startsWith('google:')) {
-		return jsonError(
-			403,
-			'This prefix requires a host secret or editor session',
-			request,
-		)
-	}
-
-	const hostSecret = extractHostSecret(request)
-	const session = extractSessionProof(request)
-	const boardId = boardIdForAssetWrite(request, ownerKey)
-
-	let boardResult: Awaited<ReturnType<typeof verifyBoardWriteAccess>> | null =
-		null
-	if (boardId && (hostSecret || session)) {
-		try {
-			boardResult = await verifyBoardWriteAccess(
-				env,
-				boardId,
-				hostSecret,
-				session,
-			)
-			if (boardResult.ok) {
-				const revealed = await tryRevealCloudOwnerKey(
-					request,
-					env,
-					boardId,
-					hostSecret,
-				)
-				if (revealed && revealed !== ownerKey) {
-					return jsonError(
-						403,
-						'ownerKey does not match this board',
-						request,
-					)
-				}
-				return null
-			}
-		} catch {
-			boardResult = {
-				ok: false,
-				status: 503,
-				error: 'Could not verify board write access',
-			}
-		}
-	}
-
-	const clerkDenied = await assertGoogleOwnerWrite(request, env, ownerKey)
-	if (!clerkDenied) return null
-	if (boardResult && !boardResult.ok) {
-		return jsonError(boardResult.status, boardResult.error, request)
-	}
-	if ((hostSecret || session) && !boardId) {
-		return jsonError(401, 'Board proof required', request)
-	}
-	return clerkDenied
+	// Legacy Google keys are account-global. A board Editor proof identifies a
+	// board, not the account encoded in an arbitrary ownerKey, so it cannot be
+	// accepted for this namespace. Current canvas media uses board-scoped routes;
+	// previews and legacy owner operations carry the matching Clerk session.
+	return assertGoogleOwnerWrite(request, env, ownerKey)
 }
 
 async function assertTempWrite(
@@ -429,6 +407,56 @@ function jsonOk(
 	})
 }
 
+type BoundedBody =
+	| { bytes: Uint8Array; tooLarge: false }
+	| { bytes: Uint8Array; tooLarge: true }
+
+/** Read at most `limit + 1` bytes so oversized requests never buffer fully. */
+async function readBodyWithLimit(
+	request: Request,
+	limit: number,
+): Promise<BoundedBody> {
+	const reader = request.body?.getReader()
+	if (!reader) return { bytes: new Uint8Array(), tooLarge: false }
+
+	const chunks: Uint8Array[] = []
+	let size = 0
+	try {
+		while (true) {
+			const { done, value } = await reader.read()
+			if (done) break
+			if (!value?.byteLength) continue
+			const remaining = limit + 1 - size
+			if (remaining <= 0) {
+				await reader.cancel()
+				return { bytes: new Uint8Array(), tooLarge: true }
+			}
+			if (value.byteLength > remaining) {
+				chunks.push(value.subarray(0, remaining))
+				size += remaining
+				await reader.cancel()
+				return { bytes: new Uint8Array(), tooLarge: true }
+			}
+			chunks.push(value)
+			size += value.byteLength
+			if (size > limit) {
+				await reader.cancel()
+				return { bytes: new Uint8Array(), tooLarge: true }
+			}
+		}
+
+		const bytes = new Uint8Array(size)
+		let offset = 0
+		for (const chunk of chunks) {
+			bytes.set(chunk, offset)
+			offset += chunk.byteLength
+		}
+		return { bytes, tooLarge: false }
+	} finally {
+		reader.releaseLock()
+	}
+}
+
 function isExpiredUpload(uploaded: Date, now = Date.now()): boolean {
 	return now - uploaded.getTime() >= UNSAVED_BOARD_TTL_MS
 }
@@ -482,7 +510,8 @@ export async function moveTempPrefixToOwner(
 			const source = await env.WHITEBOARD_ASSETS.get(obj.key)
 			if (!source) continue
 			const destKey = r2ObjectKey(destOwnerKey, fileId)
-			await env.WHITEBOARD_ASSETS.put(destKey, source.body, {
+			const destination = await env.WHITEBOARD_ASSETS.put(destKey, source.body, {
+				onlyIf: { etagDoesNotMatch: '*' },
 				httpMetadata: source.httpMetadata,
 				customMetadata: {
 					...source.customMetadata,
@@ -491,7 +520,10 @@ export async function moveTempPrefixToOwner(
 					kind: 'persistent',
 				},
 			})
-			moved.push(fileId)
+			// A pre-existing destination wins; never overwrite a user's asset when
+			// two boards claim the same legacy file id.
+			if (destination !== null) moved.push(fileId)
+			else if (await env.WHITEBOARD_ASSETS.head(destKey)) moved.push(fileId)
 		}
 		cursor = listed.truncated ? listed.cursor : undefined
 	} while (cursor)
@@ -501,8 +533,8 @@ export async function moveTempPrefixToOwner(
 /**
  * Delete temp:* objects older than 24h on unsaved boards only.
  * Saved boards keep temp until google-then-temp resolution can replace it.
- * Called from expire-temp, temp PUT, and (via DO alarm) prefix wipe when
- * an unsaved board expires.
+ * Called from an authenticated temp PUT as maintenance. Unsaved-board
+ * Durable Object alarms perform their own board-scoped prefix cleanup.
  */
 export async function expireTempR2Objects(
 	env: Env,
@@ -793,21 +825,198 @@ async function handleClaim(
 	})
 }
 
-async function handleExpireTemp(
+async function handleBoardAssetRequest(
 	request: Request,
 	env: Env,
+	parsed: BoardAssetPath,
 ): Promise<Response> {
+	const { boardId, fileId } = parsed
+	const key = boardAssetR2Key(boardId, fileId)
+
 	if (request.method === 'OPTIONS') {
 		return new Response(null, {
 			status: 204,
-			headers: corsHeaders(request),
+			headers: {
+				...corsHeaders(request),
+				'Access-Control-Max-Age': '86400',
+			},
 		})
 	}
-	if (request.method !== 'POST') {
-		return jsonError(405, 'Method not allowed', request)
+
+	if (request.method === 'PUT') {
+		const writeDenied = await assertBoardAssetWrite(request, env, boardId)
+		if (writeDenied) return writeDenied
+
+		const contentType = (
+			request.headers.get('Content-Type') || ''
+		)
+			.split(';')[0]
+			.trim()
+			.toLowerCase()
+		if (!contentType || !ALLOWED_MIME.has(contentType)) {
+			return jsonError(
+				415,
+				'Unsupported media type. Use JPEG, PNG, GIF, WebP, SVG, or MP4/WebM.',
+				request,
+			)
+		}
+
+		const contentLength = Number(request.headers.get('Content-Length') || '0')
+		if (contentLength > MAX_ASSET_BYTES) {
+			return jsonError(
+				413,
+				`File too large (max ${MAX_ASSET_BYTES / (1024 * 1024)} MB).`,
+				request,
+			)
+		}
+		if (!request.body) return jsonError(400, 'Missing body', request)
+
+		const boundedBody = await readBodyWithLimit(request, MAX_ASSET_BYTES)
+		if (boundedBody.tooLarge) {
+			return jsonError(
+				413,
+				`File too large (max ${MAX_ASSET_BYTES / (1024 * 1024)} MB).`,
+				request,
+			)
+		}
+		const body = boundedBody.bytes
+		if (body.byteLength === 0) return jsonError(400, 'Empty body', request)
+
+		// The manifest is written only after R2 has accepted the complete body.
+		await env.WHITEBOARD_ASSETS.put(key, body, {
+			httpMetadata: {
+				contentType,
+				cacheControl: 'public, max-age=31536000, immutable',
+			},
+			customMetadata: {
+				boardId,
+				assetId: fileId,
+				kind: 'board',
+				createdAt: new Date().toISOString(),
+			},
+		})
+
+		const stub = boardStub(env, boardId)
+		try {
+			await stub.registerBoardAssetManifest({
+				boardId,
+				fileId,
+				r2Key: key,
+				mimeType: contentType,
+				size: body.byteLength,
+			})
+		} catch {
+			// Do not leave a newly uploaded object looking usable without a row.
+			try {
+				await env.WHITEBOARD_ASSETS.delete(key)
+			} catch {
+				// R2 cleanup is best-effort; the object has no ready manifest.
+			}
+			return jsonError(503, 'Could not register board asset', request)
+		}
+
+		return jsonOk(
+			request,
+			{
+				ok: true,
+				boardId,
+				fileId,
+				r2Key: key,
+				size: body.byteLength,
+				mimeType: contentType,
+			},
+			201,
+		)
 	}
-	const deleted = await expireTempR2Objects(env)
-	return jsonOk(request, { ok: true, deleted })
+
+	if (request.method === 'GET' || request.method === 'HEAD') {
+		let manifest: Awaited<
+			ReturnType<WhiteboardBoard['getBoardAssetManifest']>
+		>
+		try {
+			manifest = await boardStub(env, boardId).getBoardAssetManifest({ fileId })
+		} catch {
+			return jsonError(503, 'Could not read board asset manifest', request)
+		}
+		if (!manifest || manifest.r2Key !== key) {
+			return jsonError(404, 'Asset not found', request)
+		}
+
+		const object = await env.WHITEBOARD_ASSETS.get(key, {
+			range: request.headers,
+			onlyIf: request.headers,
+		})
+		if (object === null) return jsonError(404, 'Asset not found', request)
+
+		const headers = new Headers()
+		object.writeHttpMetadata(headers)
+		headers.set('etag', object.httpEtag)
+		headers.set('Accept-Ranges', 'bytes')
+		headers.set('X-Content-Type-Options', 'nosniff')
+		const servedType = (headers.get('Content-Type') || '')
+			.split(';')[0]
+			.trim()
+			.toLowerCase()
+		if (servedType === 'image/svg+xml') {
+			headers.set(
+				'Content-Disposition',
+				`attachment; filename="${fileId}.svg"`,
+			)
+			headers.set('Content-Security-Policy', "default-src 'none'; sandbox")
+		}
+		headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+		Object.entries(corsHeaders(request)).forEach(([k, v]) => {
+			headers.set(k, v)
+		})
+
+		if (!('body' in object) || !object.body) {
+			return new Response(null, { status: 304, headers })
+		}
+		if (request.method === 'HEAD') {
+			return new Response(null, { status: 200, headers })
+		}
+
+		const range = object.range
+		if (range && ('offset' in range || 'length' in range)) {
+			const offset = 'offset' in range && range.offset != null ? range.offset : 0
+			const length =
+				'length' in range && range.length != null
+					? range.length
+					: object.size - offset
+			const end = offset + length - 1
+			headers.set('Content-Range', `bytes ${offset}-${end}/${object.size}`)
+			headers.set('Content-Length', String(length))
+			return new Response(object.body, { status: 206, headers })
+		}
+
+		return new Response(object.body, { status: 200, headers })
+	}
+
+	if (request.method === 'DELETE') {
+		const writeDenied = await assertBoardAssetWrite(request, env, boardId)
+		if (writeDenied) return writeDenied
+
+		let result: Awaited<
+			ReturnType<WhiteboardBoard['deleteBoardAssetManifest']>
+		>
+		try {
+			result = await boardStub(env, boardId).deleteBoardAssetManifest({
+				fileId,
+			})
+		} catch {
+			return jsonError(503, 'Could not update board asset manifest', request)
+		}
+		if (!result.ok) return jsonError(result.status, result.error, request)
+
+		try {
+			await env.WHITEBOARD_ASSETS.delete(key)
+		} catch {
+			return jsonError(503, 'Could not delete board asset', request)
+		}
+		return jsonOk(request, { ok: true, boardId, fileId })
+	}
+
+	return jsonError(405, 'Method not allowed', request)
 }
 
 export async function handleAssetRequest(
@@ -820,8 +1029,18 @@ export async function handleAssetRequest(
 	if (url.pathname === '/api/whiteboard/assets/claim') {
 		return handleClaim(request, env)
 	}
-	if (url.pathname === '/api/whiteboard/assets/expire-temp') {
-		return handleExpireTemp(request, env)
+	const boardAssetPath = parseBoardAssetPath(url.pathname)
+	if (boardAssetPath) {
+		return handleBoardAssetRequest(request, env, boardAssetPath)
+	}
+	if (isBoardAssetPath(url.pathname)) {
+		if (request.method === 'OPTIONS') {
+			return new Response(null, {
+				status: 204,
+				headers: corsHeaders(request),
+			})
+		}
+		return jsonError(400, 'Invalid board asset path', request)
 	}
 
 	const parsed = parseAssetPath(url.pathname)
@@ -883,17 +1102,17 @@ export async function handleAssetRequest(
 			return jsonError(400, 'Missing body', request)
 		}
 
-		// Stream into R2; also enforce size if Content-Length was omitted
-		const body = await request.arrayBuffer()
-		if (body.byteLength === 0) {
-			return jsonError(400, 'Empty body', request)
-		}
-		if (body.byteLength > MAX_ASSET_BYTES) {
+		const boundedBody = await readBodyWithLimit(request, MAX_ASSET_BYTES)
+		if (boundedBody.tooLarge) {
 			return jsonError(
 				413,
 				`File too large (max ${MAX_ASSET_BYTES / (1024 * 1024)} MB).`,
 				request,
 			)
+		}
+		const body = boundedBody.bytes
+		if (body.byteLength === 0) {
+			return jsonError(400, 'Empty body', request)
 		}
 
 		const kind = isPreviewKindRequest(request)

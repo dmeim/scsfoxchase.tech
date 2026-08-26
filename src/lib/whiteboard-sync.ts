@@ -17,19 +17,25 @@ export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
 export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
 export const SCENE_PERSIST_FAILED_CODE = 'persist_failed' as const
+export const SCENE_ASSET_NOT_READY_CODE = 'asset_not_ready' as const
 export const SCENE_TOO_LARGE_MESSAGE =
 	'This board is too large to save. The last change was not stored.'
 export const SCENE_PERSIST_FAILED_MESSAGE =
 	'Could not save this board. The last change was not stored.'
+export const SCENE_ASSET_NOT_READY_MESSAGE =
+	'This image is still uploading. The change was not stored.'
 
 export type SceneErrorCode =
 	| typeof SCENE_TOO_LARGE_CODE
 	| typeof SCENE_PERSIST_FAILED_CODE
+	| typeof SCENE_ASSET_NOT_READY_CODE
 
 export type SceneErrorMessage = {
 	type: 'wb:error'
 	code: SceneErrorCode
 	message: string
+	/** Present when the error rejected a mutation from a current client. */
+	mutationId?: string
 }
 
 export class ScenePersistError extends Error {
@@ -43,6 +49,13 @@ export class ScenePersistError extends Error {
 
 export function sceneTooLargeError(): ScenePersistError {
 	return new ScenePersistError(SCENE_TOO_LARGE_CODE, SCENE_TOO_LARGE_MESSAGE)
+}
+
+export function sceneAssetNotReadyError(): ScenePersistError {
+	return new ScenePersistError(
+		SCENE_ASSET_NOT_READY_CODE,
+		SCENE_ASSET_NOT_READY_MESSAGE,
+	)
 }
 
 export function asScenePersistError(err: unknown): ScenePersistError {
@@ -219,6 +232,13 @@ export type SceneUpdateMessage = {
 	elements: SceneElement[]
 	full?: boolean
 	databaseJson?: string
+	/** Optional client mutation id; old clients omit it. */
+	mutationId?: string
+}
+
+export type SceneAckMessage = {
+	type: 'scene:ack'
+	mutationId: string
 }
 
 export type SceneRequestMessage = {
