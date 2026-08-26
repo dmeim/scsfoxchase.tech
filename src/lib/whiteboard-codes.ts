@@ -1,9 +1,10 @@
 /**
- * Client helpers for Phase 5 share codes.
+ * Client helpers for share codes.
  * Routes: /api/whiteboard/join/:code, /api/whiteboard/boards/:uuid/code
  *
- * Join is unauthenticated. Board code GET/POST/DELETE send host proof,
+ * Join is unauthenticated. Board code GET/POST send host proof,
  * live session token, and/or Clerk session — Owner/Manager only on the DO.
+ * One code per board, minted once, no Open/Closed/rotate.
  */
 
 import { getAuthHeaders } from './whiteboard-identity'
@@ -12,8 +13,6 @@ import { getHostSecret } from '../scripts/whiteboard-library'
 
 export type ShareCodeState = {
   code: string | null
-  expiresAt: string | null
-  open: boolean
 }
 
 const JOIN_UNAVAILABLE =
@@ -72,22 +71,13 @@ export async function fetchBoardShareCode(boardId: string): Promise<ShareCodeSta
     throw new Error(errorMessage(body, 'Could not load share code.'))
   }
   const code = typeof body.code === 'string' ? body.code : null
-  const expiresAt = typeof body.expiresAt === 'string' ? body.expiresAt : null
-  return {
-    code,
-    expiresAt,
-    open: Boolean(body.open && code),
-  }
+  return { code }
 }
 
-/** Open: mint if none, else keep current. Pass rotate to mint a new code. */
-export async function openBoardShareCode(
-  boardId: string,
-  options: { rotate?: boolean } = {},
-): Promise<ShareCodeState> {
-  const qs = options.rotate ? '?rotate=1' : ''
+/** Mint if the board has no code yet; otherwise return the existing code. */
+export async function ensureBoardShareCode(boardId: string): Promise<ShareCodeState> {
   const res = await fetch(
-    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/code${qs}`,
+    `/api/whiteboard/boards/${encodeURIComponent(boardId)}/code`,
     {
       method: 'POST',
       headers: await shareAdminHeaders(boardId),
@@ -95,38 +85,11 @@ export async function openBoardShareCode(
   )
   const body = await readJson(res)
   if (!res.ok) {
-    throw new Error(errorMessage(body, 'Could not open share code.'))
+    throw new Error(errorMessage(body, 'Could not load share code.'))
   }
   const code = typeof body.code === 'string' ? body.code : null
-  const expiresAt = typeof body.expiresAt === 'string' ? body.expiresAt : null
-  if (!code || !expiresAt) {
-    throw new Error('Could not open share code.')
+  if (!code) {
+    throw new Error('Could not load share code.')
   }
-  return { code, expiresAt, open: true }
-}
-
-export async function closeBoardShareCode(boardId: string): Promise<ShareCodeState> {
-  const res = await fetch(`/api/whiteboard/boards/${encodeURIComponent(boardId)}/code`, {
-    method: 'DELETE',
-    headers: await shareAdminHeaders(boardId),
-  })
-  const body = await readJson(res)
-  if (!res.ok) {
-    throw new Error(errorMessage(body, 'Could not close share code.'))
-  }
-  return { code: null, expiresAt: null, open: false }
-}
-
-/** Human remaining duration, e.g. "11h 42m". */
-export function formatShareExpiry(expiresAt: string, now = Date.now()): string {
-  const end = Date.parse(expiresAt)
-  if (Number.isNaN(end)) return ''
-  const ms = end - now
-  if (ms <= 0) return 'Expired'
-  const totalMin = Math.floor(ms / 60000)
-  const hours = Math.floor(totalMin / 60)
-  const minutes = totalMin % 60
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m`
-  return 'under a minute'
+  return { code }
 }

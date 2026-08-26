@@ -24,12 +24,12 @@ import {
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
 
-/** Four-character digit-letter code, `1A2B` form (server `SHARE_CODE_RE`). */
-const HUB_SHARE_CODE_RE = /^([0-9][A-Za-z]){2}$/;
+/** Four- or eight-character digit-letter code, `1A2B` or `1A2B3C4D`. */
+const HUB_SHARE_CODE_RE = /^([0-9][A-Za-z]){2}(([0-9][A-Za-z]){2})?$/;
 
 /**
- * Board URL / UUID via `parseJoinInput`; share codes are `1A2B` form
- * (digit, letter, digit, letter).
+ * Board URL / UUID via `parseJoinInput`; share codes are digit-letter pairs
+ * (`1A2B` leftover or `1A2B3C4D`).
  */
 function parseHubJoinInput(
   raw: string,

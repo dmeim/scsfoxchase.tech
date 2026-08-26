@@ -1,9 +1,7 @@
 import { isSignedIn, onAuthChange, whenAuthReady } from '../lib/whiteboard-identity'
 import {
-  closeBoardShareCode,
+  ensureBoardShareCode,
   fetchBoardShareCode,
-  formatShareExpiry,
-  openBoardShareCode,
   type ShareCodeState,
 } from '../lib/whiteboard-codes'
 import { peopleListLabel } from '../lib/whiteboard-display-name'
@@ -15,6 +13,7 @@ import {
   type WhiteboardRole,
 } from '../lib/whiteboard-participants'
 import { assignableRolesFor } from '../lib/whiteboard-sync'
+import { iconEye, iconEyeOff } from './icons'
 import {
   getEntryActive,
   getHostSecret,
@@ -28,7 +27,7 @@ const DEFAULT_LIVE_TITLE = 'Untitled board'
 const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
 const JOIN_CODE_COOKIE_MAX_AGE = 12 * 60 * 60
 const JOIN_CODE_STORAGE_PREFIX = 'scsfoxchase.whiteboard.joinCode.'
-const JOIN_CODE_RE = /^([0-9][A-Z]){2}$/
+const JOIN_CODE_RE = /^([0-9][A-Z]){2}(([0-9][A-Z]){2})?$/
 
 function writeJoinCodeCookie(boardId: string, code: string) {
   const secure = window.location.protocol === 'https:' ? '; Secure' : ''
@@ -177,6 +176,7 @@ const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
 
 function roleLabel(role: WhiteboardRole): string {
+  if (role === 'editor') return 'Edit'
   return role.charAt(0).toUpperCase() + role.slice(1)
 }
 
@@ -190,22 +190,21 @@ function initWhiteboardMenu() {
   const toggle = root.querySelector<HTMLButtonElement>('[data-whiteboard-toggle]')
   const panel = root.querySelector<HTMLElement>('[data-whiteboard-panel]')
   const nameForm = root.querySelector<HTMLFormElement>('[data-wb-manage-name]')
+  const nameWrap = root.querySelector<HTMLElement>('[data-wb-manage-name-wrap]')
+  const titleDisplay = root.querySelector<HTMLButtonElement>('[data-wb-title-display]')
+  const titleText = root.querySelector<HTMLElement>('[data-wb-title-text]')
   const titleInput = root.querySelector<HTMLInputElement>('[data-wb-manage-title]')
   const liveTitleEl = root.querySelector<HTMLElement>('[data-wb-live-title]')
   const hint = root.querySelector<HTMLElement>('[data-wb-manage-hint]')
 
   const shareBlock = root.querySelector<HTMLElement>('[data-wb-manage-share]')
-  const shareTools = root.querySelector<HTMLElement>('[data-wb-manage-share-tools]')
-  const shareToggle = root.querySelector<HTMLInputElement>('[data-wb-share-toggle]')
-  const shareState = root.querySelector<HTMLElement>('[data-wb-share-state]')
   const shareCodeBtn = root.querySelector<HTMLButtonElement>('[data-wb-share-code]')
   const shareCodeValue = root.querySelector<HTMLElement>('[data-wb-share-code-value]')
-  const shareNew = root.querySelector<HTMLButtonElement>('[data-wb-share-new]')
+  const shareCopyCode = root.querySelector<HTMLButtonElement>('[data-wb-share-copy-code]')
   const shareCopyLink = root.querySelector<HTMLButtonElement>('[data-wb-share-copy-link]')
-  const shareExpiry = root.querySelector<HTMLElement>('[data-wb-share-expiry]')
   const shareHint = root.querySelector<HTMLElement>('[data-wb-share-hint]')
   const shareToast = root.querySelector<HTMLElement>('[data-wb-share-toast]')
-  const shareRight = root.querySelector<HTMLElement>('[data-wb-manage-right]')
+  const featuresCol = root.querySelector<HTMLElement>('[data-wb-manage-features]')
 
   const peopleList = root.querySelector<HTMLUListElement>('[data-wb-people-list]')
   const peopleEmpty = root.querySelector<HTMLElement>('[data-wb-people-empty]')
@@ -236,14 +235,12 @@ function initWhiteboardMenu() {
   if (!toggle || !panel) return
 
   const boardId = readBoardIdFromPath()
-  let shareBusy = false
-  let expiryTimer: number | null = null
-  let shareToastTimer: number | null = null
-  let currentShare: ShareCodeState = { code: null, expiresAt: null, open: false }
+  let liveTitle = DEFAULT_LIVE_TITLE
   let titleDirty = false
   let titleSyncGen = 0
-  let liveTitle = ''
-
+  let titleEditing = false
+  let shareToastTimer: number | null = null
+  let currentShare: ShareCodeState = { code: null }
   let participants: ParticipantRow[] = []
   let yourSessionId = ''
   let yourRole: WhiteboardRole | '' =
@@ -258,36 +255,46 @@ function initWhiteboardMenu() {
   const canForceFollow = () => yourRole === 'owner' || yourRole === 'manager'
   const canRenameBoard = () => canForceFollow()
   const canManageShare = () => canForceFollow()
-  const stopExpiryTimer = () => {
-    if (expiryTimer != null) {
-      window.clearInterval(expiryTimer)
-      expiryTimer = null
+
+  const closeInfoPops = (except?: string) => {
+    for (const pop of root.querySelectorAll<HTMLElement>('[data-wb-info-pop]')) {
+      const id = pop.getAttribute('data-wb-info-pop') || ''
+      if (except && id === except) continue
+      pop.hidden = true
+    }
+    for (const btn of root.querySelectorAll<HTMLButtonElement>('[data-wb-info]')) {
+      const id = btn.getAttribute('data-wb-info') || ''
+      if (except && id === except) continue
+      btn.setAttribute('aria-expanded', 'false')
     }
   }
-  const nameDivider =
-    nameForm?.nextElementSibling instanceof HTMLElement &&
-    nameForm.nextElementSibling.classList.contains('whiteboard-menu-divider')
-      ? nameForm.nextElementSibling
-      : null
 
   const renderNameFormUi = () => {
     const allowed = canRenameBoard()
-    if (nameForm) nameForm.hidden = !allowed
-    if (nameDivider) nameDivider.hidden = !allowed
+    if (nameWrap) nameWrap.hidden = !allowed
     if (liveTitleEl) {
       liveTitleEl.hidden = allowed || !liveTitleEl.textContent
+    }
+    if (!allowed) {
+      titleEditing = false
+      if (nameForm) nameForm.hidden = true
+      if (titleDisplay) titleDisplay.hidden = false
+    } else if (titleEditing) {
+      if (titleDisplay) titleDisplay.hidden = true
+      if (nameForm) nameForm.hidden = false
+    } else {
+      if (titleDisplay) titleDisplay.hidden = false
+      if (nameForm) nameForm.hidden = true
     }
   }
 
   const renderShareAdminUi = () => {
     const allowed = canManageShare()
+    panel.classList.toggle('is-sharing', allowed)
     if (shareBlock) shareBlock.hidden = !allowed
-    if (shareTools) shareTools.hidden = !allowed
+    if (featuresCol) featuresCol.hidden = !allowed
     if (!allowed) {
-      stopExpiryTimer()
-      currentShare = { code: null, expiresAt: null, open: false }
-      if (shareToggle) shareToggle.checked = false
-      if (shareState) shareState.textContent = 'Closed'
+      currentShare = { code: null }
       if (shareCodeBtn) shareCodeBtn.disabled = true
       if (shareCodeValue) shareCodeValue.textContent = 'Code'
     }
@@ -308,6 +315,7 @@ function initWhiteboardMenu() {
     const cleaned = title.trim() || DEFAULT_LIVE_TITLE
     liveTitle = cleaned
     if (titleInput && !titleDirty) titleInput.value = cleaned
+    if (titleText) titleText.textContent = cleaned
     document.title = `${cleaned} - St. Cecilia Technology`
     if (liveTitleEl) {
       liveTitleEl.textContent = cleaned
@@ -444,56 +452,26 @@ function initWhiteboardMenu() {
     }
   }
 
-  const setSharingLayout = (open: boolean) => {
-    const showRight = canManageShare() ? open : participants.length > 0
-    panel.classList.toggle('is-sharing', showRight)
-    if (shareRight) shareRight.hidden = !showRight
-  }
-
   const renderShareUi = (state: ShareCodeState) => {
     currentShare = state
-    const open = Boolean(state.open && state.code)
-
-    if (shareToggle) shareToggle.checked = open
-    if (shareState) shareState.textContent = open ? 'Open' : 'Closed'
-    if (shareCodeBtn) shareCodeBtn.disabled = !open
+    const code = state.code
+    if (shareCodeBtn) shareCodeBtn.disabled = !code
     if (shareCodeValue) {
-      shareCodeValue.textContent = open && state.code ? state.code : 'Code'
-    }
-    setSharingLayout(open)
-
-    stopExpiryTimer()
-    if (shareExpiry) {
-      if (open && state.expiresAt) {
-        const tick = () => {
-          const time = formatShareExpiry(state.expiresAt!)
-          if (!shareExpiry) return
-          if (time === 'Expired') {
-            shareExpiry.hidden = true
-            shareExpiry.textContent = ''
-            void refreshShareState()
-            return
-          }
-          shareExpiry.hidden = false
-          shareExpiry.textContent = `Codes expire in ${time}. A new code is needed to share again.`
-        }
-        tick()
-        expiryTimer = window.setInterval(tick, 30_000)
-      } else {
-        shareExpiry.hidden = true
-        shareExpiry.textContent = ''
-      }
+      shareCodeValue.textContent = code || 'Code'
     }
   }
 
   const refreshShareState = async () => {
     if (!boardId || !canManageShare()) return
     try {
-      const state = await fetchBoardShareCode(boardId)
+      let state = await fetchBoardShareCode(boardId)
+      if (!state.code) {
+        state = await ensureBoardShareCode(boardId)
+      }
       renderShareUi(state)
       setShareHint(null)
     } catch {
-      setShareHint('Could not load share code status.')
+      setShareHint('Could not load share code.')
     }
     const classCanEdit = await readClassCanEdit(boardId)
     if (classCanEdit !== null) renderClassCanEditUi(classCanEdit)
@@ -514,6 +492,16 @@ function initWhiteboardMenu() {
     }
   }
 
+  const copyCurrentCode = () => {
+    const code = currentShare.code
+    if (!canManageShare() || !code) return
+    void copyText(
+      code,
+      'Code Copied',
+      'Copy failed — try again or copy manually.',
+    )
+  }
+
   const renderPeople = () => {
     if (!peopleList || !peopleEmpty) return
 
@@ -524,12 +512,12 @@ function initWhiteboardMenu() {
       renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
       renderNameFormUi()
       renderShareAdminUi()
-      setSharingLayout(Boolean(currentShare.open && currentShare.code))
       return
     }
 
     peopleList.hidden = false
     peopleEmpty.hidden = true
+    const eyesLocked = forceFollowOn
 
     for (const person of participants) {
       const isSelf = person.sessionId === yourSessionId
@@ -544,16 +532,101 @@ function initWhiteboardMenu() {
       name.textContent = isSelf ? `${label} (you)` : label
       name.title = `${label} · ${roleLabel(person.role)}`
 
+      const canManageRoles = yourRole === 'owner' || yourRole === 'manager'
+      const assignable = canManageRoles
+        ? assignableRolesFor(yourRole, person.role)
+        : null
+      let roleControl: HTMLElement
+      if (canManageRoles && boardId) {
+        const select = document.createElement('select')
+        select.className = 'whiteboard-people-role'
+        select.setAttribute('aria-label', `Role for ${label}`)
+        select.disabled = roleBusy
+
+        const roles: WhiteboardRole[] = assignable
+          ? Array.from(new Set<WhiteboardRole>([person.role, ...assignable]))
+          : [person.role]
+        for (const role of roles) {
+          const opt = document.createElement('option')
+          opt.value = role
+          opt.textContent = roleLabel(role)
+          if (role === person.role) opt.selected = true
+          select.append(opt)
+        }
+
+        if (assignable) {
+          select.addEventListener('change', () => {
+            const next = select.value
+            if (next !== 'manager' && next !== 'editor' && next !== 'viewer') {
+              select.value = person.role
+              return
+            }
+            if (roleBusy) {
+              select.value = person.role
+              return
+            }
+            roleBusy = true
+            setPeopleHint(null)
+            void (async () => {
+              try {
+                const updated = await setParticipantRole(boardId, person.sessionId, next)
+                const idx = participants.findIndex(
+                  (p) => p.sessionId === updated.sessionId,
+                )
+                if (idx >= 0) {
+                  participants[idx] = { ...participants[idx]!, ...updated }
+                }
+              } catch (err) {
+                select.value = person.role
+                setPeopleHint(
+                  err instanceof Error && err.message
+                    ? err.message
+                    : 'Could not update role.',
+                )
+              } finally {
+                roleBusy = false
+                renderPeople()
+              }
+            })()
+          })
+        } else {
+          select.classList.add('is-locked')
+          select.setAttribute(
+            'aria-label',
+            person.role === 'owner'
+              ? `${label} is the Owner and cannot be demoted`
+              : `${label}'s role cannot be changed by a Manager`,
+          )
+        }
+        roleControl = select
+      } else {
+        const badge = document.createElement('span')
+        badge.className = 'whiteboard-people-role-label'
+        badge.textContent = roleLabel(person.role)
+        roleControl = badge
+      }
+
       const followBtn = document.createElement('button')
       followBtn.type = 'button'
-      followBtn.className = 'whiteboard-people-follow'
-      const canFollow = Boolean(person.userId)
-      followBtn.disabled = !canFollow
+      followBtn.className = 'whiteboard-people-eye'
+      const canFollow = Boolean(person.userId) && !isSelf && !eyesLocked
       const isFollowing = Boolean(
         person.userId && followingUserId && followingUserId === person.userId,
       )
-      followBtn.textContent = isFollowing ? 'Following' : 'Follow'
+      followBtn.innerHTML = isFollowing ? iconEye : iconEyeOff
+      followBtn.disabled = !canFollow
       followBtn.setAttribute('aria-pressed', isFollowing ? 'true' : 'false')
+      followBtn.setAttribute(
+        'aria-label',
+        isSelf
+          ? 'You cannot follow yourself'
+          : eyesLocked
+            ? 'Follow User is locking the room'
+            : isFollowing
+              ? `Stop following ${label}`
+              : `Follow ${label}`,
+      )
+      if (eyesLocked) followBtn.classList.add('is-locked')
       if (canFollow) {
         followBtn.addEventListener('click', () => {
           window.dispatchEvent(
@@ -564,78 +637,14 @@ function initWhiteboardMenu() {
         })
       }
 
-      const assignable = yourRole
-        ? assignableRolesFor(yourRole, person.role)
-        : null
-      let roleControl: HTMLElement
-      if (assignable && boardId) {
-        const select = document.createElement('select')
-        select.className = 'whiteboard-people-role'
-        select.setAttribute('aria-label', `Role for ${label}`)
-        select.disabled = roleBusy
-        for (const role of assignable) {
-          const opt = document.createElement('option')
-          opt.value = role
-          opt.textContent = roleLabel(role)
-          if (role === person.role) opt.selected = true
-          select.append(opt)
-        }
-        if (!assignable.includes(person.role as (typeof assignable)[number])) {
-          const current = document.createElement('option')
-          current.value = person.role
-          current.textContent = roleLabel(person.role)
-          current.selected = true
-          select.prepend(current)
-        }
-        select.addEventListener('change', () => {
-          const next = select.value
-          if (next !== 'manager' && next !== 'editor' && next !== 'viewer') {
-            select.value = person.role
-            return
-          }
-          if (roleBusy) {
-            select.value = person.role
-            return
-          }
-          roleBusy = true
-          setPeopleHint(null)
-          void (async () => {
-            try {
-              const updated = await setParticipantRole(boardId, person.sessionId, next)
-              const idx = participants.findIndex(
-                (p) => p.sessionId === updated.sessionId,
-              )
-              if (idx >= 0) {
-                participants[idx] = { ...participants[idx]!, ...updated }
-              }
-            } catch (err) {
-              select.value = person.role
-              setPeopleHint(
-                err instanceof Error && err.message
-                  ? err.message
-                  : 'Could not update role.',
-              )
-            } finally {
-              roleBusy = false
-              renderPeople()
-            }
-          })()
-        })
-        roleControl = select
-      } else {
-        const badge = document.createElement('span')
-        badge.className = 'whiteboard-people-role-label'
-        badge.textContent = roleLabel(person.role)
-        roleControl = badge
-      }
-
-      li.append(name, followBtn, roleControl)
+      li.append(name)
+      li.append(roleControl)
+      li.append(followBtn)
       peopleList.append(li)
     }
     renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
     renderNameFormUi()
     renderShareAdminUi()
-    setSharingLayout(Boolean(currentShare.open && currentShare.code))
   }
 
   window.addEventListener(PARTICIPANTS_EVENT, ((event: CustomEvent) => {
@@ -700,7 +709,20 @@ function initWhiteboardMenu() {
       Boolean(detail.forceFollow),
       typeof detail.targetUserId === 'string' ? detail.targetUserId : undefined,
     )
+    renderPeople()
   }) as EventListener)
+
+  const startTitleEdit = () => {
+    if (!canRenameBoard()) return
+    titleEditing = true
+    titleDirty = false
+    if (titleInput) titleInput.value = liveTitle
+    renderNameFormUi()
+    window.requestAnimationFrame(() => {
+      titleInput?.focus()
+      titleInput?.select()
+    })
+  }
 
   const setOpen = (open: boolean) => {
     root.classList.toggle('is-open', open)
@@ -708,23 +730,21 @@ function initWhiteboardMenu() {
     panel.setAttribute('aria-hidden', open ? 'false' : 'true')
     if (open) {
       titleDirty = false
+      titleEditing = false
       if (liveTitle) applyTitle(liveTitle)
       else syncTitleFromLiveRoom()
       setHint(null)
       titleInput?.setCustomValidity('')
+      closeInfoPops()
       void refreshShareState()
       renderPeople()
-      if (canRenameBoard()) {
-        window.requestAnimationFrame(() => {
-          titleInput?.focus()
-          titleInput?.select()
-        })
-      }
     } else {
-      stopExpiryTimer()
+      titleEditing = false
+      closeInfoPops()
       setShareHint(null)
       setPeopleHint(null)
       setForceFollowHint(null)
+      renderNameFormUi()
     }
   }
 
@@ -736,8 +756,6 @@ function initWhiteboardMenu() {
     toggleMenu()
   })
 
-  // Keep outside-click closer from seeing panel clicks. Do not preventDefault —
-  // that would cancel Save / form submit button activation.
   panel.addEventListener('click', (event) => {
     event.stopPropagation()
   })
@@ -750,9 +768,21 @@ function initWhiteboardMenu() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && root.classList.contains('is-open')) {
+      if (titleEditing) {
+        titleEditing = false
+        titleDirty = false
+        if (titleInput) titleInput.value = liveTitle
+        renderNameFormUi()
+        event.stopPropagation()
+        return
+      }
       close()
       toggle.focus()
     }
+  })
+
+  titleDisplay?.addEventListener('click', () => {
+    startTitleEdit()
   })
 
   titleInput?.addEventListener('input', () => {
@@ -761,10 +791,21 @@ function initWhiteboardMenu() {
     setHint(null)
   })
 
+  titleInput?.addEventListener('blur', () => {
+    if (!titleEditing) return
+    if (titleDirty) {
+      nameForm?.requestSubmit()
+      return
+    }
+    titleEditing = false
+    renderNameFormUi()
+  })
+
   nameForm?.addEventListener('submit', (event) => {
     event.preventDefault()
 
     if (!canRenameBoard()) {
+      titleEditing = false
       renderNameFormUi()
       setHint(null)
       return
@@ -787,7 +828,9 @@ function initWhiteboardMenu() {
     }
 
     titleInput?.setCustomValidity('')
-    // Live-room PATCH is the source of truth. Owner Recents is an optional mirror.
+    titleEditing = false
+    titleDirty = false
+    renderNameFormUi()
     void (async () => {
       try {
         await whenAuthReady()
@@ -798,8 +841,10 @@ function initWhiteboardMenu() {
         }
         const nextTitleLive = await patchLiveBoardTitle(boardId, nextTitle)
         titleDirty = false
+        titleEditing = false
         titleSyncGen += 1
         applyTitle(nextTitleLive)
+        renderNameFormUi()
         let mirroredToLibrary = false
         if (yourRole === 'owner') {
           try {
@@ -822,33 +867,6 @@ function initWhiteboardMenu() {
             ? err.message
             : 'Could not save the name. Check your connection and try again.',
         )
-      }
-    })()
-  })
-
-  shareToggle?.addEventListener('change', () => {
-    if (!boardId || shareBusy || !canManageShare()) {
-      if (shareToggle) shareToggle.checked = currentShare.open
-      return
-    }
-    shareBusy = true
-    setShareHint(null)
-    const wantOpen = shareToggle.checked
-    void (async () => {
-      try {
-        const state = wantOpen
-          ? await openBoardShareCode(boardId)
-          : await closeBoardShareCode(boardId)
-        renderShareUi(state)
-      } catch (err) {
-        renderShareUi(currentShare)
-        setShareHint(
-          err instanceof Error && err.message
-            ? err.message
-            : 'Could not update share code.',
-        )
-      } finally {
-        shareBusy = false
       }
     })()
   })
@@ -878,36 +896,12 @@ function initWhiteboardMenu() {
     })()
   })
 
-  shareNew?.addEventListener('click', () => {
-    if (!boardId || shareBusy || !currentShare.open || !canManageShare()) return
-    shareBusy = true
-    setShareHint(null)
-    void (async () => {
-      try {
-        const state = await openBoardShareCode(boardId, { rotate: true })
-        renderShareUi(state)
-        showShareToast('New Code Generated\nOld Code Expired')
-      } catch (err) {
-        setShareHint(
-          err instanceof Error && err.message
-            ? err.message
-            : 'Could not rotate share code.',
-        )
-      } finally {
-        shareBusy = false
-      }
-    })()
+  shareCodeBtn?.addEventListener('click', () => {
+    copyCurrentCode()
   })
 
-  // Activating the share code control copies it (no separate Copy Code button).
-  shareCodeBtn?.addEventListener('click', () => {
-    const code = currentShare.code
-    if (!canManageShare() || !code || !currentShare.open) return
-    void copyText(
-      code,
-      'Code Copied',
-      'Copy failed — try again or copy manually.',
-    )
+  shareCopyCode?.addEventListener('click', () => {
+    copyCurrentCode()
   })
 
   shareCopyLink?.addEventListener('click', () => {
@@ -918,6 +912,19 @@ function initWhiteboardMenu() {
       'Link Copied',
       'Copy failed — select and copy the address bar instead.',
     )
+  })
+
+  root.querySelectorAll<HTMLButtonElement>('[data-wb-info]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const id = btn.getAttribute('data-wb-info') || ''
+      const pop = root.querySelector<HTMLElement>(`[data-wb-info-pop="${id}"]`)
+      if (!pop) return
+      const willOpen = pop.hidden
+      closeInfoPops(willOpen ? id : undefined)
+      pop.hidden = !willOpen
+      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false')
+    })
   })
 
   forceFollowToggle?.addEventListener('change', () => {
@@ -933,12 +940,13 @@ function initWhiteboardMenu() {
       try {
         const result = await setForceFollow(boardId, wantOn, { targetUserId })
         renderForceFollowUi(result.forceFollow, result.targetUserId)
+        renderPeople()
       } catch (err) {
         renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
         setForceFollowHint(
           err instanceof Error && err.message
             ? err.message
-            : 'Could not update force follow.',
+            : 'Could not update Follow User.',
         )
       } finally {
         forceFollowBusy = false
@@ -962,7 +970,7 @@ function initWhiteboardMenu() {
         setForceFollowHint(
           err instanceof Error && err.message
             ? err.message
-            : 'Could not update force follow.',
+            : 'Could not update Follow User.',
         )
       } finally {
         forceFollowBusy = false

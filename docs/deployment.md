@@ -76,7 +76,7 @@ Configured in `wrangler.jsonc`. Product resource family: **`scsfoxchase-tech_whi
 |---------|------|----------|
 | `WHITEBOARDS` | Durable Object | Class `WhiteboardBoard` (SQLite); migration tag `whiteboard-v1` |
 | `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` |
-| `WHITEBOARD_CODES` | KV | Namespace `scsfoxchase-tech-whiteboard-codes` (share code → board id, TTL 12h) |
+| `WHITEBOARD_CODES` | KV | Namespace `scsfoxchase-tech-whiteboard-codes` (share code → board id, permanent) |
 | `ASSETS` | Assets fetcher | Bound automatically from the assets directory |
 
 R2 bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling keeps the underscore.
@@ -136,4 +136,4 @@ npm run build && npm run preview
 2. Sign in with Google on a scratch board this browser created → Save claims Owner; hub Recents/Library appear.
 3. Signed-in create autosaves; paste image + MP4 → cloud Assets; R2 uses `google:{id}` after save (scratch uses `temp:{boardId}`).
 4. Sign out → hub lists hide; cloud data remains for next sign-in.
-5. Join by code as a guest: Viewer; Owner can set Editor. Follow (pan unfollows). Follow Me locks the camera.
+5. Join by code as a guest: Editor (Group Edit Off = view-only). Follow (pan unfollows). Follow User locks the camera.

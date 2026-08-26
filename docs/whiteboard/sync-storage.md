@@ -61,8 +61,8 @@ The PWA service worker (`public/sw.js`) **never intercepts `/api/*`**, so this u
 - Fail-closed: oversize or SQLite failure throws `ScenePersistError`. The DO sends `wb:error` (`scene_too_large` or `persist_failed`) to the writer and other Editors and **does not** `broadcastScene` that update. The in-memory cache is written only after a successful UPSERT.
 - Merge: last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
 - Hibernation: WebSocket auto-response for ping/pong; session snapshots on socket attachments; resume on wake.
-- Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `roleCanEdit` is false.
-- Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner, already stored as Editor/Manager, or they join with the active share code while **Group Edit** is On (`meta:classCanEdit`) — then they land as **Editor**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
+- Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `sessionCanEdit(role, classCanEdit)` is false (Viewers always; Editors while Group Edit is Off).
+- Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner, already stored as Editor/Manager, or they join with the active share code (**Editor**). UUID-only stays **Viewer**. **Group Edit** (`meta:classCanEdit`) is a live draw gate, not a join-time role switch: Editors can draw only while it is On.
 - Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
 
 Live schema (`SCENE_TABLE_SQL`):
@@ -85,8 +85,8 @@ Custom messages the DO sends to connected clients:
 | `wb:participants` | `{ yourSessionId, yourRole, participants[] }` | People list |
 | `wb:role` | `{ role, canEdit }` | Role change for this session |
 | `wb:error` | `{ code, message }` | Persist failed (`scene_too_large` or `persist_failed`). Last change was not stored or broadcast |
-| `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Follow Me — lock follower cameras to the target |
-| `wb:sceneBounds` | `{ socketId, bounds }` | Leader viewport; voluntary Follow uses this until pan unfollows; Follow Me snaps to cached bounds |
+| `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Follow User — lock follower cameras to the target |
+| `wb:sceneBounds` | `{ socketId, bounds }` | Leader viewport; voluntary Follow uses this until pan unfollows; Follow User snaps to cached bounds |
 
 Document persistence is the DO scene — not the hub library indexes. Removing a board from Recents/Library only drops the **index entry**.
 

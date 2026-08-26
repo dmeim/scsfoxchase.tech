@@ -61,7 +61,7 @@ export const META_TEMP_ASSET_PREFIX_KEY = 'meta:tempAssetPrefix'
 export const META_UNSAVED_EXPIRES_AT_KEY = 'meta:unsavedExpiresAt'
 export const META_CREATED_AT_KEY = 'meta:createdAt'
 export const META_BOARD_ID_KEY = 'meta:boardId'
-/** Owner/Manager: joiners of the active share code land as Editor. */
+/** Owner/Manager: live draw gate — Editors may draw only when true. */
 export const META_CLASS_CAN_EDIT_KEY = 'meta:classCanEdit'
 
 export type SceneElement = {
@@ -117,6 +117,16 @@ export function roleCanEdit(role: WhiteboardRole): boolean {
 	return role === 'owner' || role === 'manager' || role === 'editor'
 }
 
+/** Live canvas writes: Owner/Manager always; Editor only while Group Edit is on. */
+export function sessionCanEdit(
+	role: WhiteboardRole,
+	classCanEdit: boolean,
+): boolean {
+	if (role === 'owner' || role === 'manager') return true
+	if (role === 'editor') return classCanEdit
+	return false
+}
+
 /** Who `actor` may assign to `target`'s current role. Null = no Roles UI. */
 export function assignableRolesFor(
 	actor: WhiteboardRole,
@@ -150,7 +160,7 @@ export type HelloMessage = {
 	owner: OwnerHook
 	/** Live room name. Recents/Library is only an index of this value. */
 	title: string
-	/** Joiners of the active share code land as Editor when true. */
+	/** When true, Editors may draw. Owner/Manager always may. */
 	classCanEdit: boolean
 	// PHASE 3.3
 	role: WhiteboardRole

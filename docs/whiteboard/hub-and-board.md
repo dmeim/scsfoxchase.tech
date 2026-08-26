@@ -31,13 +31,13 @@ The join field accepts:
 
 | Input | Behavior |
 |-------|----------|
-| Share code `1A2B` | `GET /api/whiteboard/join/:code` → board UUID, then open |
+| Share code `1A2B` or `1A2B3C4D` | `GET /api/whiteboard/join/:code` → board UUID, then open |
 | Full URL or `/board/{uuid}` path | Parse UUID from path |
 | Bare UUID | Open directly |
 
 Join does **not** add the board to Recents/Library. Invalid input or an unavailable code shows a hint under the field.
 
-A share code (or link / UUID) only **opens** the board. Joiners land as **Viewer** unless **Group Edit** is On (share-code joiners can then draw) or an Owner or Manager sets **Editor** on **People**. UUID-only stays **Viewer**. A join code alone does not mean students can draw.
+A share code (or link / UUID) only **opens** the board. Share-code joiners land as **Editor**. UUID-only stays **Viewer**. **Group Edit** Off means Editors cannot draw until an Owner/Manager turns it on. Owner or Manager can still set **Editor** on **People**.
 
 Join parsing: `parseJoinInput` in `src/scripts/whiteboard-library.ts`.  
 Code lookup: `lookupShareCode` in `src/lib/whiteboard-codes.ts`. Details: [share-codes.md](./share-codes.md).
@@ -52,7 +52,7 @@ Shown only while signed in (`[data-wb-cloud-lists]`). Signed-out hub copy explai
 | **Library** | Full sorted cloud board list |
 | **Assets** | Hidden for now — canvas uploads stay on the board (`assets/{ownerKey}/{fileId}`) and are not a class media library |
 
-Recents and Library cards support **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row only. Board delete does not delete Durable Object state or R2 media for classmates still on the board.
+Recents and Library cards support **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row and **frees the share-code KV mapping**. `/board/{uuid}` may still load (UUID access is a separate capability). Board delete does not wipe Durable Object scene or R2 media for classmates still on the board.
 
 While Clerk is loading, empty states show **Loading…** so cloud lists do not flash empty.
 
@@ -98,33 +98,31 @@ Toggle: **Whiteboard** button opens a dialog panel. Escape / outside click close
 
 ### Name this whiteboard
 
-- Editable title (max 80 chars) → Save → `setBoardTitleActive`. **Owner/Manager only** (hidden for Editor/Viewer; PATCH title is **403** otherwise).
+- Inline title + pencil (max 80 chars) → Enter / blur saves → `setBoardTitleActive`. **Owner/Manager only** (Editor/Viewer see a read-only name; PATCH title is **403** otherwise).
 - Signed in + already in library (or this browser created it): saved to the Google library.
 - Signed out: title is kept in `sessionStorage` for this scratch tab only — it is not a local library.
 
 ### Share
 
-Open / Closed switch on the left column — **Owner/Manager only** (hidden for Editor/Viewer). When **Open**, the right column shows the share code (click to copy), **New Code**, **Copy Link** (permanent `/board/{uuid}` URL), expiry countdown, and People. See [share-codes.md](./share-codes.md).
+**Owner/Manager only** (hidden for Editor/Viewer). One permanent **Share Code** in the header (click to copy), plus **Copy Code** and **Copy Link** (permanent `/board/{uuid}` URL). Info popovers explain each control. See [share-codes.md](./share-codes.md).
 
-**Group Edit** (Owner/Manager; Off by default) is shipped. When On, joiners of the **active share code** land as Editor. UUID-only links stay Viewer. You can still set Editor per person on People.
+**Group Edit** (Owner/Manager; Off by default) is a live draw gate. When On, Editors can draw. When Off, only Owner and Manager can draw; Editors keep the Editor role. UUID-only links stay Viewer unless you set Editor on People.
 
-The code is a join token, not an automatic edit grant. Students who join with it stay **Viewer** unless **Group Edit** is On or you set **Editor** on **People**. UUID links stay Viewer.
+Share-code GET / POST / DELETE require Owner or Manager (live session token, scratch host secret, or Clerk matching the Google owner). Leftover host on a Google-owned board is not enough. Viewer gets **403**. Join lookup stays unauthenticated. Library delete frees the KV mapping; UUID access remains a separate capability.
 
-Share-code GET / POST / DELETE require Owner or Manager (live session token, scratch host secret, or Clerk matching the Google owner). Leftover host on a Google-owned board is not enough. Viewer gets **403**. Join lookup stays unauthenticated. Closed drops the KV mapping; UUID access remains a separate capability.
+### Follow User
 
-### Follow Me
-
-Owner/Manager control beside the **People** heading (hidden unless this session can force-follow). Toggle plus a target select (self or another participant). Unlike voluntary Follow (pan to unfollow), Follow Me **locks** the camera — guests cannot pan away; the island snaps to leader bounds and covers the canvas with a transparent overlay. See [people-permissions.md](./people-permissions.md).
+Owner/Manager control under **Sharing Features** (hidden unless this session can force-follow). Toggle plus a target select (self or another participant). Unlike voluntary Follow (eye icon; pan to unfollow), Follow User **locks** the camera — guests cannot pan away; the island snaps to leader bounds and covers the canvas with a transparent overlay. See [people-permissions.md](./people-permissions.md).
 
 ### People
 
-Shown only while Share is Open. Columns: **Name** | **Follow** | **Role**. Live list from DO custom messages. See [people-permissions.md](./people-permissions.md).
+Always shown (not gated on sharing). Rows: **Name** | **Role** | **Eye**. Live list from DO custom messages. See [people-permissions.md](./people-permissions.md).
 
-Use **Group Edit** so share-code joiners can draw without per-person clicks. Use the **Role** column to promote a UUID guest (or one person) from **Viewer** to **Editor**. Do not treat an Open code as group-wide draw access unless Group Edit is On.
+Use **Group Edit** so Editors can draw without per-person clicks. Use the **Role** control to promote a UUID guest from **Viewer** to **Editor**. Copy Link stays view-only unless you set Editor.
 
 ### Whiteboard Library
 
-Secondary link on the left column back to `/whiteboard`.
+**← Library** in the manage-panel header back to `/whiteboard`.
 
 ## Ephemeral Owner (scratch boards)
 
@@ -139,8 +137,8 @@ On connect, that secret is sent in the first WebSocket message (`wb:auth` `hostS
 
 On a **saved** board, Owner is the Google account (`google:{accountId}`), not whoever still holds the creating-browser secret.
 
-**Owner/Manager** manage actions: live title rename, role changes, Follow Me / force-follow, share Open / Closed / click-code copy / New Code / Copy Link.  
-**Not Owner-gated:** voluntary Follow; unauthenticated join lookup; opening `/board/{uuid}` with the link (UUID access is a separate capability from share-code admin).
+**Owner/Manager** manage actions: live title rename, role changes, Follow User / force-follow, copy share code / Copy Link.
+**Not Owner-gated:** voluntary Follow (eyes); unauthenticated join lookup; opening `/board/{uuid}` with the link (UUID access is a separate capability from share-code admin).
 
 Joining via link or code does **not** grant the host secret — only the creating browser (unless the secret is copied into another browser’s `localStorage`).
 

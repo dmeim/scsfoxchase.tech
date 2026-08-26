@@ -5,7 +5,7 @@
  * - Binding WHITEBOARDS → Durable Object class WhiteboardBoard (SQLite)
  * - Binding WHITEBOARD_ASSETS → R2 bucket scsfoxchase-tech-whiteboards
  *   (R2 names disallow `_`; product family keeps the underscore spelling)
- * - Binding WHITEBOARD_CODES → KV share-code → boardId index (TTL 12h)
+ * - Binding WHITEBOARD_CODES → KV share-code → boardId index (permanent per board)
  * - Cloud library indexes (Phase 4b): R2 JSON under library/{ownerKey}/*.json
  * - Auth: Clerk (CLERK_SECRET_KEY + PUBLIC_CLERK_PUBLISHABLE_KEY)
  */
@@ -70,7 +70,7 @@ export default {
 			if (libraryResponse) return libraryResponse
 		}
 
-		// Share codes: join lookup + mint/revoke (Phase 5)
+		// Share codes: join lookup + mint (Phase 5); DELETE is internal revoke
 		if (
 			url.pathname.startsWith('/api/whiteboard/join') ||
 			url.pathname.match(/^\/api\/whiteboard\/boards\/[^/]+\/code/i)

@@ -80,8 +80,8 @@ export function getOwnerKey(): string {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-/** Four-character digit-letter code, `1A2B` form (server `SHARE_CODE_RE`). */
-const SHARE_CODE_RE = /^([0-9][A-Z]){2}$/;
+/** Four- or eight-character digit-letter code (`1A2B` or `1A2B3C4D`). */
+const SHARE_CODE_RE = /^([0-9][A-Z]){2}(([0-9][A-Z]){2})?$/;
 const MAX_BOARD_TITLE_LENGTH = 80;
 
 export function isBoardUuid(value: string): boolean {

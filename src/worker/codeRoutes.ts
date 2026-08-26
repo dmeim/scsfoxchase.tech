@@ -2,18 +2,17 @@
  * Share code HTTP routes (Phase 5).
  *
  * - GET  /api/whiteboard/join/:code              → KV lookup → { id }
- * - GET  /api/whiteboard/boards/:uuid/code       → DO current code state
- * - POST /api/whiteboard/boards/:uuid/code       → mint / keep / rotate
- * - DELETE /api/whiteboard/boards/:uuid/code     → revoke (Closed)
+ * - GET  /api/whiteboard/boards/:uuid/code       → DO current code (mint if none)
+ * - POST /api/whiteboard/boards/:uuid/code       → ensure minted (no rotate)
+ * - DELETE /api/whiteboard/boards/:uuid/code     → internal revoke (library delete / unsaved expiry)
  *
  * Auth: join is unauthenticated (rate-limited). Board code GET/POST/DELETE
  * require Owner/Manager proof forwarded to the Durable Object (host secret,
- * live session token, or Clerk matching cloudOwnerKey). UUID access after
- * Closed remains a separate capability.
- * Mint/rotate is also rate-limited inside the Durable Object (`assertMintAllowed`).
+ * live session token, or Clerk matching cloudOwnerKey). UUID access is a
+ * separate capability from the share code.
+ * First mint is rate-limited inside the Durable Object (`assertMintAllowed`).
  */
 import {
-	isExpiredIso,
 	kvCodeKey,
 	normalizeShareCode,
 	parseShareCodeRecord,
@@ -281,7 +280,7 @@ async function handleJoin(
 	const record = parseShareCodeRecord(
 		await env.WHITEBOARD_CODES.get(kvCodeKey(code)),
 	)
-	if (!record || isExpiredIso(record.exp) || !isBoardUuid(record.boardId)) {
+	if (!record || !isBoardUuid(record.boardId)) {
 		const failRetry = consumeJoinRate(
 			joinFailsByCode,
 			code,

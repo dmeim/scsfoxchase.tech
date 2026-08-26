@@ -10,11 +10,11 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 
 | Area | What it does | Doc |
 |------|----------------|-----|
-| Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Share-code joiners land as **Viewer** unless **Group Edit** is On; UUID-only stays **Viewer** | [hub-and-board.md](./hub-and-board.md) |
+| Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Share-code joiners land as **Editor**; UUID-only stays **Viewer**. **Group Edit** gates whether Editors can draw | [hub-and-board.md](./hub-and-board.md) |
 | Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; R2 files by `fileId` | [sync-storage.md](./sync-storage.md) |
 | Auth + library | Clerk Google sign-in; cloud-only Recents / Library / Assets; scratch boards expire in 24h | [auth-libraries.md](./auth-libraries.md) |
-| Share codes | Short `1A2B` codes in KV; Open / Closed / Copy / New; hub join. A code opens the board; join is view-only unless **Group Edit** is On. UUID-only stays **Viewer**. A join code alone does not mean students can draw | [share-codes.md](./share-codes.md) |
-| People + permissions | Owner / Manager / Editor / Viewer; Follow (pan to unfollow); Follow Me (camera locked). **Group Edit** (share-code joiners land as Editor when On) or set **Editor** on People. UUID-only stays **Viewer** | [people-permissions.md](./people-permissions.md) |
+| Share codes | Permanent `1A2B3C4D` codes in KV (legacy `1A2B` still joins); Copy Code / Copy Link; hub join. Share-code joiners land as **Editor**. UUID-only stays **Viewer**. Group Edit Off = Editors view-only | [share-codes.md](./share-codes.md) |
+| People + permissions | Owner / Manager / Editor / Viewer; Follow (eyes, pan to unfollow); Follow User (camera locked). **Group Edit** is a live draw gate. UUID-only stays **Viewer** | [people-permissions.md](./people-permissions.md) |
 
 ## Routes
 
@@ -25,10 +25,10 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 | `/whiteboard-player` | `src/pages/whiteboard-player.astro` | Same-origin MP4/WebM player (iframe on the canvas) |
 | `/api/whiteboard/connect/:uuid` | `src/worker.ts` → DO | WebSocket upgrade for Excalidraw collab |
 | `/api/whiteboard/join/:code` | `src/worker/codeRoutes.ts` → KV | Resolve share code → board UUID |
-| `/api/whiteboard/boards/:uuid/code` | DO + KV | GET / POST / DELETE share code |
+| `/api/whiteboard/boards/:uuid/code` | DO + KV | GET / POST share code (mint once); DELETE internal revoke |
 | `/api/whiteboard/boards/:uuid/meta` | DO | GET / PATCH saved-to-library + Google Owner (24h TTL) |
 | `/api/whiteboard/boards/:uuid/participants/:sessionId` | DO | PATCH participant role (Owner / Manager) |
-| `/api/whiteboard/boards/:uuid/force-follow` | DO | PATCH Follow Me / force-follow (Owner / Manager) |
+| `/api/whiteboard/boards/:uuid/force-follow` | DO | PATCH Follow User / force-follow (Owner / Manager) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | R2 | PUT / GET / DELETE media |
 | `/api/whiteboard/assets/claim` | R2 | Move `temp:{boardId}` objects under `google:{id}` |
 | `/api/whiteboard/library/boards` | R2 JSON | Signed-in board index (Clerk) |
@@ -44,7 +44,7 @@ Product family spelling: `scsfoxchase-tech_whiteboards` (underscore). R2 bucket 
 |---------|----------|--------|
 | `WHITEBOARDS` | Durable Object class `WhiteboardBoard` (SQLite) | `wrangler.jsonc` → `durable_objects` |
 | `WHITEBOARD_ASSETS` | R2 bucket `scsfoxchase-tech-whiteboards` | Media + cloud library JSON |
-| `WHITEBOARD_CODES` | KV namespace | `code:{1A2B}` → `{ boardId, exp }` (TTL 12h) |
+| `WHITEBOARD_CODES` | KV namespace | `code:{CODE}` → `{ boardId }` (no TTL) |
 
 Clerk secrets / vars (not in `wrangler.jsonc`): `CLERK_SECRET_KEY`, `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`. See `.dev.vars.example` and `DEPLOYMENT.md`. No whiteboard license key.
 

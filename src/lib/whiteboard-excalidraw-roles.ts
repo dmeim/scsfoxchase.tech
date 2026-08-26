@@ -186,6 +186,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	const sessionIdRef = useRef('')
 	const userIdRef = useRef(getBoardConnectIdentity().userId)
 	const roleRef = useRef<WhiteboardRole>('viewer')
+	const canEditRef = useRef(false)
 	const voluntaryTargetRef = useRef<UserToFollow | null>(null)
 	const forceFollowRef = useRef<ForceFollowPayload>({
 		type: 'wb:forceFollow',
@@ -511,10 +512,15 @@ export function useWhiteboardExcalidrawRoles(opts: {
 						: 'viewer'
 				const authToken =
 					typeof data.authToken === 'string' ? data.authToken : ''
+				const nextCanEdit =
+					typeof data.canEdit === 'boolean'
+						? data.canEdit
+						: roleCanEdit(nextRole)
 				if (sessionId) sessionIdRef.current = sessionId
 				roleRef.current = nextRole
+				canEditRef.current = nextCanEdit
 				setRole(nextRole)
-				setCanEdit(roleCanEdit(nextRole))
+				setCanEdit(nextCanEdit)
 				setHelloReceived(true)
 				if (boardId && sessionId && authToken) {
 					rememberBoardSessionAuth(boardId, {
@@ -526,7 +532,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				publishHello({
 					sessionId,
 					role: nextRole,
-					canEdit: roleCanEdit(nextRole),
+					canEdit: nextCanEdit,
 					authToken,
 					title: typeof data.title === 'string' ? data.title : undefined,
 				})
@@ -538,7 +544,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				publishHello({
 					sessionId: sessionIdRef.current,
 					role: roleRef.current,
-					canEdit: roleCanEdit(roleRef.current),
+					canEdit: canEditRef.current,
 					authToken: '',
 					title: data.title,
 				})
@@ -547,8 +553,13 @@ export function useWhiteboardExcalidrawRoles(opts: {
 
 			if (isRolePayload(data)) {
 				roleRef.current = data.role
+				const nextCanEdit =
+					typeof data.canEdit === 'boolean'
+						? data.canEdit
+						: roleCanEdit(data.role)
+				canEditRef.current = nextCanEdit
 				setRole(data.role)
-				setCanEdit(roleCanEdit(data.role))
+				setCanEdit(nextCanEdit)
 				if (boardId) {
 					const prev = {
 						sessionId: sessionIdRef.current,
@@ -598,14 +609,18 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				const fromSelf = self?.role
 				const nextRole =
 					[fromSelf, fromPayload].find(
-						(r): r is WhiteboardRole => Boolean(r) && roleCanEdit(r),
+						(r): r is WhiteboardRole =>
+							isWhiteboardRole(r) && roleCanEdit(r),
 					) ??
 					fromPayload ??
 					fromSelf
 				if (nextRole) {
 					roleRef.current = nextRole
 					setRole(nextRole)
-					setCanEdit(roleCanEdit(nextRole))
+					if (self && typeof self.canEdit === 'boolean') {
+						canEditRef.current = self.canEdit
+						setCanEdit(self.canEdit)
+					}
 				}
 				const map = collaboratorsFromPeople(rows, yourSessionId)
 				setCollaborators(map)
@@ -711,7 +726,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				raf = window.requestAnimationFrame(applyViewMode)
 				return
 			}
-			const locked = !roleCanEdit(role)
+			const locked = !canEdit
 			api.updateScene({
 				appState: { viewModeEnabled: locked },
 				captureUpdate: CaptureUpdateAction.NEVER,
@@ -722,7 +737,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			cancelled = true
 			if (raf) window.cancelAnimationFrame(raf)
 		}
-	}, [apiRef, helloReceived, role])
+	}, [apiRef, helloReceived, canEdit])
 
 	useEffect(() => {
 		scheduleReassertAfterPaint()
@@ -744,7 +759,7 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		role,
 		canEdit,
 		helloReceived,
-		viewModeEnabled: !roleCanEdit(role),
+		viewModeEnabled: !canEdit,
 		forceFollowLocked,
 		displayName,
 		collaborators,

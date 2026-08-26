@@ -2,10 +2,10 @@
  * Durable Object for one whiteboard room (product family: scsfoxchase-tech_whiteboards).
  *
  * Phase 2: native WebSocket Excalidraw scene sync + persist. Share-code
- * mint/revoke/alarm and People HTTP stay on this same object.
+ * mint (once, permanent) / revoke and People HTTP stay on this same object.
  *
- * One alarm slot: the sooner of share-code expiry (12h) and unsaved TTL (24h).
- * Refresh does not wipe the scene. “Lose work” = never saved to a cloud library.
+ * One alarm slot: unsaved TTL (24h). Refresh does not wipe the scene.
+ * “Lose work” = never saved to a cloud library.
  */
 import { DurableObject } from 'cloudflare:workers'
 import { generateGuestDisplayName } from '../lib/whiteboard-display-name'
@@ -31,6 +31,7 @@ import {
 	parseSceneElements,
 	parseStoredSceneElements,
 	roleCanEdit,
+	sessionCanEdit,
 	sceneTooLargeError,
 	type AssignableRole,
 	type BoardPublicMeta,
@@ -50,9 +51,8 @@ import {
 	isExpiredIso,
 	kvCodeKey,
 	normalizeShareCode,
+	parseShareCodeRecord,
 	sampleShareCode,
-	SHARE_CODE_TTL_MS,
-	SHARE_CODE_TTL_SECONDS,
 } from './shareCode'
 
 const HOST_SECRET_HASH_KEY = 'meta:hostSecretHash'
@@ -236,7 +236,6 @@ type StoredForceFollow = {
 
 type CodeState = {
 	code: string
-	expiresAt: string
 }
 
 type ParticipantPublic = {
@@ -380,7 +379,8 @@ function normalizeAttachment(
 	return {
 		sessionId: raw?.sessionId ?? sessionId,
 		isHost,
-		canEdit: roleCanEdit(role),
+		canEdit:
+			typeof raw?.canEdit === 'boolean' ? raw.canEdit : roleCanEdit(role),
 		role,
 		authToken: typeof raw?.authToken === 'string' ? raw.authToken : '',
 		meta: {
@@ -483,6 +483,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.resetLiveState()
 	}
 
+	/** Library delete: free the KV PIN. Does not wipe the scene. */
+	async revokeShareCodeMapping(): Promise<void> {
+		await this.clearActiveCodeKeys()
+		await this.scheduleNextAlarm()
+	}
+
 	/**
 	 * Authenticated admin RPC: drop tldraw (and any other) SQLite/KV data, then
 	 * re-create an empty Excalidraw scene table. Does not wipe new boards on its
@@ -499,6 +505,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				}
 			}
 			this.sessionIdToWs.clear()
+			await this.clearActiveCodeKeys()
 			await this.clearAllStorage()
 			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
 			return {
@@ -539,7 +546,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				if (
 					attachment.authToken &&
 					attachment.authToken === authToken &&
-					(attachment.canEdit || roleCanEdit(attachment.role))
+					sessionCanEdit(attachment.role, await this.readClassCanEdit())
 				) {
 					return { ok: true }
 				}
@@ -785,7 +792,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			joinedViaShareCode,
 			boardId,
 		})
-		const canEdit = roleCanEdit(role)
+		const canEdit = sessionCanEdit(role, await this.readClassCanEdit())
 		const authToken = crypto.randomUUID()
 		const meta: SessionMeta = {
 			displayName,
@@ -909,7 +916,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			...attachment,
 			isHost,
 			role,
-			canEdit: roleCanEdit(role),
+			canEdit: sessionCanEdit(role, await this.readClassCanEdit()),
 			pendingClerkAuth: false,
 			joinedViaShareCode,
 			boardId,
@@ -1039,7 +1046,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 			if (hasClassCanEdit) {
 				await this.setClassCanEdit(body.classCanEdit === true)
-				await this.syncLiveRolesForClassCanEdit()
+				await this.syncLiveCanEditForClassCanEdit()
 			}
 		}
 
@@ -1346,6 +1353,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 		}
 
+		try {
+			await this.ensureShareCode(boardId)
+		} catch {
+			// UUID access still works if mint fails (rate limit / KV collision).
+		}
 		await this.scheduleNextAlarm()
 	}
 
@@ -1675,7 +1687,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 			if (!cloudOwnerKey && opts.isHost) return 'owner'
 			// Group Edit Off must not lock the Google Owner. UUID-only guests
-			// (no Clerk match, no host) stay Viewer via share-code joiner.
+			// (no Clerk match, no host) stay Viewer unless they joined with the code.
 			return this.roleForShareCodeJoiner(opts.joinedViaShareCode)
 		}
 
@@ -1692,13 +1704,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return this.roleForShareCodeJoiner(opts.joinedViaShareCode)
 	}
 
-	private async roleForShareCodeJoiner(
+	private roleForShareCodeJoiner(
 		joinedViaShareCode: boolean,
-	): Promise<WhiteboardRole> {
-		if (joinedViaShareCode && (await this.readClassCanEdit())) {
-			return 'editor'
-		}
-		return 'viewer'
+	): WhiteboardRole {
+		return joinedViaShareCode ? 'editor' : 'viewer'
 	}
 
 	private async readClassCanEdit(): Promise<boolean> {
@@ -1715,48 +1724,32 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	private async presentedJoinCodeIsActive(code: string): Promise<boolean> {
 		if (!code) return false
-		const active = await this.readActiveCode()
-		return Boolean(active && active.code === code)
+		const active = await this.readStoredCode()
+		return Boolean(active && active === code)
 	}
 
 	/**
-	 * Promote/demote live code-joiners when class-can-edit changes.
-	 * Does not write `meta:roles` — stored Viewer/Editor still wins on reconnect.
+	 * Recompute live canEdit when Group Edit changes. Does not change roles.
 	 */
-	private async syncLiveRolesForClassCanEdit(): Promise<void> {
+	private async syncLiveCanEditForClassCanEdit(): Promise<void> {
 		this.hydrateSockets()
 		const enabled = await this.readClassCanEdit()
-		const stored = await this.readStoredRoles()
 		let changed = false
 		for (const [sessionId, ws] of this.sessionIdToWs) {
 			const prev = normalizeAttachment(
 				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
 			)
-			if (prev.role === 'owner' || prev.role === 'manager' || prev.isHost) {
-				continue
-			}
-			const userId = prev.meta.userId
-			const storedRole = userId ? stored[userId] : undefined
-			if (
-				storedRole === 'manager' ||
-				storedRole === 'editor' ||
-				storedRole === 'viewer'
-			) {
-				continue
-			}
-			const nextRole: WhiteboardRole =
-				enabled && prev.joinedViaShareCode ? 'editor' : 'viewer'
-			if (nextRole === prev.role) continue
+			const nextCanEdit = sessionCanEdit(prev.role, enabled)
+			if (prev.canEdit === nextCanEdit) continue
 			const next: SocketAttachment = {
 				...prev,
-				role: nextRole,
-				canEdit: roleCanEdit(nextRole),
+				canEdit: nextCanEdit,
 			}
 			ws.serializeAttachment(next)
 			sendJson(ws, {
 				type: 'wb:role',
-				role: nextRole,
+				role: next.role,
 				canEdit: next.canEdit,
 			})
 			changed = true
@@ -1932,7 +1925,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				const next: SocketAttachment = {
 					...prev,
 					role,
-					canEdit: roleCanEdit(role),
+					canEdit: sessionCanEdit(role, await this.readClassCanEdit()),
 				}
 				ws.serializeAttachment(next)
 				sendJson(ws, {
@@ -2212,29 +2205,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const denied = await this.requireShareCodeAdmin(request, url)
 		if (denied) return denied
 
-		if (request.method === 'GET') {
-			const state = await this.readActiveCode()
-			if (!state) {
-				return json(200, { code: null, expiresAt: null, open: false })
-			}
-			return json(200, {
-				code: state.code,
-				expiresAt: state.expiresAt,
-				open: true,
-			})
-		}
-
-		if (request.method === 'POST') {
-			const rotate =
-				url.searchParams.get('rotate') === '1' ||
-				url.searchParams.get('rotate') === 'true'
+		if (request.method === 'GET' || request.method === 'POST') {
 			try {
-				const state = await this.mintOrKeepCode(boardId, rotate)
-				return json(200, {
-					code: state.code,
-					expiresAt: state.expiresAt,
-					open: true,
-				})
+				const state = await this.ensureShareCode(boardId)
+				return json(200, { code: state?.code ?? null })
 			} catch (err) {
 				const message =
 					err instanceof Error ? err.message : 'Could not create share code'
@@ -2245,21 +2219,39 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 		if (request.method === 'DELETE') {
 			await this.revokeActiveCode()
-			return json(200, { code: null, expiresAt: null, open: false })
+			return json(200, { code: null })
 		}
 
 		return json(405, { error: 'Method not allowed' })
 	}
 
-	private async readActiveCode(): Promise<CodeState | null> {
+	private async persistShareCodeKv(code: string, boardId: string): Promise<void> {
+		if (!this.env.WHITEBOARD_CODES) return
+		await this.env.WHITEBOARD_CODES.put(
+			kvCodeKey(code),
+			JSON.stringify({ boardId }),
+		)
+	}
+
+	private async readStoredCode(): Promise<string | null> {
 		const code = await this.ctx.storage.get<string>(ACTIVE_CODE_KEY)
-		const expiresAt = await this.ctx.storage.get<string>(CODE_EXPIRES_AT_KEY)
-		if (!code || !expiresAt) return null
-		if (isExpiredIso(expiresAt)) {
-			await this.revokeActiveCode()
-			return null
+		if (!code || !normalizeShareCode(code)) return null
+		return code
+	}
+
+	/**
+	 * Mint once if missing. Existing codes (including leftover 4-character)
+	 * are kept and rewritten to KV without TTL.
+	 */
+	private async ensureShareCode(boardId: string): Promise<CodeState | null> {
+		if (!this.env.WHITEBOARD_CODES || !boardId) return null
+		const existing = await this.readStoredCode()
+		if (existing) {
+			await this.persistShareCodeKv(existing, boardId)
+			await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+			return { code: existing }
 		}
-		return { code, expiresAt }
+		return this.mintPermanentCode(boardId)
 	}
 
 	private async assertMintAllowed(): Promise<void> {
@@ -2276,51 +2268,31 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		await this.ctx.storage.put(CODE_MINT_LOG_KEY, recent)
 	}
 
-	/**
-	 * Open: mint if none, else keep. Rotate: always mint a new code.
-	 */
-	private async mintOrKeepCode(
-		boardId: string,
-		rotate: boolean,
-	): Promise<CodeState> {
-		const existing = await this.readActiveCode()
-		if (existing && !rotate) {
-			return existing
-		}
-
+	private async mintPermanentCode(boardId: string): Promise<CodeState> {
 		await this.assertMintAllowed()
-
-		if (existing) {
-			await this.env.WHITEBOARD_CODES.delete(kvCodeKey(existing.code))
-		}
-
-		const expiresAt = new Date(Date.now() + SHARE_CODE_TTL_MS).toISOString()
-		let code: string | null = null
 
 		for (let i = 0; i < MINT_SAMPLE_ATTEMPTS; i++) {
 			const candidate = sampleShareCode()
 			const key = kvCodeKey(candidate)
-			const clash = await this.env.WHITEBOARD_CODES.get(key)
-			if (clash) continue
+			const clashRaw = await this.env.WHITEBOARD_CODES.get(key)
+			if (clashRaw) {
+				const clash = parseShareCodeRecord(clashRaw)
+				if (clash?.boardId === boardId) {
+					await this.persistShareCodeKv(candidate, boardId)
+					await this.ctx.storage.put(ACTIVE_CODE_KEY, candidate)
+					await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+					return { code: candidate }
+				}
+				continue
+			}
 
-			await this.env.WHITEBOARD_CODES.put(
-				key,
-				JSON.stringify({ boardId, exp: expiresAt }),
-				{ expirationTtl: SHARE_CODE_TTL_SECONDS },
-			)
-			code = candidate
-			break
+			await this.persistShareCodeKv(candidate, boardId)
+			await this.ctx.storage.put(ACTIVE_CODE_KEY, candidate)
+			await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+			return { code: candidate }
 		}
 
-		if (!code) {
-			throw new Error('Could not allocate a free share code. Try again.')
-		}
-
-		await this.ctx.storage.put(ACTIVE_CODE_KEY, code)
-		await this.ctx.storage.put(CODE_EXPIRES_AT_KEY, expiresAt)
-		await this.scheduleNextAlarm()
-
-		return { code, expiresAt }
+		throw new Error('Could not allocate a free share code. Try again.')
 	}
 
 	private async revokeActiveCode(): Promise<void> {
@@ -2330,7 +2302,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	private async clearActiveCodeKeys(): Promise<void> {
 		const code = await this.ctx.storage.get<string>(ACTIVE_CODE_KEY)
-		if (code) {
+		if (code && this.env.WHITEBOARD_CODES) {
 			await this.env.WHITEBOARD_CODES.delete(kvCodeKey(code))
 		}
 		await this.ctx.storage.delete(ACTIVE_CODE_KEY)
@@ -2338,16 +2310,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	/**
-	 * Durable Objects have one alarm. Fire the sooner of share-code expiry
-	 * and unsaved 24h TTL; the handler reschedules whatever is still pending.
+	 * Durable Objects have one alarm. Fire unsaved 24h TTL; the handler
+	 * reschedules whatever is still pending.
 	 */
 	private async scheduleNextAlarm(): Promise<void> {
 		const times: number[] = []
-		const codeExpiresAt = await this.ctx.storage.get<string>(CODE_EXPIRES_AT_KEY)
-		if (codeExpiresAt && !isExpiredIso(codeExpiresAt)) {
-			const t = Date.parse(codeExpiresAt)
-			if (!Number.isNaN(t)) times.push(t)
-		}
 		if (!(await this.isSavedToLibrary())) {
 			const unsavedExpiresAt = await this.ctx.storage.get<string>(
 				META_UNSAVED_EXPIRES_AT_KEY,
@@ -2408,13 +2375,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
-	/** KV TTL + DO alarm: share codes (12h) and unsaved boards (24h). */
+	/** Unsaved boards (24h). Share codes do not expire. */
 	override async alarm(): Promise<void> {
-		const expiresAt = await this.ctx.storage.get<string>(CODE_EXPIRES_AT_KEY)
-		if (!expiresAt || isExpiredIso(expiresAt)) {
-			await this.clearActiveCodeKeys()
-		}
-
 		const saved = await this.isSavedToLibrary()
 		const unsavedExpiresAt = await this.ctx.storage.get<string>(
 			META_UNSAVED_EXPIRES_AT_KEY,
@@ -2500,8 +2462,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
 			)
-			// PHASE 3.3: Viewers cannot mutate the document (UI + server).
-			if (!roleCanEdit(attachment.role)) return
+			// PHASE 3.3: Viewers and frozen Editors cannot mutate the document.
+			if (!sessionCanEdit(attachment.role, await this.readClassCanEdit())) {
+				return
+			}
 			try {
 				if (
 					typeof data.databaseJson === 'string' &&

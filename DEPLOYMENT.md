@@ -106,7 +106,7 @@ Product resource family: **`scsfoxchase-tech_whiteboards`**.
 | R2 binding | `WHITEBOARD_ASSETS` |
 | R2 bucket | `scsfoxchase-tech-whiteboards` |
 | KV binding | `WHITEBOARD_CODES` |
-| KV namespace | `scsfoxchase-tech-whiteboard-codes` (share code → boardId, TTL 12h) |
+| KV namespace | `scsfoxchase-tech-whiteboard-codes` (share code → boardId, permanent) |
 
 **R2 naming note:** Cloudflare R2 bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling with an underscore is unchanged for docs / DO naming.
 
@@ -135,11 +135,12 @@ Asset API (capability URLs; no public list):
 
 Share codes (Phase 5):
 
-- KV key: `code:{1A2B}` → `{ boardId, exp }` with `expirationTtl` 12h (four-character digit-letter)
-- DO metadata: `activeCode` + `codeExpiresAt` + alarm cleanup
+- KV key: `code:{1A2B3C4D}` → `{ boardId }` with **no TTL** (legacy `1A2B` still joins)
+- DO metadata: `meta:activeCode` (mint once; never rotated or closed)
 - `GET /api/whiteboard/join/{code}` → `{ id }` or 404
-- `GET|POST|DELETE /api/whiteboard/boards/{uuid}/code` — status / mint-or-keep (optional `?rotate=1`) / revoke
-- Auth: knowing the board UUID is enough (same capability model as opening the board); mint/rotate rate-limited per board
+- `GET|POST /api/whiteboard/boards/{uuid}/code` — read / mint-if-missing (Owner/Manager)
+- `DELETE /api/whiteboard/boards/{uuid}/code` — internal revoke (library delete + unsaved expiry)
+- Auth for GET/POST/DELETE: Owner or Manager (live session, scratch host, or Clerk). Join lookup is unauthenticated and rate-limited.
 
 Cloud library indexes reuse the same R2 bucket (no extra KV/D1):
 
@@ -173,5 +174,5 @@ npm run build && npm run preview
 # 2. Sign in with Google on a scratch board this browser created → Save claims Owner; Recents/Library appear.
 # 3. Signed-in Create autosaves; paste an image (R2 google:{id}) and an MP4 (same-origin /whiteboard-player).
 # 4. Sign out → hub lists hide; scratch create still works; cloud data remains for next sign-in.
-# 5. Join by share code as a guest: Viewer (view-only banner); Owner can set Editor. Follow (pan unfollows). Follow Me locks the camera.
+# 5. Join by share code as a guest: Editor (Group Edit Off = view-only). Follow (pan unfollows). Follow User locks the camera.
 ```

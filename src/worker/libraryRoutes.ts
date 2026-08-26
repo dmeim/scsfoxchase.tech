@@ -277,6 +277,18 @@ function boardMetaUrl(request: Request, boardId: string): URL {
 	return url
 }
 
+/** Drop the board's KV share-code mapping. UUID access is unchanged. */
+async function revokeBoardShareCode(env: Env, boardId: string): Promise<void> {
+	if (!env.WHITEBOARDS) return
+	try {
+		const id = env.WHITEBOARDS.idFromName(boardId)
+		const stub = env.WHITEBOARDS.get(id)
+		await stub.revokeShareCodeMapping()
+	} catch {
+		// Index delete still proceeds; an orphaned code is cleaned on next mint clash.
+	}
+}
+
 function patchHeaders(request: Request): Headers {
 	const headers = new Headers({ 'Content-Type': 'application/json' })
 	const authorization = request.headers.get('Authorization')
@@ -605,6 +617,7 @@ export async function handleLibraryRequest(
 					)
 				}
 			}
+			await revokeBoardShareCode(env, boardId)
 			return json(200, { ok: true }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
