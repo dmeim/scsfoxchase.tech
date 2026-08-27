@@ -67,11 +67,14 @@ The PWA service worker (`public/sw.js`) never intercepts `/api/*`, so this upgra
 
 The retained anti-usage guards are deliberately separate from media:
 
+- The Durable Object constructor performs no storage or SQL work. Lifetime initialization is coalesced, existing canonical boards do not run schema DDL on cold wake, and legacy/v2 reads remain write-free until an actual migration write is required.
 - Share codes are minted once. An existing `meta:activeCode` is returned without another KV write.
 - `GET /api/whiteboard/boards/:uuid/meta` does not mint or rewrite the share-code KV mapping.
 - Alarm scheduling reads the current alarm and avoids a redundant `setAlarm` or `deleteAlarm`.
 - Identical scene persistence avoids a redundant SQLite UPSERT.
 - Full scene broadcasts exclude the writer and do not trigger a client-side full-flush echo.
+
+The incident, recovery evidence, Cloudflare usage baseline, and operator checklist are in [r2-rollback-cloudflare-usage.md](./r2-rollback-cloudflare-usage.md).
 
 ### Live SQLite schema
 

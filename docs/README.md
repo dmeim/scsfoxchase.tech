@@ -50,6 +50,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | [whiteboard/README.md](./whiteboard/README.md) | Whiteboard overview and index |
 | [whiteboard/hub-and-board.md](./whiteboard/hub-and-board.md) | Hub UI and live `/board/{uuid}` canvas |
 | [whiteboard/sync-storage.md](./whiteboard/sync-storage.md) | Durable Objects, R2 media, Excalidraw sync |
+| [whiteboard/r2-rollback-cloudflare-usage.md](./whiteboard/r2-rollback-cloudflare-usage.md) | R2 rollback, Cloudflare usage incident, retained safeguards, and operator runbook |
 | [whiteboard/auth-libraries.md](./whiteboard/auth-libraries.md) | Clerk auth, cloud-only library, scratch 24h TTL |
 | [whiteboard/share-codes.md](./whiteboard/share-codes.md) | Share codes (KV + DO) |
 | [whiteboard/people-permissions.md](./whiteboard/people-permissions.md) | Owner / Manager / Editor / Viewer; Follow vs Follow User camera lock |

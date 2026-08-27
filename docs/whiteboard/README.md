@@ -14,6 +14,7 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 |------|----------------|-----|
 | Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Share-code joiners land as **Editor**; UUID-only stays **Viewer**. **Group Edit** gates whether Editors can draw | [hub-and-board.md](./hub-and-board.md) |
 | Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; legacy and read-only-compatible R2 files | [sync-storage.md](./sync-storage.md) |
+| R2 rollback + usage postmortem | Why the image redesign was removed; Cloudflare quota incident, retained safeguards, recovery runbook, and future R2 rules | [r2-rollback-cloudflare-usage.md](./r2-rollback-cloudflare-usage.md) |
 | Auth + library | Clerk Google sign-in; cloud-only Recents / Library / Assets; scratch boards expire in 24h | [auth-libraries.md](./auth-libraries.md) |
 | Share codes | Permanent `1A2B3C4D` codes in KV (legacy `1A2B` still joins); Copy Code / Copy Link; hub join. Share-code joiners land as **Editor**. UUID-only stays **Viewer**. Group Edit Off = Editors view-only | [share-codes.md](./share-codes.md) |
 | People + permissions | Owner / Manager / Editor / Viewer; Follow (eyes, pan to unfollow); Follow User (camera locked). **Group Edit** is a live draw gate. UUID-only stays **Viewer** | [people-permissions.md](./people-permissions.md) |
