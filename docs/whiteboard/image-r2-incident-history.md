@@ -1,8 +1,12 @@
 # Whiteboard image R2 incident history (handoff)
 
-**Purpose:** hand this file to another engineer or coding agent. Production is still broken: after **`f74692b`** (Worker **`4bb3d26f-f7f9-4f90-9985-3d073973db88`**), creating or loading a board stays on the green **Connecting…** toast. Durable Object / KV daily limits had already reset (next UTC day, 2026-08-27). Do not re-investigate myths listed in §7. Open DevTools WebSocket frames first (§5, §8).
+**Purpose:** hand this file to another engineer or coding agent. Production is **still broken**. As of **`a1e9489`** (deployed and live, 2026-08-27 ~14:30 UTC), opening a pre-existing ("old") board still stays on the green **Connecting…** toast.
 
-**HEAD:** `f74692b` (`fix(whiteboard): stop hello hang and idle KV/DO write spam`, 2026-08-27). This file is uncommitted documentation only — no git commit, push, or deploy was requested with it.
+> **Read §9 before anything else.** §9 documents a large four-phase change (`a1e9489`) that was supposed to make this hang architecturally impossible and did not. It lists exactly what was changed, what was actually verified, what was *not* verified, and the ranked hypotheses for why the hang survived. Several "Do not" rules in §8 were **deliberately reversed** in `a1e9489`; §9.6 lists the corrections. Following §8 blindly will send you backwards.
+
+**HEAD:** `a1e9489` (`fix(whiteboard): make images durable by removing the scene/R2 gate`, 2026-08-27), committed and pushed to `main`; Workers Builds `6086c3a7-0f37-413b-98ec-69a5c8fa1d32` succeeded and deployed it. Previous HEAD was `f74692b`.
+
+**Do not re-investigate** myths listed in §7. Open DevTools WebSocket frames first (§5, §9.5).
 
 **Who wrote which code**
 
@@ -239,14 +243,132 @@ Do not reopen these as the Connecting cause or as the live image path:
 6. If **never OPEN**: quota/constructor — `wrangler tail`, Cloudflare DO metrics for **today’s** UTC day. Do not use yesterday’s 90% email.
 7. Only after the board greets: drop a PNG, leave/re-enter. Image path should still be paint → PUT 201 → default-deny flush → persist. Saving only while bytes in flight.
 
+> **§8 is superseded in places by §9.** It was written at `f74692b`, before the `a1e9489` surgery. The two struck-through rules below were reversed on purpose; see §9.6.
+
 **Do not**
 
-- Weaken `validateNewImageAssetReferences` / `asset_not_ready`.
+- ~~Weaken `validateNewImageAssetReferences` / `asset_not_ready`.~~ **REVERSED at `a1e9489`** — both are deleted on purpose (§9.6). Do not restore the gate.
 - Reintroduce writer `scene:sync` echo (`exceptSessionId = null` on full sync) or `flushNow(true)` on every hydrate.
 - KV PUT on every `GET /meta` or rewrite `ensureShareCode` to always `put`.
-- Treat Clerk `Authorization` as canvas PUT proof.
+- ~~Treat Clerk `Authorization` as canvas PUT proof.~~ **REVERSED at `a1e9489`** — a Clerk JWT now authorizes board-scoped asset PUTs (§9.6). Still true for the `hasBoardWriteProof` header helper only.
 - Restore the `2a612f7` owner-key dual-write.
 - Stage the `File` inside `generateIdForFile` (`0cfc5c2` insert-before-paint).
 - Commit, push, or deploy unless the human asks.
 
 **If Connecting is actually fixed in frames but the user still sees the toast:** `helloReceived` not flipping — `whiteboard-excalidraw-roles.ts` `wb:hello` handler vs a second canvas instance. That is (f), not echo and not R2.
+
+---
+
+## 9. Round 4 — the four-phase surgery at `a1e9489`, and why it did not fix Connecting
+
+**Status: FAILED for the reported symptom.** The user's first test after deploy was step 1 of the verification list — open an old board — and it still showed **Connecting…**. Everything below is what was changed and what was proven, so the next agent does not repeat it.
+
+This round was run from a written plan, `docs/whiteboard/image-r2-fix-plan.md`, which is committed alongside the code. **Read that plan** — it contains the full diagnosis, the per-phase specs, and (in §5.1b, §5.1c, §6.3a, §6.3b) the review findings and accepted limitations. This section is the summary and the post-mortem.
+
+### 9.1 The diagnosis the round was built on
+
+Three causes were identified, and the plan treated only the first as the hang:
+
+- **Cause A — the handshake was architecturally *able* to hang.** The DO could resolve a `wb:auth` to "no decision" and then go silent; the client's overlay waited on `wb:hello` forever; Clerk verification collapsed every distinct failure (no token / bad signature / BAPI unreachable / not allowlisted) into a single `null`, so nothing could tell "still loading" from "denied".
+- **Cause B — image durability was a distributed transaction.** The DO refused to persist *any* scene mutation whose new image references were not already in R2 (`validateNewImageAssetReferences` → `asset_not_ready`). That made image bytes a precondition for saving **unrelated** edits, and every band-aid since `72c22b2` was an attempt to satisfy that precondition from the browser.
+- **Cause C — nothing in the loop could fail a bad fix.** No integration tests against real bindings; no way to tell which commit was live.
+
+### 9.2 What was changed (all in `a1e9489`)
+
+Roughly **+2175 / −3300** lines across 46 files, net ~1.1k removed. Four workstreams:
+
+**Phase 0 — observability and one deploy path**
+- Added `GET /api/whiteboard/version` → `{ sha, builtAt }` (`src/worker.ts`, `astro.config.mjs` Vite `define` of `__BUILD_SHA__` / `__BUILD_TIME__`). Verified by dry-run that the substitution reaches the deployed bundle via `.wrangler/deploy/config.json` → `dist/server/entry.mjs`.
+- Removed the `deploy` script from `package.json`; added `preview:upload` (`wrangler versions upload`). Docs (`AGENTS.md`, `DEPLOYMENT.md`, `docs/deployment.md`) now state Workers Builds on `main` is the **only** production deployer. This kills the dual-deploy confusion described in this file's header.
+
+**Phase 1 — "the handshake cannot hang"** (the part that was supposed to fix the reported bug)
+- `src/worker/clerkAuth.ts`: added `ClerkVerifyResult` / `verifyClerkWhiteboardTokenResult` so failures are discriminated (`no_token` / `token_invalid` / `clerk_unreachable` / `account_not_allowed`). **An empty Clerk email is no longer an allowlist denial**; such identities are marked `profileDegraded` and may not claim or write cloud ownership. `requireClerkWhiteboardAuth` returns 503 for degraded identities.
+- `src/worker/WhiteboardBoard.ts`: `SocketAttachment` gained `roleResolved` and `connectedAt`. `wb:hello` is sent at connect with `roleResolved: false` instead of waiting for auth. Non-auth frames are no longer silently dropped while auth is pending: ping / `scene:request` / follow are always handled, and `scene:update` while unresolved gets `wb:error` code `role_unresolved`. **Every** `wb:auth` now gets a `wb:authResult` carrying a typed reason. Late tokens upgrade the role via `wb:role`. A 15 s role-resolve deadline is checked on demand.
+- `src/components/WhiteboardCanvas.tsx`: the Connecting overlay condition became `!socketConnected || !roles.helloReceived`; added a non-blocking "Checking your access…" strip and an `authoritativeCanEdit` (`roleResolved && canEdit`) used at every write site; auth retry stays armed while unresolved and refetches a fresh JWT.
+- Asset writes stopped depending on the socket: `waitForBoardWriteProof` was removed from the image/video upload paths and a Clerk Bearer JWT can authorize a board-scoped asset PUT (`src/worker/assetRoutes.ts`).
+
+**Phase 2 — image path restructure** (Cause B)
+- Image file ids are now the **SHA-256 hex of the bytes** (`generateWhiteboardImageFileId`, `generateWhiteboardFileId`), so PUT is idempotent, the same image dedupes, and the Worker verifies body-against-path (400 on mismatch, 64-hex ids only). Hashing is pure — no staging or upload inside `generateIdForFile` (that was `0cfc5c2`'s insert-before-paint bug).
+- `isAssetFileId` (UUID **or** 64-hex) is used for the *fileId* segment only; `boardId` stays strictly UUID. Without this every content-addressed PUT/GET would have 400'd.
+- Non-range GETs return 200 (the 206 branch is gated on the request carrying a `Range` header; Miniflare populates `object.range` regardless).
+- Asset GET/HEAD go straight to R2; the DO manifest is a best-effort GC index that can no longer orphan bytes or 503 a good upload.
+- **`validateNewImageAssetReferences` and `asset_not_ready` were deleted.** Scene mutations always persist. See §9.6 — this reverses a §8 "Do not".
+- Deleted `whiteboard-scene-publication.ts` wholesale, plus the planner decision table, the staging machine, element snapshots, and scene-ack bookkeeping in `whiteboard-upload-outbox.ts`.
+
+**Phase 3 — tests that can fail** (Cause C)
+- Real-bindings harness: `@cloudflare/vitest-pool-workers` + Miniflare under `tests/worker/`, with its own `wrangler.jsonc` and an `@astrojs/cloudflare/handler` stub.
+- 14 new worker tests: an 11-row handshake matrix (every row asserts `wb:hello` within 5 s **and** exactly one hello per socket), a binding-config drift test (test config must be a superset of root `wrangler.jsonc`), and a reconnect-no-KV-write test.
+- Proven able to fail: commenting out `sendConnectHello` fails all 11 handshake rows; adding a throwaway R2 binding to root `wrangler.jsonc` fails the drift test.
+
+### 9.3 What was actually verified
+
+| Gate | Result |
+|---|---|
+| `npm test` | 99 passed, 0 skipped, 14 files |
+| `npm run build` | exit 0, `[build] Complete!` |
+| `npx tsc --noEmit` excluding `tests/worker/` | **157** (pre-existing baseline was 159) |
+| `WhiteboardBoard.ts` / `assetRoutes.ts` / `clerkAuth.ts` / `whiteboard-sync.ts` | 0 type errors each |
+| Dangling refs to deleted symbols | none (`asset_not_ready`, `planImageFileAction`, `waitForBoardWriteProof`, `acknowledgedImageFileIds`, `markSceneAcknowledged`, `whiteboard-scene-publication`) |
+| Deploy | Workers Builds `6086c3a7` success on `a1e9489` |
+
+Two regressions were caught in review *before* deploy and fixed, both documented in the plan:
+- **Legacy image hydrate (plan §5.1c).** Phase 2 reduced `hydrateImage` to a single board-scoped GET, dropping the owner-key probe. Since `assets/{ownerKey}/{assetId}` is the original key layout, that would have turned every image on every pre-existing board into a permanent placeholder. Restored as `hydrateLegacyOwnerImage`, gated to non-hash ids, and pinned with a test that the legacy route still serves seeded bytes.
+- **Phase 1 self-reported risks (plan §5.1b).** Both chased down and shown benign: the 15 s deadline genuinely cannot fire on a ping (`setWebSocketAutoResponse` at `WhiteboardBoard.ts:544` means Cloudflare answers pings without waking DO JS), and the now-instant hello cannot strand a scratch creator because every `clearHostSecret` site sits behind an `await` on a Clerk-authenticated write that fails closed.
+
+### 9.4 Why the verification did not catch the surviving hang — read this
+
+This is the important part, and it is the same trap as Rounds 1–3.
+
+**Every gate above ran in Node or Miniflare. Nothing exercised production.** Specifically:
+
+1. **No test can produce a Clerk token that verifies.** The test Worker has no Clerk secret or JWKS, and `@clerk/backend` cannot be stubbed from that isolate without editing `src/` or `vitest.config.ts`. So the rows "valid token → correct cloud role", "allowlist rejects a real email", and "valid token then Clerk BAPI times out" are **integration-uncovered** (plan §6.3b). The garbage-token row always resolves to `clerk_unreachable`, never `token_invalid`, because verification fails before signature checking.
+2. **No test uses an *old* board.** Every harness test creates a fresh board id, so the DO has trivial stored state: no large scene, no `meta:activeCode`, no cloud owner, no stored roles, no hibernated sockets, no asset manifest rows. **The reported failure is specific to old boards, and that is exactly the state no test covers.**
+3. **No browser test.** Plan §6.4 (Playwright against a preview URL) was never written. The service worker, Clerk islands, React mount order, and IndexedDB migration are all untested.
+4. The handshake matrix asserts hello arrives *in Miniflare*. It cannot detect a production-only failure to reach the 101.
+
+### 9.5 Ranked hypotheses for the surviving hang
+
+The overlay is `!socketConnected || !roles.helloReceived` (`WhiteboardCanvas.tsx:1545`). **The component clearly mounted, because the toast renders at all** — so this is not a mount crash. The single most valuable fact to obtain is *which of those two flags is false*; it halves the search space. Get that before touching code.
+
+**H1 (strongest) — the 101 is never returned for an old board, so the socket never opens.** In `handleConnect`:
+
+```ts
+await this.sendConnectHello(serverWebSocket, attachment)
+await this.sendFullScene(serverWebSocket)
+return new Response(null, { status: 101, webSocket: clientWebSocket })
+```
+
+`sendConnectHello` awaits four storage reads (`readOwnerHook`, `isSavedToLibrary`, `readBoardTitle`, `readClassCanEdit`) and `sendFullScene` loads the entire persisted scene — **all before the 101 is returned**. If any read throws or stalls, the browser's `WebSocket` never opens, `socketConnected` stays `false`, and the client reconnect loop repeats it forever. An old board has a large scene and populated metadata; a fresh board (every test) has almost none. This fits "old board fails" exactly.
+
+Note the irony and the lesson: Phase 1 moved hello earlier in the *message* order but left it *inside the pre-101 critical path*. It is the same structural mistake as Cause B — fallible work placed ahead of the thing that unblocks the UI.
+
+*Confirm:* DevTools → Network → the `connect/{uuid}` request. If it never reaches **101 Switching Protocols** (stays pending, or fails), H1 is right. `wrangler tail` during the attempt should show a DO exception or a long invocation. *Fix direction:* return the 101 first and send hello/scene after, or make hello depend on nothing that can fail (defaults + a follow-up frame for metadata). Do **not** simply widen a try/catch — an old board silently losing its title/owner is a different bug.
+
+**H2 — stale client JS.** If the browser ran a cached bundle, the old hang behaviour is expected and the whole diagnosis is void. **Rule this out first, it is nearly free:** load `/api/whiteboard/version` and confirm `sha` is `a1e9489`, then hard-reload / unregister the service worker and retest. (Note: a Cloudflare managed challenge fronts the site, so this must be checked in a real browser, not curl.)
+
+**H3 — hello is sent but the client never applies it.** The handler is permissive (`data.type === 'wb:hello'` → `setHelloReceived(true)`, `whiteboard-excalidraw-roles.ts:511-552`), so this requires the frame never reaching `handleSocketMessage` — e.g. two canvas instances, or the message listener wired after the frame arrives. *Confirm:* WS frames show `wb:hello` inbound but the toast persists.
+
+**H4 — old hibernated sockets / attachment-shape skew.** `fetch()` runs `hydrateSockets()` + `restoreFollowAfterWake()` **before routing** (`WhiteboardBoard.ts:976-977`). Old boards may hold hibernated sockets whose attachments predate `roleResolved`/`connectedAt`. `normalizeAttachment` takes a `Partial`, so this *should* be safe, but a throw here fails the upgrade the same way as H1. Also note `listParticipants` / `participantFromSession` now skip sockets with `!roleResolved` (`:2410`, `:2428`), so pre-deploy sockets may be invisible in People.
+
+**H5 — an old board's DO is in a state the constructor rejects.** `blockConcurrencyWhile` runs `migrateExcalidrawSceneTable` + `ASSET_MANIFEST_TABLE_SQL`, and `hasTldrawSqlTables` triggers `clearAllStorage()`. Table SQL and migrations were **not** modified in `a1e9489` (verified by diff) and `CREATE TABLE IF NOT EXISTS` is idempotent, so this is unlikely — but a constructor throw is indistinguishable from H1 at the network layer, so H1's confirm step covers it.
+
+### 9.6 Corrections to §8 — instructions that `a1e9489` deliberately reversed
+
+Two §8 "Do not" rules are now **wrong** and will undo this round if followed:
+
+1. ~~"Weaken `validateNewImageAssetReferences` / `asset_not_ready`."~~ **Both are deleted, on purpose** (plan §5.3). The gate is correct in isolation and catastrophic in combination: it made image bytes a precondition for persisting unrelated edits. Scene mutations must always persist; a missing image renders as a placeholder and resolves on hydrate. **Do not restore the gate.**
+2. ~~"Treat Clerk `Authorization` as canvas PUT proof."~~ A Clerk JWT **is** now accepted for board-scoped asset PUTs (plan §4.4), so uploads no longer wait on the WebSocket handshake. `hasBoardWriteProof` still ignores JWTs for the *header-shaping* helper — that narrower statement is still true.
+
+Still valid from §8: no writer `scene:sync` echo, no KV PUT per `GET /meta`, no `2a612f7` owner-key dual-write, and never stage the `File` inside `generateIdForFile`.
+
+### 9.7 Do not redo these
+
+- **Do not rebuild the test harness.** `tests/worker/` works. Its limitations are catalogued in plan §6.3a.
+- **Do not re-litigate the degraded-Clerk logic.** `tests/whiteboard-auth-resolution.test.ts` covers it with both polarities: a `profileDegraded` identity matches neither a real `google:{sub}` key nor its own `ownerKey`, cannot write `META_CLOUD_OWNER_KEY`, a full profile can, and a non-allowlisted real email is still denied.
+- **Do not move the 15 s deadline to an alarm** to "fix" it not firing on ping (plan §5.1b) — it costs a DO wake per unresolved socket to fix something cosmetic.
+- **Do not delete the legacy owner-key GET route or `hydrateLegacyOwnerImage`** (plan §5.1c). Pre-existing boards' images depend on it.
+- **Do not re-add the 8 s meta poll work.** Killing it (plan §5.7) was deliberately deferred to Phase 4; the poll still runs today and is a quota concern, not a correctness one.
+
+### 9.8 The meta-lesson
+
+Three rounds now have shipped a green test suite and a broken board. The gap is always the same: **the tests model the codebase, not the deployment.** The highest-value next investment is not another refactor — it is one Playwright smoke test against a real preview URL with real Clerk, opening a *pre-existing* board with images, because that is the exact combination that has never once been exercised automatically. Everything in §9.4 explains why 99 passing tests said nothing about the reported symptom.
