@@ -27,6 +27,7 @@ import {
 	isWhiteboardRole,
 	isGuestConnectUserId,
 	mergeSceneElements,
+	newImageFileIds,
 	parseDatabaseScene,
 	parseSceneElements,
 	parseStoredSceneElements,
@@ -1655,29 +1656,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		existing: SceneElement[],
 		accepted: SceneElement[],
 	): Promise<void> {
-		const existingById = new Map(existing.map((element) => [element.id, element]))
-		const fileIds = new Set<string>()
-		for (const element of accepted) {
-			if (
-				element.isDeleted ||
-				element.type !== 'image' ||
-				typeof element.fileId !== 'string' ||
-				!element.fileId
-			) {
-				continue
-			}
-			const previous = existingById.get(element.id)
-			const previousFileId =
-				previous &&
-				!previous.isDeleted &&
-				previous.type === 'image' &&
-				typeof previous.fileId === 'string'
-					? previous.fileId
-					: null
-			if (previousFileId !== element.fileId) fileIds.add(element.fileId)
-		}
-
-		for (const fileId of fileIds) {
+		for (const fileId of newImageFileIds(existing, accepted)) {
 			if (!(await this.getBoardAssetManifest({ fileId }))) {
 				throw sceneAssetNotReadyError()
 			}

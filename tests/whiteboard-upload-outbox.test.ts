@@ -5,6 +5,7 @@ import {
 	WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE,
 	WHITEBOARD_UPLOAD_OUTBOX_STORE,
 	WHITEBOARD_UPLOAD_OUTBOX_VERSION,
+	WhiteboardUploadFailureError,
 	WhiteboardUploadOutbox,
 	type WhiteboardUploadAdapter,
 	type WhiteboardUploadElementSnapshot,
@@ -533,5 +534,143 @@ describe('WhiteboardUploadOutbox', () => {
 		})
 		expect(currentAcknowledgement).toEqual(['image-newer-scene'])
 		expect(outbox.getJob('image-newer-scene')).toBeNull()
+	})
+
+	it('resolves waitForUpload once the job is uploaded', async () => {
+		const boardId = nextBoardId()
+		const fileId = 'image-wait-uploaded'
+		const outbox = createOutbox(boardId, vi.fn(async () => undefined))
+
+		await outbox.stage({
+			boardId,
+			fileId,
+			blob: new Blob(['ok'], { type: 'image/png' }),
+			mimeType: 'image/png',
+		})
+		const job = await outbox.waitForUpload(fileId)
+
+		expect(job.state).toBe('uploaded')
+		expect(job.fileId).toBe(fileId)
+	})
+
+	it('rejects waitForUpload on auth-blocked 401 without hanging', async () => {
+		const boardId = nextBoardId()
+		const fileId = 'image-wait-401'
+		const outbox = createOutbox(
+			boardId,
+			vi.fn(async () => {
+				throw httpError(401)
+			}),
+		)
+
+		await outbox.stage({
+			boardId,
+			fileId,
+			blob: new Blob(['auth'], { type: 'image/png' }),
+			mimeType: 'image/png',
+		})
+		const rejection = await outbox.waitForUpload(fileId).then(
+			() => {
+				throw new Error('waitForUpload should have rejected')
+			},
+			(error) => error,
+		)
+
+		expect(rejection).toBeInstanceOf(WhiteboardUploadFailureError)
+		expect(rejection).toMatchObject({
+			state: 'auth-blocked',
+			kind: 'auth',
+			status: 401,
+		})
+		expect(outbox.getJob(fileId)?.state).toBe('auth-blocked')
+	})
+
+	it('rejects waitForUpload on failed 503 while leaving the job retryable', async () => {
+		const boardId = nextBoardId()
+		const fileId = 'image-wait-503'
+		const outbox = createOutbox(
+			boardId,
+			vi.fn(async () => {
+				throw httpError(503)
+			}),
+		)
+
+		await outbox.stage({
+			boardId,
+			fileId,
+			blob: new Blob(['retry later'], { type: 'image/png' }),
+			mimeType: 'image/png',
+		})
+		const rejection = await outbox.waitForUpload(fileId).then(
+			() => {
+				throw new Error('waitForUpload should have rejected')
+			},
+			(error) => error,
+		)
+
+		expect(rejection).toBeInstanceOf(WhiteboardUploadFailureError)
+		expect(rejection).toMatchObject({
+			state: 'failed',
+			kind: 'server',
+			status: 503,
+		})
+		const job = outbox.getJob(fileId)
+		expect(job?.state).toBe('failed')
+		expect(job?.nextAttemptAt).toBeGreaterThan(job?.updatedAt ?? 0)
+	})
+
+	it('rejects waitForUpload on permanent-failure', async () => {
+		const boardId = nextBoardId()
+		const fileId = 'image-wait-413'
+		const outbox = createOutbox(
+			boardId,
+			vi.fn(async () => {
+				throw httpError(413)
+			}),
+		)
+
+		await outbox.stage({
+			boardId,
+			fileId,
+			blob: new Blob(['too large'], { type: 'image/png' }),
+			mimeType: 'image/png',
+		})
+		await expect(outbox.waitForUpload(fileId)).rejects.toMatchObject({
+			state: 'permanent-failure',
+			kind: 'size',
+			status: 413,
+		})
+		expect(outbox.getJob(fileId)?.nextAttemptAt).toBeUndefined()
+	})
+
+	it('rejects waitForUpload when the job is missing', async () => {
+		const boardId = nextBoardId()
+		const outbox = createOutbox(boardId, vi.fn(async () => undefined))
+		await outbox.ready
+
+		await expect(outbox.waitForUpload('missing-file')).rejects.toThrow(
+			'Upload job was removed.',
+		)
+	})
+
+	it('rejects waitForUpload after a last-resort timeout while still uploading', async () => {
+		const boardId = nextBoardId()
+		const fileId = 'image-wait-timeout'
+		const outbox = createOutbox(
+			boardId,
+			vi.fn(() => new Promise<void>(() => undefined)),
+		)
+
+		await outbox.stage({
+			boardId,
+			fileId,
+			blob: new Blob(['hang'], { type: 'image/png' }),
+			mimeType: 'image/png',
+		})
+		await waitForJob(outbox, fileId, (job) => job?.state === 'uploading')
+		await expect(outbox.waitForUpload(fileId, 20)).rejects.toMatchObject({
+			status: 408,
+		})
+		expect(outbox.getJob(fileId)?.state).toBe('uploading')
 	})
 })

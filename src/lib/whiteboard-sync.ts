@@ -323,6 +323,36 @@ export function mergeSceneElements(
 	return { next: [...map.values()], accepted }
 }
 
+export function newImageFileIds(
+	existing: readonly SceneElement[],
+	accepted: readonly SceneElement[],
+): Set<string> {
+	const existingById = new Map(
+		existing.map((element) => [element.id, element]),
+	)
+	const fileIds = new Set<string>()
+	for (const element of accepted) {
+		if (
+			element.isDeleted ||
+			element.type !== 'image' ||
+			typeof element.fileId !== 'string' ||
+			!element.fileId
+		) {
+			continue
+		}
+		const previous = existingById.get(element.id)
+		const previousFileId =
+			previous &&
+			!previous.isDeleted &&
+			previous.type === 'image' &&
+			typeof previous.fileId === 'string'
+				? previous.fileId
+				: null
+		if (previousFileId !== element.fileId) fileIds.add(element.fileId)
+	}
+	return fileIds
+}
+
 export function elementsWithIncreasedVersion(
 	elements: readonly SceneElement[],
 	lastSeen: Map<string, number>,

@@ -25,6 +25,10 @@ import {
 	isBoardUuid,
 	readBoardIdFromPath,
 } from '../scripts/whiteboard-library'
+import {
+	boardWriteProofRequiredError,
+	headersHaveBoardWriteProof,
+} from './whiteboard-board-write-proof'
 import { getBoardSessionAuth } from './whiteboard-participants'
 import {
 	WHITEBOARD_PREVIEW_KIND,
@@ -388,8 +392,12 @@ async function assetWriteHeaders(
 	return headers
 }
 
-/** Auth/proof headers for the board-scoped PUT contract. */
-async function boardAssetWriteHeaders(
+/**
+ * Auth/proof headers for the board-scoped PUT contract.
+ * Clerk `Authorization` may be attached when present; it is not sufficient
+ * alone. Throws 401 without `X-Board-Host` or a live session pair.
+ */
+export async function boardAssetWriteHeaders(
 	boardId: string,
 ): Promise<Record<string, string>> {
 	const headers: Record<string, string> = {
@@ -402,6 +410,9 @@ async function boardAssetWriteHeaders(
 	if (sessionAuth) {
 		headers['X-Board-Session'] = sessionAuth.sessionId
 		headers['X-Board-Auth'] = sessionAuth.authToken
+	}
+	if (!headersHaveBoardWriteProof(headers)) {
+		throw boardWriteProofRequiredError()
 	}
 	return headers
 }
@@ -484,12 +495,13 @@ export async function uploadBoardAssetBytes(
 		new File([opts.bytes], opts.fileId, { type: opts.mimeType }),
 	)
 	const mimeType = (opts.mimeType || '').split(';')[0].trim().toLowerCase()
+	const headers = {
+		'Content-Type': mimeType,
+		...(await boardAssetWriteHeaders(opts.boardId)),
+	}
 	const res = await fetch(boardAssetResolveUrl(opts.boardId, opts.fileId), {
 		method: 'PUT',
-		headers: {
-			'Content-Type': mimeType,
-			...(await boardAssetWriteHeaders(opts.boardId)),
-		},
+		headers,
 		body: opts.bytes,
 	})
 	if (!res.ok) {

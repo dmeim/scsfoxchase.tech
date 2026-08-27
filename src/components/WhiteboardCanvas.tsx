@@ -34,6 +34,12 @@ import {
   type SceneAppState,
   type SceneElement,
 } from '../lib/whiteboard-sync'
+import {
+  cloneSceneElementsForFlush,
+  collectAcknowledgedImageFileIds,
+  filterFlushableSceneElements,
+} from '../lib/whiteboard-scene-publication'
+import { shouldRestoreRecoveredImage } from '../lib/whiteboard-file-sync-plan'
 import type {
   WhiteboardUploadElementSnapshot,
   WhiteboardUploadJob,
@@ -279,6 +285,14 @@ export default function WhiteboardCanvas({
   const uploadSavedTimerRef = useRef<number | null>(null)
   const recoveredFileIdsRef = useRef(new Set<string>())
   const recoveryInFlightRef = useRef(false)
+  const acknowledgedImageFileIdsRef = useRef(new Set<string>())
+  const acknowledgedBoardIdRef = useRef(boardId)
+
+  useEffect(() => {
+    if (acknowledgedBoardIdRef.current === boardId) return
+    acknowledgedBoardIdRef.current = boardId
+    acknowledgedImageFileIdsRef.current.clear()
+  }, [boardId])
 
   // PHASE 3.3
   const roles = useWhiteboardExcalidrawRoles({ boardId, apiRef, wsRef })
@@ -445,6 +459,23 @@ export default function WhiteboardCanvas({
         if (isServerScene || sceneHydratedRef.current) {
           sceneHydratedRef.current = true
         }
+        if (isServerScene) {
+          const fromServer = collectAcknowledgedImageFileIds(remoteElements)
+          const fromLive = collectAcknowledgedImageFileIds(
+            api.getSceneElementsIncludingDeleted() as unknown as SceneElement[],
+          )
+          for (const fileId of fromServer) {
+            acknowledgedImageFileIdsRef.current.add(fileId)
+          }
+          // Intersect live canvas fileIds with the server scene so a remount
+          // re-hydrates persisted images without acknowledging unpublished
+          // local drops.
+          for (const fileId of fromLive) {
+            if (fromServer.has(fileId)) {
+              acknowledgedImageFileIdsRef.current.add(fileId)
+            }
+          }
+        }
         setUploadOverlayRevision((revision) => revision + 1)
       } finally {
         queueMicrotask(() => {
@@ -504,10 +535,11 @@ export default function WhiteboardCanvas({
       for (const job of uploadSnapshotRef.current.jobs) {
         if (!recoveryFileIds.has(job.fileId)) continue
         if (recoveredFileIdsRef.current.has(job.fileId)) continue
-        if (existingFiles[job.fileId]) {
+        if (existingFiles[job.fileId]?.dataURL) {
           recoveredFileIdsRef.current.add(job.fileId)
           continue
         }
+        if (!job.blob) continue
         try {
           filesToAdd.push({
             id: job.fileId as Parameters<typeof api.addFiles>[0][number]['id'],
@@ -515,19 +547,45 @@ export default function WhiteboardCanvas({
             dataURL: (await blobToDataURL(job.blob)) as Parameters<typeof api.addFiles>[0][number]['dataURL'],
             created: job.createdAt,
           })
-          recoveredFileIdsRef.current.add(job.fileId)
         } catch {
-          // Keep the durable Blob for a later recovery attempt.
+          // Keep the durable Blob for a later recovery attempt. Do not toast.
         }
       }
       if (filesToAdd.length > 0) api.addFiles(filesToAdd)
-      if (liveRecovery.size > 0) {
-        for (const [elementId, element] of liveRecovery) {
+
+      const filesNow = api.getFiles()
+      for (const added of filesToAdd) {
+        if (filesNow[added.id]?.dataURL) {
+          recoveredFileIdsRef.current.add(added.id)
+        }
+      }
+      const restored = new Map<string, OrderedExcalidrawElement>()
+      for (const [elementId, element] of liveRecovery) {
+        if (element.type !== 'image') continue
+        const fileId =
+          typeof element.fileId === 'string' ? element.fileId : ''
+        if (!fileId) continue
+        const job = uploadSnapshotRef.current.jobs.find(
+          (candidate) => candidate.fileId === fileId,
+        )
+        const file = filesNow[fileId]
+        if (
+          !shouldRestoreRecoveredImage({
+            hasLocalDataURL: Boolean(file?.dataURL),
+            hasBlob: Boolean(job?.blob),
+            conversionOk: Boolean(file?.dataURL),
+          })
+        ) {
+          continue
+        }
+        restored.set(elementId, element)
+      }
+      if (restored.size > 0) {
+        for (const [elementId, element] of restored) {
           byId.set(elementId, element)
         }
-        const next = [...byId.values()]
         api.updateScene({
-          elements: next,
+          elements: [...byId.values()],
           captureUpdate: CaptureUpdateAction.NEVER,
         })
       }
@@ -592,40 +650,25 @@ export default function WhiteboardCanvas({
       if (!sceneHydratedRef.current) return false
       if (!socketSceneHydratedRef.current) return false
 
-      // The outbox is the source of truth for publication safety. Uploaded
-      // jobs may be sent once for their scene acknowledgement; all other
-      // durable pending/failed references stay out of both payload paths.
+      // Default-deny: clone, then keep images only if uploaded or already
+      // acknowledged on the server. Unknown fileIds never ride a full resync.
       const uploadSnapshot = uploadSnapshotRef.current
       if (!uploadSnapshot.ready) return false
       if (uploadSnapshot.storageError) return false
-      const pendingFileIds = new Set(uploadSnapshot.pendingFileIds)
-      const pendingElementIds = new Set(uploadSnapshot.pendingElementIds)
       const uploadedFileIds = new Set(
         uploadSnapshot.jobs
           .filter((job) => job.state === 'uploaded')
           .map((job) => job.fileId),
       )
-      const blockedFileIds = new Set(
-        [...pendingFileIds].filter((fileId) => !uploadedFileIds.has(fileId)),
+      const publicationElements = filterFlushableSceneElements(
+        cloneSceneElementsForFlush(elements as unknown as SceneElement[]),
+        {
+          uploadedFileIds,
+          acknowledgedImageFileIds: acknowledgedImageFileIdsRef.current,
+        },
       )
-      const blockedElementIds = new Set(
-        [...pendingElementIds].filter((elementId) =>
-          uploadSnapshot.jobs.some(
-            (job) =>
-              job.state !== 'uploaded' &&
-              job.latestElementSnapshots.some(
-                (snapshot) => snapshot.elementId === elementId,
-              ),
-          ),
-        ),
-      )
-      const publicationElements = elements.filter((element) => {
-        if (element.isDeleted || element.type !== 'image') return true
-        const fileId = typeof element.fileId === 'string' ? element.fileId : ''
-        return !blockedFileIds.has(fileId) && !blockedElementIds.has(element.id)
-      })
       const version = getSceneVersion(elements)
-      const asScene = publicationElements as unknown as SceneElement[]
+      const asScene = publicationElements
       const dirty = elementsWithIncreasedVersion(
         asScene,
         acknowledgedElementVersionsRef.current,
@@ -667,7 +710,7 @@ export default function WhiteboardCanvas({
       let databaseJson: string | undefined
       try {
         databaseJson = serializeAsJSON(
-          publicationElements,
+          publicationElements as unknown as OrderedExcalidrawElement[],
           { ...appState, viewModeEnabled: false },
           {},
           'database',
@@ -690,8 +733,12 @@ export default function WhiteboardCanvas({
         inFlightMutationsRef.current.set(mutationId, {
           elements: payload.map((element) => ({ ...element })),
           sceneVersion: version,
-          fileIds: sceneImageFileIds(payload),
-          deletedFileIds: sceneImageTombstoneFileIds(payload),
+          fileIds: sceneImageFileIds(
+            payload as unknown as OrderedExcalidrawElement[],
+          ),
+          deletedFileIds: sceneImageTombstoneFileIds(
+            payload as unknown as OrderedExcalidrawElement[],
+          ),
         })
       } catch {
         return false
@@ -769,7 +816,7 @@ export default function WhiteboardCanvas({
       const api = apiRef.current
       if (!api || !canEditRef.current || !sceneHydratedRef.current) return
       // Requeue the current scene. Asset-not-ready errors remain blocked by
-      // the outbox until the durable upload reaches R2, then the upload-state
+      // default-deny until the durable upload reaches R2, then the upload-state
       // effect calls forceSendReadyUploads(). Other persistence failures get
       // one normal retry without waiting for a reconnect.
       pendingFlushRef.current = {
@@ -840,6 +887,12 @@ export default function WhiteboardCanvas({
     const acknowledgedUploadIds = acknowledgedFileIds.filter((fileId) =>
       uploadSnapshotRef.current.jobs.some((job) => job.fileId === fileId),
     )
+    for (const fileId of mutation.fileIds) {
+      if (fileId) acknowledgedImageFileIdsRef.current.add(fileId)
+    }
+    for (const fileId of mutation.deletedFileIds) {
+      if (fileId) acknowledgedImageFileIdsRef.current.add(fileId)
+    }
     if (acknowledgedUploadIds.length > 0) {
       const savedUntil = Date.now() + 1500
       setUploadSavedUntil(savedUntil)
@@ -963,8 +1016,8 @@ export default function WhiteboardCanvas({
         sceneVersion,
         sceneState: uploadSceneState(appState),
       })
-      // syncFiles marks newly observed Data URLs synchronously. Refresh this
-      // render-independent view before the same onChange can be flushed.
+      // syncFiles stages local bytes independently of this flush. Default-deny
+      // publication still omits images until they are uploaded or acknowledged.
       uploadSnapshotRef.current = media.uploadOutbox.outbox.getSnapshot()
       updatePendingSnapshotsForScene(elements, appState)
       setUploadOverlayRevision((revision) => revision + 1)
@@ -972,9 +1025,16 @@ export default function WhiteboardCanvas({
       if (!canEditRef.current) return
       // Nothing this instance holds is trustworthy until a server scene lands.
       if (!sceneHydratedRef.current) return
-      pendingFlushRef.current = { elements, appState }
+      pendingFlushRef.current = {
+        elements: cloneSceneElementsForFlush(
+          elements as unknown as SceneElement[],
+        ) as unknown as OrderedExcalidrawElement[],
+        appState,
+      }
       schedulePreviewCapture()
-      if (flushTimerRef.current != null) return
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current)
+      }
       flushTimerRef.current = window.setTimeout(() => {
         flushTimerRef.current = null
         flushPending()
@@ -991,8 +1051,8 @@ export default function WhiteboardCanvas({
 
   useEffect(() => {
     const persist = () => {
-      // pagehide cannot await conversion or IndexedDB. The synchronous
-      // staging guard makes flushNow refuse any not-yet-durable image.
+      // pagehide cannot await conversion or IndexedDB. Default-deny omits
+      // images that are not uploaded or already on the server.
       flushNowRef.current(true)
       uploadCachedPreviewRef.current(true)
     }
@@ -1276,7 +1336,9 @@ export default function WhiteboardCanvas({
               getSceneVersion(elements) > acknowledgedSceneVersionRef.current
             ) {
               pendingFlushRef.current = {
-                elements,
+                elements: cloneSceneElementsForFlush(
+                  elements as unknown as SceneElement[],
+                ) as unknown as OrderedExcalidrawElement[],
                 appState: api.getAppState(),
               }
             }
@@ -1461,6 +1523,10 @@ export default function WhiteboardCanvas({
       inFlightMutationsRef.current.clear()
       acknowledgedSceneVersionRef.current = 0
       acknowledgedElementVersionsRef.current.clear()
+      // Keep acknowledged image fileIds across canEdit remounts on the same
+      // board. Clearing them here would default-deny already-persisted images
+      // from the next full scene:update until a later scene:sync rebuilds the
+      // set. A boardId change still resets the set.
       recoveredFileIdsRef.current.clear()
       if (flushTimerRef.current != null) {
         window.clearTimeout(flushTimerRef.current)

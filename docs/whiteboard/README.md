@@ -82,7 +82,7 @@ flowchart LR
 | `src/scripts/whiteboard-hub.ts` | Hub create / join / lists |
 | `src/scripts/whiteboard-menu.ts` | Manage panel behavior |
 | `src/scripts/whiteboard-library.ts` | Cloud library, scratch host secret, join parsing |
-| `src/lib/whiteboard-*.ts` | Sync protocol, assets, codes, cloud client, identity, People |
+| `src/lib/whiteboard-*.ts` | Sync protocol, scene publication filter, file-sync plan, upload outbox, board write proof, assets, codes, cloud client, identity, People |
 | `scripts/copy-excalidraw-fonts.mjs` | Self-host Excalidraw fonts |
 | `wrangler.jsonc` | DO / R2 / KV bindings |
 

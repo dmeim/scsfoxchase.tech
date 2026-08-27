@@ -15,11 +15,15 @@ Do not use `excalidraw-room`, Firebase, `oss-collab`, Liveblocks, or Yjs for thi
 `src/components/WhiteboardCanvas.tsx` + `src/lib/whiteboard-sync.ts`:
 
 1. `buildWhiteboardConnectUrl` → `/api/whiteboard/connect/{uuid}?sessionId=…`
-2. On change, debounce ~1s (`SCENE_FLUSH_MS`), send `scene:update` with elements whose `version` increased; periodically send a full set. Each flush includes `databaseJson` from `serializeAsJSON(elements, appState, {}, "database")` (`files: {}`).
+2. On change, clone the scene, reset a trailing ~1s debounce (`SCENE_FLUSH_MS`), and send `scene:update` with elements whose `version` increased; periodically send a full set. Each flush includes `databaseJson` from `serializeAsJSON(elements, appState, {}, "database")` (`files: {}`).
 3. Incoming `scene:sync` / `scene:update`: `restoreElements` + `reconcileElements`, then `updateScene({ captureUpdate: NEVER })`. Incoming `wb:error` shows an Excalidraw toast; that change was not stored.
 4. Client ping every 25s (`{"type":"ping"}`); DO auto-responds `pong` without waking JS.
 
-`media.syncFiles` starts the current client image-upload path. It synchronously stages a newly observed Data URL before the asynchronous Blob conversion, keeps the image out of scene publication until the outbox upload is ready, and requeues a rejected scene mutation by its `mutationId`. The server-side invariant below remains authoritative.
+Image insert is **local-first**. `generateIdForFile` assigns a UUID, calls `beginStaging`, and `outbox.stage`s the original `File` **without waiting for PUT**. Empty Chromebook/iPad `file.type` infers MIME from the filename or defaults to `image/png`; bmp/avif/heic still 415 and are not staged. Excalidraw can paint the image immediately. Scene publication is **default-deny** (`src/lib/whiteboard-scene-publication.ts`): after clone, `filterFlushableSceneElements` keeps an image when its `fileId` is in `uploadedFileIds` (outbox `state === 'uploaded'`) or `acknowledgedImageFileIds` (union of `scene:sync` image file ids and this tab's `scene:ack` mutation file ids). Bytes ready (uploaded or already on the server) is enough even if Excalidraw `status` is still `pending`. `status` `error` is never flushed. Unknown images never ride a full resync (the 30s timer and `% 15 === 0` path use the same filter). Deleted image tombstones are always included. Missing status is treated as saved.
+
+Hydrate (GET existing R2 bytes into Excalidraw `BinaryFiles`) is **not** upload (PUT). A hydrate in flight cannot suppress a later upload when local bytes appear. Canvas asset PUT requires board **write proof**: scratch `X-Board-Host` or a live `X-Board-Session` + `X-Board-Auth` pair. Clerk `Authorization` is never sufficient. `waitForBoardWriteProof` timeout is 401/auth-blocked, not a permanent failure.
+
+A rejected mutation is requeued by `mutationId`. `asset_not_ready` stays fail-closed on the Durable Object; the client calls `forceSendReadyUploads` (same default-deny filter) after PUT 201. The server-side invariant below remains authoritative.
 
 Connect URL query params:
 
@@ -133,7 +137,7 @@ If manifest registration fails after the R2 write, the Worker best-effort delete
 
 `WhiteboardBoard.applySceneUpdate` checks each newly referenced image file id against the board manifest **after element merge and before `persistScene`**. If the row is missing or not `ready`, it raises `asset_not_ready`; the DO sends `wb:error` to the writer and editing sessions and does not persist or broadcast that scene update. Successful scene persistence happens before the corresponding scene broadcast.
 
-The invariant is enforced on both sides. `WhiteboardCanvas` blocks the image synchronously while DataURL conversion and outbox staging are in flight, filters other scene payloads around it, and resends the current mutation after a correlated `asset_not_ready` error once the upload reaches R2. The DO remains fail-closed if a client races or bypasses that guard.
+The invariant is enforced on both sides. The canvas clones the live scene, then default-denies image elements that are not yet uploaded and not already present on the server. `status` `pending` plus an uploaded or acknowledged `fileId` is flushable; `status` `error` is not. Trailing `SCENE_FLUSH_MS` debounce resets on every local change so a leftover timer cannot flush a later `fileId`. `forceSendReadyUploads` is the no-`onChange` publish path after PUT 201 and uses the same filter. Recovery converts outbox blobs with `addFiles` **before** any `updateScene`, and restores an image element only when `getFiles()[fileId]` has a real `dataURL`. Missing blobs and failed conversions skip element restore, keep the job, and do not mark the file so hydrate is skipped. An uploaded job without local bytes still hydrates via GET. The DO remains fail-closed if a client races or bypasses that guard.
 
 ### Scene acknowledgements
 
@@ -156,7 +160,7 @@ The original namespace remains for existing scene links and older uploads:
 
 The legacy route still streams public GET/HEAD results. Account-global `google:` PUT/DELETE operations without board context require the matching Clerk account. A legacy canvas PUT with a valid `X-Board-Id` instead requires live host/editor proof; for `google:` keys the Worker also reveals the stored board owner through that verified board session and requires an exact owner-key match. `temp:` writes require board host proof or a live can-edit session; `local:` PUT/DELETE is rejected. The legacy GET resolver can try a board hint's `temp:` key and the requested owner key so old links continue to work. The board-scoped route itself never performs this fallback; `whiteboard-excalidraw-files.ts` tries it explicitly after a board-scoped image read misses.
 
-During the legacy-client compatibility window, a non-preview legacy canvas PUT carrying a valid board id is mirrored synchronously to `boards/{boardId}/assets/{fileId}` and registered in the board manifest. The Worker returns the unchanged legacy `201` response only after the legacy object, canonical object, and ready manifest all exist; mirror or manifest failure returns `503` and triggers best-effort cleanup of objects newly created by that request. Preview and owner-library uploads are not mirrored. This temporary duplicate storage can be removed after legacy clients have aged out.
+During the leftover-only compatibility window from `2a612f7`, a non-preview **legacy** canvas PUT (`/api/whiteboard/assets/{ownerKey}/{assetId}`) that still carries a valid board id is mirrored synchronously to `boards/{boardId}/assets/{fileId}` and registered in the board manifest. New canvas images do **not** use that owner-key PUT; they go only to the board-scoped route. The Worker returns the unchanged legacy `201` response only after the legacy object, canonical object, and ready manifest all exist; mirror or manifest failure returns `503` and triggers best-effort cleanup of objects newly created by that request. Preview and owner-library uploads are not mirrored. This duplicate storage is leftover for old clients and can be removed after they have aged out.
 
 Current canvas behavior is split by media type: image/GIF files found in Excalidraw `BinaryFiles` use the board-scoped outbox path, and MP4/WebM drag-and-drop or paste also uploads through the board-scoped route and stores `/whiteboard-player?board=…&id=…` links. Existing legacy player links remain readable. Save/claim copies legacy `temp:{boardId}` objects to `google:{accountId}` and rewrites those persisted player links. It does not move board-scoped objects.
 
@@ -168,14 +172,17 @@ The player page is `src/pages/whiteboard-player.astro`. Worker responses keep SV
 
 - Database: `scs-whiteboard-upload-outbox`, version `2`.
 - Object stores: `uploads` for metadata and `upload-blobs` for the Blob, both keyed by `[boardId, fileId]`.
+- `generateIdForFile` stages the original `File` into this queue before Excalidraw stamps `fileId` on the element. Publication watches `job.state === 'uploaded'` (PUT 201); it does **not** treat `waitForUpload` as “ready to publish”. `waitForUpload` settles (uploaded resolves; failed / auth-blocked / permanent-failure / missing job reject) so callers cannot hang. A `503` reject is retryable, not permanent.
 - A staged job stores its Blob in `upload-blobs` and metadata (MIME type, latest image-element snapshots, scene version, attempt metadata, and error details) in `uploads` before upload processing begins. Version 1 inline Blobs migrate to the split stores.
 - States are `pending`, `uploading`, `uploaded`, `failed`, `auth-blocked`, and `permanent-failure`.
-- Network errors, `408`/`429`, and `5xx` failures retry. Delays are 1s, 2s, 4s, 8s, 16s, then 30s for later attempts. `401`/`403` wait for auth/board readiness; invalid MIME, oversized bodies, and other permanent client errors do not auto-retry.
+- Canvas PUT uses `boardAssetWriteHeaders` / `waitForBoardWriteProof`: host secret or live session pair. Clerk JWT alone never authorizes the write. `401`/`403` wait for auth/board readiness. Network errors, `408`/`429`, and `5xx` retry (delays 1s, 2s, 4s, 8s, 16s, then 30s). Invalid MIME, oversized bodies, and other permanent client errors do not auto-retry.
 - `online`, window focus, board hello, and auth events wake the queue. A job left `uploading` when a tab dies is reset to `pending` on the next load.
 
-An `uploaded` job stays in IndexedDB until `markSceneAcknowledged` removes it; `removeUpload` is local-only and never issues a remote DELETE. Recovery snapshots are intentionally hidden until `markServerSceneHydrated` so they cannot overwrite a scene that has not loaded from the server.
+An `uploaded` job stays in IndexedDB until `markSceneAcknowledged` removes it; `removeUpload` is local-only and never issues a remote DELETE. Recovery snapshots are hidden until `markServerSceneHydrated` so they cannot overwrite a scene that has not loaded from the server.
 
-The canvas calls `markServerSceneHydrated` after the server scene is applied, `markSceneAcknowledged` after a correlated scene acknowledgement, and restores durable pending image snapshots only after hydration. Local removal is reserved for the explicit failed-upload Remove control and never issues a remote DELETE.
+The canvas calls `markServerSceneHydrated` after the server scene is applied, `markSceneAcknowledged` after a correlated scene acknowledgement (acknowledged image file ids are recorded **before** the job is removed), and restores durable pending image snapshots only after hydration: blobs → `addFiles` first, then `updateScene` only for file ids whose BinaryFiles entry has a `dataURL`. Missing blobs skip element restore, keep the job, and do not toast-loop. Local removal is reserved for the explicit failed-upload Remove control and never issues a remote DELETE.
+
+`syncFiles` / `planImageFileAction` choose upload vs hydrate. An upload already in flight always **skip**s, even before Excalidraw has a dataURL, so a fire-and-forget `stage()` cannot 404-hydrate its own UUID. Local dataURL or an outbox blob and not r2-ready → **upload**, even if hydrate is in flight. No local bytes → **hydrate**, including when the job is already uploaded / r2-ready but BinaryFiles is empty. `r2ReadyFileIds` means PUT 201 or a successful hydrate GET; it does not skip GET when local pixels are missing. Image MIME matches the Worker allowlist: JPEG, PNG, GIF, WebP, SVG. Empty `file.type` infers from the filename or defaults to PNG; bmp/ico/avif/heic/jfif are rejected.
 
 ### Pending and failed upload UI
 
@@ -256,7 +263,11 @@ No `cdn.tldraw.com`. No license-key env var.
 | `src/worker/libraryRoutes.ts` | Cloud boards/assets JSON indexes |
 | `src/components/WhiteboardCanvas.tsx` | WebSocket client + Excalidraw |
 | `src/lib/whiteboard-sync.ts` | Protocol types shared by Worker and island |
-| `src/lib/whiteboard-excalidraw-files.ts` | Image/GIF/video hooks |
+| `src/lib/whiteboard-scene-publication.ts` | Default-deny clone/filter for `scene:update` images |
+| `src/lib/whiteboard-file-sync-plan.ts` | Upload vs hydrate planner + image MIME allowlist |
+| `src/lib/whiteboard-excalidraw-files.ts` | Image/GIF/video hooks, `generateIdForFile`, outbox staging |
+| `src/lib/whiteboard-upload-outbox.ts` | IndexedDB queue; publication watches `state === 'uploaded'` |
+| `src/lib/whiteboard-board-write-proof.ts` | Host/session write proof (Clerk JWT is not enough) |
 | `src/lib/whiteboard-assets.ts` | R2 helpers + temp owner keys |
 | `src/lib/whiteboard-cloud.ts` | Cloud index fetch/upsert/delete + meta claim |
 | `scripts/copy-excalidraw-fonts.mjs` | Font copy for Chromebooks / CSP `'self'` |

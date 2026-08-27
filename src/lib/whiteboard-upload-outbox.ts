@@ -8,6 +8,11 @@
  */
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { uploadBoardAssetBytes } from './whiteboard-assets'
+import {
+	WHITEBOARD_AUTH_EVENT,
+	WHITEBOARD_AUTH_READY_EVENT,
+	WHITEBOARD_HELLO_EVENT,
+} from './whiteboard-board-write-proof'
 
 export const WHITEBOARD_UPLOAD_OUTBOX_DB = 'scs-whiteboard-upload-outbox'
 export const WHITEBOARD_UPLOAD_OUTBOX_STORE = 'uploads'
@@ -184,9 +189,12 @@ type StoredUploadRecord = Omit<StoredUploadJob, 'blob'> & { blob?: Blob }
 type StoredUploadBlob = { boardId: string; fileId: string; blob: Blob }
 type LoadedUploadJob = { job: StoredUploadJob; needsBlobMigration: boolean }
 
-const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
-const AUTH_EVENT = 'scsfoxchase:whiteboard-auth'
-const AUTH_READY_EVENT = 'scsfoxchase:whiteboard-auth-ready'
+const HELLO_EVENT = WHITEBOARD_HELLO_EVENT
+const AUTH_EVENT = WHITEBOARD_AUTH_EVENT
+const AUTH_READY_EVENT = WHITEBOARD_AUTH_READY_EVENT
+
+/** Last-resort waitForUpload timeout so callers cannot hang forever. */
+export const WHITEBOARD_UPLOAD_WAIT_TIMEOUT_MS = 60_000
 
 const pendingStates = new Set<WhiteboardUploadState>(['pending', 'uploading'])
 const failedStates = new Set<WhiteboardUploadState>([
@@ -302,11 +310,17 @@ export class WhiteboardUploadOutboxStorageError extends Error {
 
 export class WhiteboardUploadFailureError extends Error {
 	readonly job: WhiteboardUploadJob
+	readonly status?: number
+	readonly kind?: WhiteboardUploadFailureKind
+	readonly state: WhiteboardUploadState
 
 	constructor(job: WhiteboardUploadJob) {
 		super(job.error?.message || 'Upload failed.')
 		this.name = 'WhiteboardUploadFailureError'
 		this.job = job
+		this.status = job.error?.status
+		this.kind = job.error?.kind
+		this.state = job.state
 	}
 }
 
@@ -818,14 +832,27 @@ export class WhiteboardUploadOutbox {
 		return staged
 	}
 
-	async waitForUpload(fileId: string): Promise<WhiteboardUploadJob> {
+	/**
+	 * Wait until this file's outbox job leaves the in-flight states.
+	 *
+	 * Settles: `uploaded` resolves; `failed`, `auth-blocked`, `permanent-failure`,
+	 * or a missing job reject. `failed` stays retryable — callers must not treat
+	 * that reject as permanent. Canvas/files should watch `job.state === 'uploaded'`
+	 * rather than awaiting this for scene publication.
+	 */
+	async waitForUpload(
+		fileId: string,
+		timeoutMs: number = WHITEBOARD_UPLOAD_WAIT_TIMEOUT_MS,
+	): Promise<WhiteboardUploadJob> {
 		await this.ready
 		const key = keyFor(this.boardId, fileId)
 		return new Promise((resolve, reject) => {
 			let settled = false
+			let timer: ReturnType<typeof setTimeout> | null = null
 			const finish = (callback: () => void) => {
 				if (settled) return
 				settled = true
+				if (timer !== null) clearTimeout(timer)
 				unsubscribe()
 				callback()
 			}
@@ -839,11 +866,26 @@ export class WhiteboardUploadOutbox {
 					finish(() => resolve(cloneJob(job)))
 					return
 				}
-				if (job.state === 'permanent-failure') {
+				if (
+					job.state === 'failed' ||
+					job.state === 'auth-blocked' ||
+					job.state === 'permanent-failure'
+				) {
 					finish(() => reject(new WhiteboardUploadFailureError(cloneJob(job))))
 				}
 			}
 			const unsubscribe = this.subscribe(check)
+			if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+				timer = setTimeout(() => {
+					finish(() =>
+						reject(
+							Object.assign(new Error('Upload wait timed out.'), {
+								status: 408,
+							}),
+						),
+					)
+				}, timeoutMs)
+			}
 			check()
 		})
 	}
@@ -1259,7 +1301,10 @@ export type UseWhiteboardUploadOutboxResult = WhiteboardUploadOutboxSnapshot & {
 	outbox: WhiteboardUploadOutbox
 	readyPromise: Promise<void>
 	stageUpload: (input: WhiteboardUploadStage) => Promise<WhiteboardUploadJob>
-	waitForUpload: (fileId: string) => Promise<WhiteboardUploadJob>
+	waitForUpload: (
+		fileId: string,
+		timeoutMs?: number,
+	) => Promise<WhiteboardUploadJob>
 	getJob: (fileId: string) => WhiteboardUploadJob | null
 	getUploadState: (fileId: string) => WhiteboardUploadState | null
 	getPendingElementSnapshots: () => WhiteboardUploadRecovery[]
