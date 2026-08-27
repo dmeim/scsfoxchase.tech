@@ -17,9 +17,9 @@ import type {
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
 import {
-  getSessionToken,
+  getSessionTokenSettled,
   isSignedIn,
-  waitForSessionToken,
+  peekSessionToken,
   whenAuthReady,
 } from '../lib/whiteboard-identity'
 import {
@@ -31,6 +31,7 @@ import {
   mergeSceneElements,
   rememberElementVersions,
   SCENE_FLUSH_MS,
+  shouldSkipIdleFullFlush,
   type SceneAppState,
   type SceneElement,
 } from '../lib/whiteboard-sync'
@@ -224,6 +225,10 @@ export default function WhiteboardCanvas({
   const applyingRemoteRef = useRef(false)
   /** Versions the server has confirmed, never merely versions sent locally. */
   const acknowledgedSceneVersionRef = useRef(0)
+  /** Last scene version a full `scene:update` actually left this tab. */
+  const lastSentFullFlushVersionRef = useRef(0)
+  /** `persist_failed` must retry even when the idle watermark matches. */
+  const persistFailedNeedsRetryRef = useRef(false)
   const acknowledgedElementVersionsRef = useRef(new Map<string, number>())
   /** Each mutation remains here until its matching scene:ack arrives. */
   const inFlightMutationsRef = useRef(
@@ -782,6 +787,13 @@ export default function WhiteboardCanvas({
             payload as unknown as OrderedExcalidrawElement[],
           ),
         })
+        if (full) {
+          lastSentFullFlushVersionRef.current = Math.max(
+            lastSentFullFlushVersionRef.current,
+            version,
+          )
+        }
+        persistFailedNeedsRetryRef.current = false
       } catch {
         return false
       }
@@ -854,13 +866,18 @@ export default function WhiteboardCanvas({
       const mutation = inFlightMutationsRef.current.get(mutationId)
       if (!mutation) return
       inFlightMutationsRef.current.delete(mutationId)
+      persistFailedNeedsRetryRef.current = true
+      lastSentFullFlushVersionRef.current = Math.min(
+        lastSentFullFlushVersionRef.current,
+        acknowledgedSceneVersionRef.current,
+      )
 
       const api = apiRef.current
       if (!api || !canEditRef.current || !sceneHydratedRef.current) return
       // Requeue the current scene. Asset-not-ready errors remain blocked by
       // default-deny until the durable upload reaches R2, then the upload-state
       // effect calls forceSendReadyUploads(). Other persistence failures get
-      // one normal retry without waiting for a reconnect.
+      // a full retry so the last-sent watermark cannot swallow the same version.
       pendingFlushRef.current = {
         elements: api.getSceneElementsIncludingDeleted(),
         appState: api.getAppState(),
@@ -869,10 +886,12 @@ export default function WhiteboardCanvas({
         forceSendReadyUploads()
         return
       }
-      if (flushTimerRef.current != null) return
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current)
+      }
       flushTimerRef.current = window.setTimeout(() => {
         flushTimerRef.current = null
-        flushNowRef.current()
+        flushNowRef.current(true)
       }, SCENE_FLUSH_MS)
     },
     [forceSendReadyUploads],
@@ -1118,6 +1137,8 @@ export default function WhiteboardCanvas({
 
   useEffect(() => {
     if (!boardId) return
+    lastSentFullFlushVersionRef.current = 0
+    persistFailedNeedsRetryRef.current = false
     let cancelled = false
     let pingTimer: number | null = null
     let resyncTimer: number | null = null
@@ -1126,6 +1147,7 @@ export default function WhiteboardCanvas({
     let authFetchInFlight = false
     let authStartedAt = 0
     let lastAuthTokenSent = ''
+    let lastAuthSignedInSent = false
     let attempt = 0
     let lastSocketJsAt = 0
 
@@ -1167,34 +1189,38 @@ export default function WhiteboardCanvas({
         }),
       )
       lastAuthTokenSent = token
+      lastAuthSignedInSent = signedIn
+      // Host-secret-only frames still send; do not require a JWT to mark sent.
+      // Signed-in without a token stays false until hello so dropped scene
+      // updates are not bookkept as delivered.
       if (token || !signedIn) authSentRef.current = true
       // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
       resubscribeFollowRef.current()
     }
 
     /**
-     * Send `wb:auth` as soon as Clerk has settled, then keep retrying until the
-     * server greets this socket. Auth never blocks the socket or the canvas:
-     * the server sends the full scene on connect, and a token accepted later
-     * upgrades the role in place via `wb:role`. Retries back off and give up
-     * rather than polling Clerk once a second forever — a classroom of stuck
-     * tabs doing that is how boards started taking a minute to load.
+     * After the first `wb:auth`, keep retrying a signed-in JWT until one is
+     * sent (or 60s). Hello from host proof / share-code must not stop this —
+     * a late JWT upgrades in place via `wb:role`.
      */
     const scheduleAuthRetry = (ws: WebSocket, delay: number) => {
       authRetryTimer = window.setTimeout(() => {
         authRetryTimer = null
-        if (cancelled || wsRef.current !== ws || helloOnSocketRef.current) return
+        if (cancelled || wsRef.current !== ws) return
+        if (lastAuthTokenSent) return
         if (!isSignedIn()) {
-          sendAuthFrame(ws, '')
+          if (!helloOnSocketRef.current) sendAuthFrame(ws, '')
           return
         }
         if (Date.now() - authStartedAt > AUTH_RETRY_GIVE_UP_MS) {
-          apiRef.current?.setToast?.({
-            message:
-              'Sign-in is taking too long. Reload the page to edit this board.',
-            duration: 10000,
-            closable: true,
-          })
+          if (!helloOnSocketRef.current) {
+            apiRef.current?.setToast?.({
+              message:
+                'Sign-in is taking too long. Reload the page to edit this board.',
+              duration: 10000,
+              closable: true,
+            })
+          }
           return
         }
         if (authFetchInFlight) {
@@ -1202,7 +1228,7 @@ export default function WhiteboardCanvas({
           return
         }
         authFetchInFlight = true
-        void getSessionToken()
+        void getSessionTokenSettled()
           .then((value) => {
             const token = value?.trim() ?? ''
             if (cancelled || wsRef.current !== ws) return
@@ -1210,7 +1236,7 @@ export default function WhiteboardCanvas({
           })
           .finally(() => {
             authFetchInFlight = false
-            if (cancelled || wsRef.current !== ws || helloOnSocketRef.current) {
+            if (cancelled || wsRef.current !== ws || lastAuthTokenSent) {
               return
             }
             scheduleAuthRetry(ws, Math.min(delay * 2, AUTH_RETRY_MAX_MS))
@@ -1218,17 +1244,34 @@ export default function WhiteboardCanvas({
       }, delay)
     }
 
-    const sendConnectAuth = async (ws: WebSocket) => {
-      await whenAuthReady()
-      if (cancelled || wsRef.current !== ws) return
-      const first = isSignedIn()
-        ? ((await waitForSessionToken(6, 100))?.trim() ?? '')
-        : ''
-      if (cancelled || wsRef.current !== ws) return
+    /**
+     * First `wb:auth` on WebSocket `open` — host secret + signedIn if known +
+     * token only if already cached. Do not await `whenAuthReady` / Clerk
+     * `getToken` first: a hang used to block this frame and leave Connecting
+     * forever even when create already minted a host secret.
+     *
+     * Not unit-tested here (live WebSocket + Clerk islands). The getToken
+     * timeout that unblocks `whenAuthReady` is in tests/whiteboard-identity.test.ts.
+     */
+    const sendConnectAuth = (ws: WebSocket) => {
       authStartedAt = Date.now()
-      sendAuthFrame(ws, first)
-      if (!isSignedIn()) return
-      scheduleAuthRetry(ws, AUTH_RETRY_MS)
+      sendAuthFrame(ws, peekSessionToken()?.trim() ?? '')
+
+      void (async () => {
+        await whenAuthReady()
+        if (cancelled || wsRef.current !== ws) return
+        const signedIn = isSignedIn()
+        const next = signedIn
+          ? ((await getSessionTokenSettled())?.trim() ?? '')
+          : ''
+        if (cancelled || wsRef.current !== ws) return
+        if (next !== lastAuthTokenSent || signedIn !== lastAuthSignedInSent) {
+          sendAuthFrame(ws, next)
+        }
+        if (signedIn && !lastAuthTokenSent) {
+          scheduleAuthRetry(ws, AUTH_RETRY_MS)
+        }
+      })()
     }
 
     const connect = () => {
@@ -1251,6 +1294,7 @@ export default function WhiteboardCanvas({
       setSocketSceneReady(false)
       resetServerSceneHydrationRef.current()
       lastAuthTokenSent = ''
+      lastAuthSignedInSent = false
       clearAuthRetry()
       const ws = new WebSocket(uri)
       wsRef.current = ws
@@ -1278,11 +1322,19 @@ export default function WhiteboardCanvas({
           ) {
             return
           }
-          sendSceneUpdate(
-            api.getSceneElementsIncludingDeleted(),
-            api.getAppState(),
-            true,
-          )
+          const elements = api.getSceneElementsIncludingDeleted()
+          const version = getSceneVersion(elements)
+          if (
+            shouldSkipIdleFullFlush({
+              sceneVersion: version,
+              acknowledgedVersion: acknowledgedSceneVersionRef.current,
+              lastSentFullFlushVersion: lastSentFullFlushVersionRef.current,
+              persistFailedNeedsRetry: persistFailedNeedsRetryRef.current,
+            })
+          ) {
+            return
+          }
+          sendSceneUpdate(elements, api.getAppState(), true)
         }, 30_000)
         // Publication waits for the current socket's scene:sync. The full
         // scene arrives unprompted on every connect, after which recovery and
@@ -1312,7 +1364,7 @@ export default function WhiteboardCanvas({
         if (data.type === 'wb:hello') {
           helloOnSocketRef.current = true
           authSentRef.current = true
-          clearAuthRetry()
+          if (lastAuthTokenSent || !isSignedIn()) clearAuthRetry()
         }
 
         if (data.type === 'wb:error') {
@@ -1596,6 +1648,8 @@ export default function WhiteboardCanvas({
       pendingFlushRef.current = null
       inFlightMutationsRef.current.clear()
       acknowledgedSceneVersionRef.current = 0
+      lastSentFullFlushVersionRef.current = 0
+      persistFailedNeedsRetryRef.current = false
       acknowledgedElementVersionsRef.current.clear()
       // Keep acknowledged image fileIds across canEdit remounts on the same
       // board. Clearing them here would default-deny already-persisted images

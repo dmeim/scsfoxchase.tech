@@ -35,6 +35,25 @@ export function sceneBroadcastPlan(input: {
 	}
 	return { type: 'scene:update', exceptSessionId: input.fromSessionId }
 }
+
+/**
+ * Idle 30s full flush: skip when the scene version has not moved past both
+ * the last ack and the last full send. `persistFailedNeedsRetry` must bypass
+ * that watermark so a `persist_failed` can retry the same version.
+ */
+export function shouldSkipIdleFullFlush(input: {
+	sceneVersion: number
+	acknowledgedVersion: number
+	lastSentFullFlushVersion: number
+	persistFailedNeedsRetry?: boolean
+}): boolean {
+	if (input.persistFailedNeedsRetry) return false
+	return (
+		input.sceneVersion <=
+		Math.max(input.acknowledgedVersion, input.lastSentFullFlushVersion)
+	)
+}
+
 export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
 export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
@@ -150,6 +169,42 @@ export function isAssignableRole(value: unknown): value is AssignableRole {
 
 export function roleCanEdit(role: WhiteboardRole): boolean {
 	return role === 'owner' || role === 'manager' || role === 'editor'
+}
+
+const WHITEBOARD_ROLE_RANK: Record<WhiteboardRole, number> = {
+	viewer: 0,
+	editor: 1,
+	manager: 2,
+	owner: 3,
+}
+
+/**
+ * Repeatable `wb:auth` after hello: apply `wb:role` for upgrades and for
+ * Clerk identity attaching to an already-editable session. Never demote.
+ */
+export function shouldApplySocketReauth(
+	current: {
+		role: WhiteboardRole
+		userId: string
+		isHost: boolean
+		displayName: string
+	},
+	next: {
+		role: WhiteboardRole
+		userId: string
+		isHost: boolean
+		displayName: string
+	},
+): boolean {
+	if (WHITEBOARD_ROLE_RANK[next.role] < WHITEBOARD_ROLE_RANK[current.role]) {
+		return false
+	}
+	return (
+		next.role !== current.role ||
+		next.userId !== current.userId ||
+		next.isHost !== current.isHost ||
+		next.displayName !== current.displayName
+	)
 }
 
 /** Live canvas writes: Owner/Manager always; Editor only while Group Edit is on. */

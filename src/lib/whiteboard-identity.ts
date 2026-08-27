@@ -23,10 +23,24 @@ const AUTH_EVENT = 'scsfoxchase:whiteboard-auth'
 const AUTH_READY_EVENT = 'scsfoxchase:whiteboard-auth-ready'
 const AUTH_STORE_KEY = '__scsfoxchaseWhiteboardAuth'
 
+/** Clerk `getToken` hang budget. Empty token is OK; callers must still resolve. */
+export const AUTH_GET_TOKEN_SETTLE_MS = 2_000
+
 type WhiteboardAuthStore = {
 	identity: WhiteboardIdentity | null
 	sessionTokenGetter: (() => Promise<string | null>) | null
 	authResolved: boolean
+	/** Last non-empty JWT from a settled `getToken`. Sync peek for first `wb:auth`. */
+	lastToken: string | null
+}
+
+function emptyAuthStore(): WhiteboardAuthStore {
+	return {
+		identity: null,
+		sessionTokenGetter: null,
+		authResolved: false,
+		lastToken: null,
+	}
 }
 
 /**
@@ -37,19 +51,11 @@ type WhiteboardAuthStore = {
  */
 function getAuthStore(): WhiteboardAuthStore {
 	if (typeof window === 'undefined') {
-		return {
-			identity: null,
-			sessionTokenGetter: null,
-			authResolved: false,
-		}
+		return emptyAuthStore()
 	}
 	const root = window as Window & { [AUTH_STORE_KEY]?: WhiteboardAuthStore }
 	if (!root[AUTH_STORE_KEY]) {
-		root[AUTH_STORE_KEY] = {
-			identity: null,
-			sessionTokenGetter: null,
-			authResolved: false,
-		}
+		root[AUTH_STORE_KEY] = emptyAuthStore()
 	}
 	return root[AUTH_STORE_KEY]
 }
@@ -118,6 +124,7 @@ export function setActiveIdentity(identity: WhiteboardIdentity | null): void {
 	const store = getAuthStore()
 	const changed = identityKey(store.identity) !== identityKey(identity)
 	store.identity = identity
+	if (!identity) store.lastToken = null
 	if (!changed || typeof window === 'undefined') return
 	window.dispatchEvent(
 		new CustomEvent(AUTH_EVENT, { detail: identity }),
@@ -144,19 +151,100 @@ export function setSessionTokenGetter(
 	getAuthStore().sessionTokenGetter = getter
 }
 
-export async function getSessionToken(): Promise<string | null> {
-	const getter = getAuthStore().sessionTokenGetter
-	if (!getter) return null
-	try {
-		return await getter()
-	} catch {
-		return null
-	}
-}
-
 function nonEmptyToken(value: string | null | undefined): string | null {
 	const token = value?.trim() ?? ''
 	return token || null
+}
+
+function rememberToken(value: string | null | undefined): string | null {
+	const token = nonEmptyToken(value)
+	if (token) getAuthStore().lastToken = token
+	return token
+}
+
+/** Cache a settled Clerk JWT so the next WebSocket `open` can send it without waiting. */
+export function cacheSessionToken(value: string | null | undefined): void {
+	rememberToken(value)
+}
+
+/** Last settled JWT, if any. Never awaits Clerk. */
+export function peekSessionToken(): string | null {
+	return getAuthStore().lastToken
+}
+
+/**
+ * Resolve with `fallback` if `promise` has not settled in `ms`. Rejects become
+ * `fallback` so a hanging Clerk `getToken` cannot block `whenAuthReady`.
+ */
+export function raceSettled<T>(
+	promise: Promise<T>,
+	ms: number,
+	fallback: T,
+): Promise<T> {
+	return new Promise((resolve) => {
+		let settled = false
+		const finish = (value: T) => {
+			if (settled) return
+			settled = true
+			clearTimeout(timer)
+			resolve(value)
+		}
+		const timer = setTimeout(() => finish(fallback), ms)
+		promise.then(
+			(value) => finish(value),
+			() => finish(fallback),
+		)
+	})
+}
+
+export async function getSessionToken(): Promise<string | null> {
+	const store = getAuthStore()
+	const getter = store.sessionTokenGetter
+	if (!getter) return store.lastToken
+	try {
+		return rememberToken(await getter()) ?? store.lastToken
+	} catch {
+		return store.lastToken
+	}
+}
+
+/** `getSessionToken` that cannot hang past `timeoutMs` (empty / cached token OK). */
+export async function getSessionTokenSettled(
+	timeoutMs = AUTH_GET_TOKEN_SETTLE_MS,
+): Promise<string | null> {
+	return raceSettled(
+		getSessionToken().then((value) => nonEmptyToken(value)),
+		timeoutMs,
+		peekSessionToken(),
+	)
+}
+
+/**
+ * AuthBridge path: wait briefly for Clerk `getToken`, then always
+ * `markAuthResolved`. A hang or empty JWT must not block `whenAuthReady`.
+ */
+export async function markAuthResolvedAfterTokenSettle(
+	getToken: () => Promise<string | null | undefined>,
+	timeoutMs = AUTH_GET_TOKEN_SETTLE_MS,
+): Promise<string> {
+	const clerkUserId = getAuthStore().identity?.clerkUserId ?? ''
+	const token = await raceSettled(
+		Promise.resolve()
+			.then(getToken)
+			.then((value) => value ?? '')
+			.catch(() => ''),
+		timeoutMs,
+		'',
+	)
+	if (
+		clerkUserId &&
+		getAuthStore().identity?.clerkUserId === clerkUserId &&
+		token.trim()
+	) {
+		cacheSessionToken(token)
+	}
+	markAuthResolved()
+	return token
 }
 
 /**

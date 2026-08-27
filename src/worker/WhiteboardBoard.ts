@@ -33,6 +33,7 @@ import {
 	parseStoredSceneElements,
 	roleCanEdit,
 	sessionCanEdit,
+	shouldApplySocketReauth,
 	sceneAssetNotReadyError,
 	sceneTooLargeError,
 	type AssignableRole,
@@ -100,6 +101,28 @@ const ASSET_MANIFEST_TABLE_SQL = `
 
 const MAX_ASSET_BYTES = 8 * 1024 * 1024
 const ASSET_MIME_RE = /^(image|video)\/[a-z0-9.+-]+$/i
+/** Skip setAlarm when the existing alarm is already this close to the target. */
+const ALARM_SET_TOLERANCE_MS = 1000
+
+/** Identical serialized scene: skip SQLite UPSERT unless the merge accepted elements. */
+export function shouldSkipIdenticalScenePersist(
+	lastPersistedJson: string | null,
+	nextJson: string,
+	force = false,
+): boolean {
+	if (force) return false
+	return lastPersistedJson === nextJson
+}
+
+/** Avoid rewriting the same unsaved-TTL alarm every GET /meta poll. */
+export function shouldReplaceStorageAlarm(
+	existingAlarm: number | null | undefined,
+	target: number,
+	toleranceMs = ALARM_SET_TOLERANCE_MS,
+): boolean {
+	if (existingAlarm == null) return true
+	return Math.abs(existingAlarm - target) > toleranceMs
+}
 
 export type WipeStoredDataResult = {
 	objectId: string
@@ -487,6 +510,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private forceFollowNeedsRebroadcast = false
 	private sceneCache: LiveScene | null = null
 	private sceneLoaded = false
+	/** Last `scene_json` blob written (or loaded). Identical UPSERTs are skipped. */
+	private lastPersistedJson: string | null = null
 	private updatesSinceFullSync = 0
 
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -511,6 +536,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.forceFollowNeedsRebroadcast = false
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
+		this.lastPersistedJson = null
 		this.updatesSinceFullSync = 0
 	}
 
@@ -1157,10 +1183,28 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			mintHost: false,
 		})
 		if (!next) return
-		// Upgrades only. Demotions belong to the People PATCH and the Group Edit
-		// resync; letting a re-auth carry one means any frame that fails to
-		// resolve Clerk can strip a session that is already authenticated.
-		if (!roleCanEdit(next.role) || roleCanEdit(attachment.role)) return
+		// Upgrades and Clerk identity attach only. Demotions belong to the
+		// People PATCH and the Group Edit resync — a failed JWT must not strip
+		// an already-authenticated Editor/Owner. Share-code Editor → Owner and
+		// host-secret Owner + late JWT still apply via `wb:role`.
+		if (
+			!shouldApplySocketReauth(
+				{
+					role: attachment.role,
+					userId: attachment.meta.userId,
+					isHost: attachment.isHost,
+					displayName: attachment.meta.displayName,
+				},
+				{
+					role: next.role,
+					userId: next.meta.userId,
+					isHost: next.isHost,
+					displayName: next.meta.displayName,
+				},
+			)
+		) {
+			return
+		}
 		ws.serializeAttachment(next)
 		sendJson(ws, {
 			type: 'wb:role',
@@ -1178,7 +1222,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		boardId: string,
 	): Promise<Response> {
 		if (request.method === 'GET') {
-			await this.ensureBoardLifetime(boardId)
+			await this.ensureBoardLifetime(boardId, { mintShareCode: false })
 			const reveal = await this.canRevealCloudOwnerKey(request, url)
 			return json(200, await this.readPublicMeta(reveal))
 		}
@@ -1516,8 +1560,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	/**
 	 * First connect starts the 24h unsaved clock. Later connects / Chromebook
 	 * refreshes must not reset it or delete the scene.
+	 * GET /meta polls skip share-code mint (KV already has the key from connect).
 	 */
-	private async ensureBoardLifetime(boardId: string): Promise<void> {
+	private async ensureBoardLifetime(
+		boardId: string,
+		opts: { mintShareCode?: boolean } = {},
+	): Promise<void> {
 		const existingId = await this.ctx.storage.get<string>(META_BOARD_ID_KEY)
 		if (!existingId) {
 			await this.ctx.storage.put(META_BOARD_ID_KEY, boardId)
@@ -1535,10 +1583,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 		}
 
-		try {
-			await this.ensureShareCode(boardId)
-		} catch {
-			// UUID access still works if mint fails (rate limit / KV collision).
+		if (opts.mintShareCode !== false) {
+			try {
+				await this.ensureShareCode(boardId)
+			} catch {
+				// UUID access still works if mint fails (rate limit / KV collision).
+			}
 		}
 		await this.scheduleNextAlarm()
 	}
@@ -1593,6 +1643,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 						appState: {},
 					}
 				: { elements: [], appState: {} }
+			this.lastPersistedJson = row?.scene_json ?? null
 			return this.sceneCache
 		}
 
@@ -1605,6 +1656,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			: undefined
 		if (!row) {
 			this.sceneCache = { elements: [], appState: {} }
+			this.lastPersistedJson = null
 			return this.sceneCache
 		}
 		this.sceneCache =
@@ -1613,6 +1665,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				elements: [],
 				appState: {},
 			}
+		this.lastPersistedJson = row.live_json || row.database_json || null
 		if (
 			(!this.sceneCache.appState ||
 				Object.keys(this.sceneCache.appState).length === 0) &&
@@ -1663,7 +1716,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
-	private persistScene(scene: LiveScene): void {
+	private persistScene(scene: LiveScene, opts?: { force?: boolean }): void {
 		if (scene.elements.length > MAX_SCENE_ELEMENTS) {
 			throw sceneTooLargeError()
 		}
@@ -1673,6 +1726,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		})
 		if (liveJson.length > MAX_SCENE_JSON_BYTES) {
 			throw sceneTooLargeError()
+		}
+		if (
+			shouldSkipIdenticalScenePersist(
+				this.lastPersistedJson,
+				liveJson,
+				opts?.force === true,
+			)
+		) {
+			this.sceneCache = scene
+			this.sceneLoaded = true
+			return
 		}
 		try {
 			this.ctx.storage.sql.exec(
@@ -1687,6 +1751,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		} catch (err) {
 			throw asScenePersistError(err)
 		}
+		this.lastPersistedJson = liveJson
 		this.sceneCache = scene
 		this.sceneLoaded = true
 	}
@@ -1786,7 +1851,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 		await this.validateNewImageAssetReferences(scene.elements, accepted)
 		const nextScene: LiveScene = { elements: next, appState }
-		this.persistScene(nextScene)
+		this.persistScene(nextScene, { force: accepted.length > 0 })
 
 		this.updatesSinceFullSync += 1
 		const plan = sceneBroadcastPlan({
@@ -2474,14 +2539,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	/**
 	 * Mint once if missing. Existing codes (including leftover 4-character)
-	 * are kept and rewritten to KV without TTL.
+	 * are returned without a KV PUT. Leftover `meta:codeExpiresAt` is deleted
+	 * only when that key is still present.
 	 */
 	private async ensureShareCode(boardId: string): Promise<CodeState | null> {
 		if (!this.env.WHITEBOARD_CODES || !boardId) return null
 		const existing = await this.readStoredCode()
 		if (existing) {
-			await this.persistShareCodeKv(existing, boardId)
-			await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+			const expiresAt = await this.ctx.storage.get(CODE_EXPIRES_AT_KEY)
+			if (expiresAt != null) {
+				await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+			}
 			return { code: existing }
 		}
 		return this.mintPermanentCode(boardId)
@@ -2558,6 +2626,13 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 		}
 		if (times.length === 0) {
+			let existing: number | null = null
+			try {
+				existing = (await this.ctx.storage.getAlarm()) ?? null
+			} catch {
+				existing = null
+			}
+			if (existing == null) return
 			try {
 				await this.ctx.storage.deleteAlarm()
 			} catch {
@@ -2565,13 +2640,22 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 			return
 		}
-		await this.ctx.storage.setAlarm(Math.min(...times))
+		const target = Math.min(...times)
+		let existing: number | null = null
+		try {
+			existing = (await this.ctx.storage.getAlarm()) ?? null
+		} catch {
+			existing = null
+		}
+		if (!shouldReplaceStorageAlarm(existing, target)) return
+		await this.ctx.storage.setAlarm(target)
 	}
 
 	private async expireUnsavedBoard(): Promise<void> {
 		this.ctx.storage.sql.exec('DELETE FROM excalidraw_scene')
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
+		this.lastPersistedJson = null
 		await this.cleanupBoardAssets(
 			(await this.ctx.storage.get<string>(META_BOARD_ID_KEY)) ?? undefined,
 		)

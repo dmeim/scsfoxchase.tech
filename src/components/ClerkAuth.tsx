@@ -24,6 +24,7 @@ import {
 	identityFromClerkUser,
 	isEmailAllowed,
 	markAuthResolved,
+	markAuthResolvedAfterTokenSettle,
 	setActiveIdentity,
 	setSessionTokenGetter,
 } from '../lib/whiteboard-identity'
@@ -65,7 +66,6 @@ function AuthBridge() {
 
 	useEffect(() => {
 		if (!isLoaded || !userLoaded) return
-		let cancelled = false
 
 		if (!isSignedIn || !user) {
 			setActiveIdentity(null)
@@ -82,23 +82,7 @@ function AuthBridge() {
 		}
 
 		setActiveIdentity(identity)
-		void (async () => {
-			for (let i = 0; i < 25; i++) {
-				if (cancelled) return
-				try {
-					const token = await getToken()
-					if (token?.trim()) break
-				} catch {
-					// retry — empty JWT on first paint must not unlock connect
-				}
-				await new Promise((resolve) => setTimeout(resolve, 100))
-			}
-			if (!cancelled) markAuthResolved()
-		})()
-
-		return () => {
-			cancelled = true
-		}
+		void markAuthResolvedAfterTokenSettle(() => getToken())
 	}, [isLoaded, userLoaded, isSignedIn, user, clerk, getToken])
 
 	return null

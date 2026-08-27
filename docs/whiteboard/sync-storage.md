@@ -63,13 +63,15 @@ The PWA service worker (`public/sw.js`) **never intercepts `/api/*`**, so this u
 `src/worker/WhiteboardBoard.ts`:
 
 - Storage: SQLite `excalidraw_scene` — one row (`id = 1`) with a single `scene_json` TEXT column (`{ elements, appState }`) plus `updated_at`.
-- Persist: `persistScene` UPSERTs `scene_json`. Caps from `src/lib/whiteboard-sync.ts`: `MAX_SCENE_ELEMENTS` (4000) and `MAX_SCENE_JSON_BYTES` (2_000_000, string length of the JSON). Incoming `scene:update` uses `parseSceneElements` (overflow throws). Stored reads use `parseStoredSceneElements` so an already-oversize board is not trimmed on load.
+- Persist: `persistScene` UPSERTs `scene_json`. If the serialized blob equals in-memory `lastPersistedJson` (set on load and after a successful write), skip `sql.exec`. Incoming merges with `accepted.length > 0` always persist. A `databaseJson`-only flush with an identical blob is a no-op write. Caps from `src/lib/whiteboard-sync.ts`: `MAX_SCENE_ELEMENTS` (4000) and `MAX_SCENE_JSON_BYTES` (2_000_000, string length of the JSON). Incoming `scene:update` uses `parseSceneElements` (overflow throws). Stored reads use `parseStoredSceneElements` so an already-oversize board is not trimmed on load.
 - Fail-closed: oversize, missing asset manifests, or SQLite failure throws `ScenePersistError`. The DO sends `wb:error` (`scene_too_large`, `asset_not_ready`, or `persist_failed`) to the writer and other Editors and **does not** `broadcastScene` that update. The in-memory cache is written only after a successful UPSERT.
 - Merge: last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
 - Hibernation: WebSocket auto-response for ping/pong; session snapshots on socket attachments; resume on wake.
+- Hello is **host-first**: the socket opens and `scene:sync` paints while Clerk loads; `wb:hello` waits for first-message `wb:auth` (scratch `hostSecret` and/or Clerk JWT). A signed-in tab with no JWT yet stays pending — never a Viewer hello for a real Owner. See the `wb:auth` table above.
 - Viewer writes: `viewModeEnabled` on the client is **not** enough — the DO ignores `scene:update` when `sessionCanEdit(role, classCanEdit)` is false (Viewers always; Editors while Group Edit is Off).
 - Join (`GET /api/whiteboard/join/:code`) returns a UUID only. Role is decided on connect: guests default to **Viewer** unless they are Owner, already stored as Editor/Manager, or they join with the active share code (**Editor**). UUID-only stays **Viewer**. **Group Edit** (`meta:classCanEdit`) is a live draw gate, not a join-time role switch: Editors can draw only while it is On.
-- Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
+- Share code: minted **once** on WebSocket connect (`ensureBoardLifetime` → `ensureShareCode`) or Owner/Manager GET/POST `/code`. If `meta:activeCode` is already set, return `{ code }` — **no KV PUT**. Leftover `meta:codeExpiresAt` is deleted only when `get()` shows that key exists. `GET /api/whiteboard/boards/:uuid/meta` is **read-only** for codes: it does not mint or rewrite KV; it only runs lifetime TTL (`scheduleNextAlarm`). Join-by-code uses the KV key written at mint.
+- Unsaved TTL: first connect starts a **24h** clock. `PATCH /api/whiteboard/boards/:uuid/meta` with `savedToLibrary` lifts it. `scheduleNextAlarm` reads `getAlarm()` and calls `setAlarm` only when missing or the target differs by more than 1s. Alarm deletes the scene (and schedules temp R2 cleanup) if never saved.
 
 Live schema (`SCENE_TABLE_SQL`):
 
@@ -192,7 +194,7 @@ The board has an unpersisted per-asset DOM overlay and a compact global upload s
 
 ## Scratch expiry and deletion
 
-The first board connection or board-meta read stores `createdAt` and starts a **24-hour** unsaved expiry. Saving the board to the cloud library clears that alarm. Refreshing or reconnecting does not reset the clock.
+The first board connection or board-meta **PATCH** stores `createdAt` and starts a **24-hour** unsaved expiry. Saving the board to the cloud library clears that alarm. Refreshing or reconnecting does not reset the clock. `GET /meta` may start the clock if `createdAt` is missing, but it does **not** mint or rewrite the share-code KV mapping; `scheduleNextAlarm` is idempotent (`setAlarm` only when missing or the target moved by more than 1s).
 
 When an unsaved board's Durable Object alarm fires, the DO:
 

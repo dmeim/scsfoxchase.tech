@@ -27,7 +27,7 @@ Deleting the board from the cloud library **frees the KV mapping**. `/board/{uui
 
 Helpers: `normalizeShareCode`, `sampleShareCode`, `kvCodeKey` in `src/worker/shareCode.ts`.
 
-Existing 4-character codes are kept and rewritten to KV without TTL on the next Owner/Manager GET or board connect. New boards mint 8-character codes.
+Existing 4-character codes are kept. If `meta:activeCode` is already set, `ensureShareCode` returns `{ code }` with **no KV PUT**. Leftover `meta:codeExpiresAt` is deleted only when that key is still present. New boards mint 8-character codes.
 
 A ~**12 hour** join-proof **cookie** (`scsfoxchase_wbj_{boardId}`) still proves “this tab typed the code.” The code itself does not expire; after the cookie lapses, a UUID visit is Viewer until the student enters the code again.
 
@@ -40,7 +40,7 @@ Two layers stay in sync:
 
 The DO has **one** alarm slot for **unsaved-board TTL (24h)** only. Share codes are not alarmed.
 
-On first connect (`ensureBoardLifetime`) the DO mints if missing and upserts KV without TTL. Library delete calls Durable Object RPC `revokeShareCodeMapping` so the PIN returns to the pool. `DELETE /code` remains as an internal HTTP path (unsaved expiry / admin). Not a manage-panel action.
+On first WebSocket connect (`ensureBoardLifetime` → `ensureShareCode`) the DO mints if missing and writes KV **once**. Existing codes skip KV. `GET /meta` is read-only for codes: it does not mint or rewrite the mapping. Library delete calls Durable Object RPC `revokeShareCodeMapping` so the PIN returns to the pool. `DELETE /code` remains as an internal HTTP path (unsaved expiry / admin). Not a manage-panel action.
 
 ## HTTP API
 
@@ -92,7 +92,7 @@ DELETE /api/whiteboard/boards/:uuid/code       # internal revoke
 
 | Action | Behavior |
 |--------|----------|
-| GET / POST | If a valid code exists, keep it and rewrite KV without TTL; otherwise mint 8-character |
+| GET / POST | If a valid code exists, return it (**no KV PUT**); otherwise mint 8-character and write KV once |
 | DELETE | Revoke KV + DO meta. Join by that code 404s. `/board/{uuid}` still works. Used on library delete and unsaved expiry |
 
 There is no rotate and no Open/Closed.
