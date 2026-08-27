@@ -1,5 +1,7 @@
 # St. Cecilia Technology — Documentation
 
+> **Whiteboard rollback status (2026-08-27):** The post-`81242d2` R2 image-upload plan was abandoned and rolled back. New image/video insertion is temporarily disabled. Existing media remains readable from legacy `assets/{ownerKey}/{assetId}` objects and from read-only board-scoped `boards/{boardId}/assets/{fileId}` objects; board-scoped GET/HEAD works, while PUT/DELETE return 405. The live scene remains in Durable Object SQLite. See [sync-storage.md](./whiteboard/sync-storage.md) for the retained write/usage guards.
+
 **scsfoxchase.tech** is a PWA dashboard and educational games catalog for St. Cecilia School. Students and teachers use it daily on desktop monitors, Dell Chromebooks, and iPads.
 
 This `docs/` tree is the canonical reference for coding agents and human operators. Prefer these pages over scattered root notes when you need system context; root `AGENTS.md`, `DEPLOYMENT.md`, and `FORMS.md` remain operational shortcuts and may overlap.
@@ -89,7 +91,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | `/form/*` | Individual forms |
 | `/guide/{slug}` | Guide articles |
 | `/inventory` | Staff device inventory lookup + QR |
-| `/whiteboard` | Whiteboard hub (create, join; cloud Recents/Library when signed in; canvas assets stay board-scoped) |
+| `/whiteboard` | Whiteboard hub (create, join; cloud Recents/Library when signed in; new canvas image/video insertion temporarily disabled) |
 | `/board/{uuid}` | Live multiplayer board (Excalidraw + DO WebSocket) |
 | `/offline` | Canonical offline fallback |
 | `/oldgames` | Legacy game catalog |
@@ -104,7 +106,7 @@ Whiteboard HTTP/WebSocket APIs (Worker, not prerendered pages):
 | `/api/whiteboard/boards/:uuid/meta` | Saved-to-library + Google Owner (lifts 24h TTL) |
 | `/api/whiteboard/boards/:uuid/participants/:sessionId` | PATCH role (Owner / Manager) |
 | `/api/whiteboard/boards/:uuid/force-follow` | PATCH Follow User / force-follow (Owner / Manager) |
-| `/api/whiteboard/boards/:uuid/assets/:fileId` | Board-scoped R2 media with Durable Object manifest |
+| `/api/whiteboard/boards/:uuid/assets/:fileId` | Read-only board-scoped R2 compatibility media (GET/HEAD; PUT/DELETE return 405) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | Legacy owner-key R2 media PUT/GET/DELETE |
 | `/api/whiteboard/library/boards` | Cloud board index (Clerk) |
 | `/api/whiteboard/library/assets` | Cloud asset index (Clerk) |

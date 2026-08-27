@@ -26,23 +26,18 @@ import '../styles/whiteboard.css';
   </div>
 
   <script>
-    import { whenAuthReady } from '../lib/whiteboard-identity';
     import {
+      bindBoardPageScratchClaim,
       readBoardIdFromPath,
-      touchBoardActive,
     } from '../scripts/whiteboard-library';
 
     const boardId = readBoardIdFromPath();
     if (!boardId) {
       window.location.replace('/whiteboard');
     } else {
-      // Wait for Clerk so signed-in users upsert the cloud library (join does not).
-      // WhiteboardCanvas also calls touchBoardActive; duplicate is idempotent upsert.
-      void whenAuthReady()
-        .then(() => touchBoardActive(boardId))
-        .catch(() => {
-          // Cloud upsert can fail offline; island touch still runs when signed out.
-        });
+      // One owner for auth/hello-driven scratch claim. Avoid duplicate cloud/DO
+      // writes from both the page script and the React island.
+      bindBoardPageScratchClaim();
     }
   </script>
 </BaseLayout>

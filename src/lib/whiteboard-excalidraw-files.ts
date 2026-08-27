@@ -13,61 +13,61 @@ import {
 import {
 	CaptureUpdateAction,
 	convertToExcalidrawElements,
-	newElementWith,
 } from '@excalidraw/excalidraw'
-import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import type { ExcalidrawEmbeddableElement } from '@excalidraw/excalidraw/element/types'
+import type {
+	ExcalidrawEmbeddableElement,
+	FileId,
+	OrderedExcalidrawElement,
+} from '@excalidraw/excalidraw/element/types'
+import type { ClipboardData } from '@excalidraw/excalidraw/clipboard'
 import type {
 	AppState,
 	BinaryFileData,
 	BinaryFiles,
 	DataURL,
 	ExcalidrawImperativeAPI,
-	FileId,
 } from '@excalidraw/excalidraw/types'
 import {
 	assetResolveUrl,
-	boardPlayerPath,
-	uploadBoardAssetBytes,
 	claimTempCanvasAssets,
-	fetchBoardAssetBytes,
+	fetchBoardCanvasBytes,
 	fetchBoardAssetMeta,
-	fetchOwnerAssetBytes,
-	hasBoardAsset,
+	fetchCanvasBytes,
 	ownerKeyForBoardMeta,
 	parsePlayerPath,
+	playerPath,
 	registerTempAssetPrefix,
 	tempOwnerKey,
+	uploadCanvasBytes,
 	type BoardAssetMeta,
 } from './whiteboard-assets'
 import {
-	generateWhiteboardImageFileId,
-	hasExcalidrawImageDataURL,
-	resolveWhiteboardImageMime,
-	WHITEBOARD_IMAGE_MIME,
-} from './whiteboard-file-sync-plan'
-
-export {
-	generateWhiteboardImageFileId,
-	hasExcalidrawImageDataURL,
-	isAllowedWhiteboardImageMime,
-	resolveWhiteboardImageMime,
-	WHITEBOARD_IMAGE_MIME,
-} from './whiteboard-file-sync-plan'
-import { getActiveIdentity, getAuthHeaders } from './whiteboard-identity'
+	getActiveIdentity,
+	getAuthHeaders,
+	onAuthChange,
+} from './whiteboard-identity'
 import { getBoardSessionAuth } from './whiteboard-participants'
-import {
-	classifyUploadFailure,
-	useWhiteboardUploadOutbox,
-	type UseWhiteboardUploadOutboxResult,
-} from './whiteboard-upload-outbox'
 
 /** Same event `whiteboard-excalidraw-roles` publishes after `wb:hello`. */
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
 
-const IMAGE_MIME = WHITEBOARD_IMAGE_MIME
+const IMAGE_MIME = new Set([
+	'image/jpeg',
+	'image/png',
+	'image/gif',
+	'image/webp',
+	'image/svg+xml',
+	'image/bmp',
+	'image/x-icon',
+	'image/avif',
+	'image/jfif',
+])
 
 const VIDEO_MIME = new Set(['video/mp4', 'video/webm'])
+
+// Keep legacy R2 hydration available while the board client is rolled back,
+// but do not create new media references that cannot be durably uploaded.
+const NEW_MEDIA_INSERTION_ENABLED = false
 
 const YOUTUBE_RE =
 	/^(https?:\/\/)?(www\.|m\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)\//i
@@ -99,34 +99,16 @@ function referencedImageFileIds(
 	return ids
 }
 
-function removeLiveImageElements(
-	api: ExcalidrawImperativeAPI,
-	fileId: string,
-): void {
-	const elements = api.getSceneElementsIncludingDeleted()
-	const next = elements.map((element) =>
-		element.type === 'image' &&
-			element.fileId === fileId &&
-			!element.isDeleted
-			? newElementWith(element, { isDeleted: true })
-			: element,
-	)
-	if (next.some((element, index) => element !== elements[index])) {
-		api.updateScene({
-			elements: next,
-			captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-		})
-	}
-}
-
 function referencedPlayerFiles(
-	 elements: readonly { type?: string; isDeleted?: boolean; link?: string | null }[],
-): { fileId: string; ownerKey: string; boardId?: string }[] {
-	const out: { fileId: string; ownerKey: string; boardId?: string }[] = []
+	elements: readonly { type?: string; isDeleted?: boolean; link?: string | null }[],
+): { fileId: string; ownerKey: string }[] {
+	const out: { fileId: string; ownerKey: string }[] = []
 	for (const el of elements) {
 		if (el.isDeleted || el.type !== 'embeddable') continue
 		const parsed = parsePlayerPath(el.link || '')
-		if (parsed) out.push(parsed)
+		if (parsed?.ownerKey) {
+			out.push({ fileId: parsed.fileId, ownerKey: parsed.ownerKey })
+		}
 	}
 	return out
 }
@@ -170,9 +152,11 @@ export function renderWhiteboardEmbeddable(
 	const parsed = parsePlayerPath(link)
 	if (!parsed) return null
 	const ownerKey = options?.ownerKey || parsed.ownerKey
+	const params = new URLSearchParams({
+		owner: ownerKey,
+		id: parsed.fileId,
+	})
 	const boardId = options?.boardId || parsed.boardId
-	const params = new URLSearchParams({ id: parsed.fileId })
-	if (ownerKey) params.set('owner', ownerKey)
 	if (boardId) params.set('board', boardId)
 	return createElement('iframe', {
 		src: `/whiteboard-player?${params.toString()}`,
@@ -188,8 +172,8 @@ export function renderWhiteboardEmbeddable(
 	})
 }
 
-export async function generateWhiteboardFileId(file: File): Promise<string> {
-	return generateWhiteboardImageFileId(file)
+export async function generateWhiteboardFileId(_file: File): Promise<string> {
+	return crypto.randomUUID()
 }
 
 async function blobToDataURL(blob: Blob): Promise<string> {
@@ -204,21 +188,9 @@ async function blobToDataURL(blob: Blob): Promise<string> {
 	})
 }
 
-/** Convert a data URL without `fetch(dataURL)` (CSP / Chromebook-safe). */
-function dataURLToBlob(dataURL: string): Blob {
-	const comma = dataURL.indexOf(',')
-	if (comma < 0) throw new Error('Invalid data URL')
-	const header = dataURL.slice(0, comma)
-	const payload = dataURL.slice(comma + 1)
-	const mime =
-		header.match(/^data:([^;,]+)/i)?.[1]?.trim() || 'application/octet-stream'
-	if (/;base64/i.test(header)) {
-		const binary = atob(payload)
-		const bytes = new Uint8Array(binary.length)
-		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-		return new Blob([bytes], { type: mime })
-	}
-	return new Blob([decodeURIComponent(payload)], { type: mime })
+async function dataURLToBlob(dataURL: string): Promise<Blob> {
+	const res = await fetch(dataURL)
+	return res.blob()
 }
 
 function viewportCenter(
@@ -270,6 +242,26 @@ async function fetchBoardAssetMetaForCanvas(
 	}
 }
 
+function waitForBoardSession(boardId: string, timeoutMs: number): Promise<void> {
+	if (typeof window === 'undefined') return Promise.resolve()
+	if (getBoardSessionAuth(boardId)) return Promise.resolve()
+	return new Promise((resolve) => {
+		let settled = false
+		const finish = () => {
+			if (settled) return
+			settled = true
+			window.clearTimeout(timer)
+			window.removeEventListener(HELLO_EVENT, onHello)
+			resolve()
+		}
+		const onHello = () => {
+			if (getBoardSessionAuth(boardId)) finish()
+		}
+		const timer = window.setTimeout(finish, timeoutMs)
+		window.addEventListener(HELLO_EVENT, onHello)
+	})
+}
+
 function isGoogleOwnerKey(value: string | null | undefined): value is string {
 	return typeof value === 'string' && value.startsWith('google:')
 }
@@ -283,13 +275,6 @@ function googleOwnerFromElements(
 		if (parsed && isGoogleOwnerKey(parsed.ownerKey)) return parsed.ownerKey
 	}
 	return null
-}
-
-const CONTENT_HASH_FILE_ID = /^[0-9a-f]{64}$/
-
-/** Content-addressed ids are SHA-256 hex; anything else is a legacy UUID id. */
-function isContentHashFileId(fileId: string): boolean {
-	return CONTENT_HASH_FILE_ID.test(fileId)
 }
 
 function ownerKeysToTry(
@@ -316,7 +301,10 @@ function ownerKeysToTry(
 	return [...new Set([google, temp, baked].filter(Boolean) as string[])]
 }
 
-export type WhiteboardExcalidrawFilesApi = {
+export function useWhiteboardExcalidrawFiles(
+	boardId: string,
+	apiRef: RefObject<ExcalidrawImperativeAPI | null>,
+): {
 	generateIdForFile: (file: File) => Promise<string>
 	validateEmbeddable: (link: string) => boolean | undefined
 	renderEmbeddable: (
@@ -324,35 +312,21 @@ export type WhiteboardExcalidrawFilesApi = {
 		appState: AppState,
 	) => ReturnType<typeof createElement> | null
 	onPaste: (
-		data: { files?: File[] | null },
+		data: ClipboardData,
 		event: ClipboardEvent | null,
 	) => boolean
 	syncFiles: (
 		elements: readonly OrderedExcalidrawElement[],
 		files: BinaryFiles,
 	) => void
-	/** Durable upload state and controls for WhiteboardCanvas/UI integration. */
-	uploadOutbox: UseWhiteboardUploadOutboxResult
-	getUploadState: UseWhiteboardUploadOutboxResult['getUploadState']
-	retryUpload: UseWhiteboardUploadOutboxResult['retryUpload']
-	retryAllUploads: UseWhiteboardUploadOutboxResult['retryAllUploads']
-	removeUpload: UseWhiteboardUploadOutboxResult['removeUpload']
-	isR2ReadyFileId: (fileId: string) => boolean
-}
-
-export function useWhiteboardExcalidrawFiles(
-	boardId: string,
-	apiRef: RefObject<ExcalidrawImperativeAPI | null>,
-): WhiteboardExcalidrawFilesApi {
-	const uploadOutbox = useWhiteboardUploadOutbox(boardId)
+} {
 	const metaRef = useRef<BoardAssetMeta>({
 		savedToLibrary: false,
 		cloudOwnerKey: null,
 	})
 	const googleOwnerRef = useRef<string | null>(null)
-	const r2ReadyFileIds = useRef(new Set<string>())
-	const uploadInflightRef = useRef(new Set<string>())
-	const hydrateInflightRef = useRef(new Set<string>())
+	const readyRef = useRef(new Set<string>())
+	const inflightRef = useRef(new Set<string>())
 	const prefixRegisteredRef = useRef(false)
 	const claimedOwnerRef = useRef<string | null>(null)
 	const toastedUploadRef = useRef(new Set<string>())
@@ -383,6 +357,9 @@ export function useWhiteboardExcalidrawFiles(
 		let ownerKey = resolveCanvasOwnerKey()
 		if (isGoogleOwnerKey(ownerKey)) return ownerKey
 		if (!metaRef.current.savedToLibrary) return ownerKey
+		if (!getBoardSessionAuth(boardId)) {
+			await waitForBoardSession(boardId, 2500)
+		}
 		const meta = await fetchBoardAssetMetaForCanvas(boardId)
 		metaRef.current = meta
 		rememberGoogleOwner(meta.cloudOwnerKey)
@@ -392,6 +369,9 @@ export function useWhiteboardExcalidrawFiles(
 	useEffect(() => {
 		if (!boardId) return
 		let cancelled = false
+		let refreshInFlight: Promise<void> | null = null
+		let refreshQueued = false
+		let postHelloTimer: number | null = null
 		googleOwnerRef.current = null
 
 		const refreshMeta = async () => {
@@ -435,27 +415,53 @@ export function useWhiteboardExcalidrawFiles(
 			await claimTempCanvasAssets(boardId).catch(() => null)
 			claimedOwnerRef.current = googleOwner
 			rememberGoogleOwner(googleOwner)
-			for (const key of [...r2ReadyFileIds.current]) {
-				if (key.startsWith('video:')) r2ReadyFileIds.current.delete(key)
+			for (const key of [...readyRef.current]) {
+				if (key.startsWith('video:')) readyRef.current.delete(key)
 			}
 			setVideoEpoch((n) => n + 1)
 		}
 
-		void refreshMeta()
-		const timer = window.setInterval(() => {
-			void refreshMeta()
-		}, 8000)
+		const requestMetaRefresh = () => {
+			if (cancelled) return
+			if (refreshInFlight) {
+				refreshQueued = true
+				return
+			}
+			const pending = refreshMeta().catch(() => {
+				// Metadata is advisory for legacy media hydration. Retry only on
+				// meaningful page/auth events instead of polling continuously.
+			})
+			refreshInFlight = pending
+			void pending.finally(() => {
+				if (refreshInFlight === pending) refreshInFlight = null
+				if (refreshQueued) {
+					refreshQueued = false
+					requestMetaRefresh()
+				}
+			})
+		}
+
+		requestMetaRefresh()
 		const onFocus = () => {
-			void refreshMeta()
+			requestMetaRefresh()
 		}
 		const onHello = () => {
-			void refreshMeta()
+			requestMetaRefresh()
+			if (postHelloTimer != null) window.clearTimeout(postHelloTimer)
+			// Scratch-board claim starts from the same hello event. One delayed
+			// refresh observes that transition without an eight-second poll.
+			postHelloTimer = window.setTimeout(() => {
+				postHelloTimer = null
+				requestMetaRefresh()
+			}, 3000)
 		}
+		const stopAuthListener = onAuthChange(() => requestMetaRefresh())
 		window.addEventListener('focus', onFocus)
 		window.addEventListener(HELLO_EVENT, onHello)
 		return () => {
 			cancelled = true
-			window.clearInterval(timer)
+			if (postHelloTimer != null) window.clearTimeout(postHelloTimer)
+			stopAuthListener()
 			window.removeEventListener('focus', onFocus)
 			window.removeEventListener(HELLO_EVENT, onHello)
 		}
@@ -463,101 +469,73 @@ export function useWhiteboardExcalidrawFiles(
 
 	const putImageFile = useCallback(
 		async (fileId: string, file: BinaryFileData) => {
-			const existingJob = uploadOutbox.outbox.getJob(fileId)
-			if (existingJob?.state === 'uploaded') {
-				r2ReadyFileIds.current.add(fileId)
-				return
-			}
-			if (
-				existingJob &&
-				(existingJob.state === 'pending' || existingJob.state === 'uploading')
-			) {
-				return
-			}
-			if (!file.dataURL) return
-			const mime = resolveWhiteboardImageMime({
-				mimeType: file.mimeType || existingJob?.mimeType,
-			})
-			if (!mime) return
-			const blob =
-				existingJob?.blob && file.dataURL
-					? existingJob.blob
-					: dataURLToBlob(file.dataURL)
-			try {
-				await uploadOutbox.outbox.enqueue({
-					boardId,
-					fileId,
-					blob,
-					mimeType: mime,
+			const ownerKey = await loadCanvasOwnerKey()
+			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
+				prefixRegisteredRef.current = true
+				void registerTempAssetPrefix(boardId).catch(() => {
+					prefixRegisteredRef.current = false
 				})
-			} catch (error) {
-				const api = apiRef.current
-				if (api) removeLiveImageElements(api, fileId)
-				throw error
 			}
+			const blob = await dataURLToBlob(file.dataURL)
+			await uploadCanvasBytes({
+				ownerKey,
+				fileId,
+				bytes: blob,
+				mimeType: file.mimeType,
+			})
 		},
-		[apiRef, boardId, uploadOutbox.outbox],
+		[boardId, loadCanvasOwnerKey],
 	)
 
 	const failedAtRef = useRef(new Map<string, number>())
 
-	/**
-	 * Boards created before board-scoped keys reference `assets/{ownerKey}/{fileId}`.
-	 * Only legacy UUID ids probe: a content-hash id never existed under an owner
-	 * key, so this keeps a freshly inserted image that is still uploading from
-	 * firing owner-key HEADs on every retry.
-	 */
-	const hydrateLegacyOwnerImage = useCallback(
+	const hydrateImage = useCallback(
 		async (fileId: string) => {
-			if (isContentHashFileId(fileId)) return null
+			const api = apiRef.current
+			if (!api) return false
+			// Recover bytes written by the reverted board-scoped uploader first.
+			// This endpoint is deliberately GET-only.
+			const boardScoped = await fetchBoardCanvasBytes(boardId, fileId)
+			if (boardScoped && IMAGE_MIME.has(boardScoped.mimeType)) {
+				const dataURL = await blobToDataURL(boardScoped.blob)
+				api.addFiles([
+					{
+						id: asFileId(fileId),
+						mimeType: asImageMime(boardScoped.mimeType),
+						dataURL: asDataURL(dataURL),
+						created: Date.now(),
+					},
+				])
+				return true
+			}
 			if (
 				metaRef.current.savedToLibrary &&
 				!isGoogleOwnerKey(metaRef.current.cloudOwnerKey)
 			) {
 				await loadCanvasOwnerKey()
 			}
-			const owner = await probeCanvasOwner(
+			const found = await fetchCanvasBytes(
 				ownerKeysToTry(boardId, metaRef.current, googleOwnerRef.current),
 				fileId,
 			)
-			if (!owner) return null
-			return fetchOwnerAssetBytes(owner, fileId)
-		},
-		[boardId, loadCanvasOwnerKey],
-	)
-
-	const hydrateImage = useCallback(
-		async (fileId: string) => {
-			const api = apiRef.current
-			if (!api) return false
-			const boardFound =
-				(await fetchBoardAssetBytes(boardId, fileId)) ??
-				(await hydrateLegacyOwnerImage(fileId))
-			if (!boardFound || !IMAGE_MIME.has(boardFound.mimeType)) return false
-			const dataURL = await blobToDataURL(boardFound.blob)
+			if (!found || !IMAGE_MIME.has(found.mimeType)) return false
+			rememberGoogleOwner(found.ownerKey)
+			const dataURL = await blobToDataURL(found.blob)
 			api.addFiles([
 				{
 					id: asFileId(fileId),
-					mimeType: asImageMime(boardFound.mimeType),
+					mimeType: asImageMime(found.mimeType),
 					dataURL: asDataURL(dataURL),
 					created: Date.now(),
 				},
 			])
 			return true
 		},
-		[apiRef, boardId, hydrateLegacyOwnerImage],
+		[apiRef, boardId, loadCanvasOwnerKey],
 	)
 
 	const hydrateVideo = useCallback(
-		async (fileId: string, bakedOwner: string, bakedBoardId?: string) => {
-			if (bakedBoardId) {
-				// Board-scoped links must never be redirected through a different
-				// board's manifest. Links to another board remain readable as
-				// already-persisted embeds and need no local upload probe.
-				return bakedBoardId === boardId
-					? hasBoardAsset(boardId, fileId)
-					: true
-			}
+		async (fileId: string, bakedOwner: string) => {
 			if (
 				metaRef.current.savedToLibrary &&
 				!isGoogleOwnerKey(metaRef.current.cloudOwnerKey)
@@ -594,65 +572,42 @@ export function useWhiteboardExcalidrawFiles(
 			const referenced = referencedImageFileIds(elements)
 			const now = Date.now()
 			for (const fileId of referenced) {
-				const existing = files[fileId]
-				const job = uploadOutbox.outbox.getJob(fileId)
-				const hasDataURL = hasExcalidrawImageDataURL(existing)
-				const r2Ready =
-					r2ReadyFileIds.current.has(fileId) || job?.state === 'uploaded'
-				const uploadInflight =
-					uploadInflightRef.current.has(fileId) ||
-					job?.state === 'pending' ||
-					job?.state === 'uploading'
-				const hydrateInflight = hydrateInflightRef.current.has(fileId)
-				const failedAt = failedAtRef.current.get(fileId) ?? 0
-				if (now - failedAt < 1000) continue
-
-				if (hasDataURL && !r2Ready && !uploadInflight) {
-					if (
-						existing &&
-						!resolveWhiteboardImageMime({
-							mimeType: existing.mimeType || job?.mimeType,
-						})
-					) {
-						continue
-					}
-					uploadInflightRef.current.add(fileId)
-					void (async () => {
-						try {
-							if (existing?.dataURL) await putImageFile(fileId, existing)
-							failedAtRef.current.delete(fileId)
-						} catch (error) {
-							failedAtRef.current.set(fileId, Date.now())
-							if (
-								!classifyUploadFailure(error).retryable &&
-								!toastedUploadRef.current.has(fileId)
-							) {
-								toastedUploadRef.current.add(fileId)
-								apiRef.current?.setToast?.({
-									message: 'Image upload failed',
-									duration: 4000,
-								})
-							}
-						} finally {
-							uploadInflightRef.current.delete(fileId)
-						}
-					})()
+				if (readyRef.current.has(fileId) || inflightRef.current.has(fileId)) {
 					continue
 				}
-
-				if (hasDataURL) continue
-				if (hydrateInflight) continue
-				hydrateInflightRef.current.add(fileId)
+				const failedAt = failedAtRef.current.get(fileId) ?? 0
+				if (now - failedAt < 1000) continue
+				const existing = files[fileId]
+				// A local data URL means this is a newly inserted file. Existing
+				// scene files are hydrated below by their file id and remain read-only.
+				if (existing?.dataURL && !NEW_MEDIA_INSERTION_ENABLED) continue
+				inflightRef.current.add(fileId)
 				void (async () => {
 					try {
-						const ok = await hydrateImage(fileId)
-						if (!ok) throw new Error('asset not in R2 yet')
-						r2ReadyFileIds.current.add(fileId)
+						if (existing?.dataURL) {
+							try {
+								await putImageFile(fileId, existing)
+							} catch {
+								if (!toastedUploadRef.current.has(fileId)) {
+									toastedUploadRef.current.add(fileId)
+									apiRef.current?.setToast?.({
+										message: 'Image upload failed',
+										duration: 4000,
+									})
+								}
+								throw new Error('image upload failed')
+							}
+						} else {
+							const ok = await hydrateImage(fileId)
+							if (!ok) throw new Error('asset not in R2 yet')
+						}
+						readyRef.current.add(fileId)
 						failedAtRef.current.delete(fileId)
 					} catch {
 						failedAtRef.current.set(fileId, Date.now())
+						readyRef.current.delete(fileId)
 					} finally {
-						hydrateInflightRef.current.delete(fileId)
+						inflightRef.current.delete(fileId)
 					}
 				})()
 			}
@@ -660,47 +615,58 @@ export function useWhiteboardExcalidrawFiles(
 			for (const parsed of referencedPlayerFiles(elements)) {
 				const readyKey = `video:${parsed.fileId}`
 				if (
-					r2ReadyFileIds.current.has(readyKey) ||
-					hydrateInflightRef.current.has(readyKey)
+					readyRef.current.has(readyKey) ||
+					inflightRef.current.has(readyKey)
 				) {
 					continue
 				}
 				const failedAt = failedAtRef.current.get(readyKey) ?? 0
 				if (now - failedAt < 1000) continue
-				hydrateInflightRef.current.add(readyKey)
+				inflightRef.current.add(readyKey)
 				void (async () => {
 					try {
-						const ok = await hydrateVideo(
-							parsed.fileId,
-							parsed.ownerKey,
-							parsed.boardId,
-						)
+						const ok = await hydrateVideo(parsed.fileId, parsed.ownerKey)
 						if (!ok) throw new Error('video asset not in R2 yet')
-						r2ReadyFileIds.current.add(readyKey)
+						readyRef.current.add(readyKey)
 						failedAtRef.current.delete(readyKey)
 					} catch {
 						failedAtRef.current.set(readyKey, Date.now())
+						readyRef.current.delete(readyKey)
 					} finally {
-						hydrateInflightRef.current.delete(readyKey)
+						inflightRef.current.delete(readyKey)
 					}
 				})()
 			}
 		},
-		[apiRef, boardId, hydrateImage, hydrateVideo, putImageFile, uploadOutbox.outbox],
+		[apiRef, boardId, hydrateImage, hydrateVideo, putImageFile],
 	)
 
 	const insertVideos = useCallback(
 		async (videoFiles: File[]) => {
 			const api = apiRef.current
 			if (!api || videoFiles.length === 0) return
+			if (!NEW_MEDIA_INSERTION_ENABLED) {
+				api.setToast?.({
+					message: 'Video insertion is temporarily disabled',
+					duration: 4000,
+				})
+				return
+			}
+			const ownerKey = await loadCanvasOwnerKey()
+			if (ownerKey.startsWith('temp:') && !prefixRegisteredRef.current) {
+				prefixRegisteredRef.current = true
+				void registerTempAssetPrefix(boardId).catch(() => {
+					prefixRegisteredRef.current = false
+				})
+			}
 			const appState = api.getAppState()
 			const existing = api.getSceneElementsIncludingDeleted()
 			const added = []
 			for (const [index, file] of videoFiles.entries()) {
 				const fileId = crypto.randomUUID()
 				try {
-					await uploadBoardAssetBytes({
-						boardId,
+					await uploadCanvasBytes({
+						ownerKey,
 						fileId,
 						bytes: file,
 						mimeType: (file.type || 'video/mp4').split(';')[0].trim(),
@@ -709,8 +675,9 @@ export function useWhiteboardExcalidrawFiles(
 					api.setToast?.({ message: 'Video upload failed', duration: 4000 })
 					continue
 				}
+				resolvedVideoOwnerRef.current.set(fileId, ownerKey)
 				const origin = viewportCenter(appState, 640, 360)
-				const link = boardPlayerPath(boardId, fileId)
+				const link = playerPath(ownerKey, fileId)
 				added.push(
 					...convertToExcalidrawElements([
 						{
@@ -720,7 +687,9 @@ export function useWhiteboardExcalidrawFiles(
 							width: 640,
 							height: 360,
 							link,
-						},
+						} as unknown as NonNullable<
+							Parameters<typeof convertToExcalidrawElements>[0]
+						>[number],
 					]).map((el) =>
 						el.type === 'embeddable'
 							? { ...el, link, validated: true }
@@ -734,7 +703,7 @@ export function useWhiteboardExcalidrawFiles(
 				captureUpdate: CaptureUpdateAction.IMMEDIATELY,
 			})
 		},
-			[apiRef, boardId],
+		[apiRef, boardId, loadCanvasOwnerKey],
 	)
 
 	useEffect(() => {
@@ -742,6 +711,10 @@ export function useWhiteboardExcalidrawFiles(
 		const onDragOver = (event: DragEvent) => {
 			const files = event.dataTransfer?.files
 			if (!files?.length) return
+			if (!NEW_MEDIA_INSERTION_ENABLED) {
+				event.preventDefault()
+				return
+			}
 			if (![...files].every((file) => VIDEO_MIME.has(file.type))) return
 			event.preventDefault()
 		}
@@ -749,6 +722,15 @@ export function useWhiteboardExcalidrawFiles(
 			const list = event.dataTransfer?.files
 			if (!list?.length) return
 			const files = [...list]
+			if (!NEW_MEDIA_INSERTION_ENABLED) {
+				event.preventDefault()
+				event.stopPropagation()
+				apiRef.current?.setToast?.({
+					message: 'Media insertion is temporarily disabled',
+					duration: 4000,
+				})
+				return
+			}
 			if (!files.every((file) => VIDEO_MIME.has(file.type))) return
 			event.preventDefault()
 			event.stopPropagation()
@@ -763,25 +745,27 @@ export function useWhiteboardExcalidrawFiles(
 	}, [boardId, insertVideos])
 
 	const onPaste = useCallback(
-		(data: { files?: File[] | null }, _event: ClipboardEvent | null) => {
-			const files = data.files ? [...data.files] : []
-			if (files.length === 0) return true
-			if (!files.every((file) => VIDEO_MIME.has(file.type))) return true
-			void insertVideos(files)
-			return false
+		(data: ClipboardData, _event: ClipboardEvent | null) => {
+			if (
+				!NEW_MEDIA_INSERTION_ENABLED &&
+				data.files &&
+				Object.keys(data.files).length > 0
+			) {
+				apiRef.current?.setToast?.({
+					message: 'Media insertion is temporarily disabled',
+					duration: 4000,
+				})
+				return false
+			}
+			return true
 		},
-		[insertVideos],
+		[apiRef],
 	)
 
 	const renderEmbeddable = useCallback(
 		(element: ExcalidrawEmbeddableElement, _appState: AppState) => {
 			const parsed = parsePlayerPath(element.link || '')
 			if (!parsed) return renderWhiteboardEmbeddable(element)
-			if (parsed.boardId) {
-				return renderWhiteboardEmbeddable(element, {
-					boardId: parsed.boardId,
-				})
-			}
 			const resolved =
 				resolvedVideoOwnerRef.current.get(parsed.fileId) ||
 				(isGoogleOwnerKey(googleOwnerRef.current)
@@ -796,36 +780,11 @@ export function useWhiteboardExcalidrawFiles(
 		[boardId, videoEpoch],
 	)
 
-	const generateIdForFile = useCallback(async (file: File) => {
-		return generateWhiteboardImageFileId(file)
-	}, [])
-
-	useEffect(() => {
-		for (const job of uploadOutbox.jobs) {
-			if (job.state === 'uploaded') {
-				r2ReadyFileIds.current.add(job.fileId)
-			}
-		}
-	}, [uploadOutbox.jobs])
-
-	const isR2ReadyFileId = useCallback(
-		(fileId: string) =>
-			r2ReadyFileIds.current.has(fileId) ||
-			uploadOutbox.outbox.getJob(fileId)?.state === 'uploaded',
-		[uploadOutbox.outbox],
-	)
-
 	return {
-		generateIdForFile,
+		generateIdForFile: generateWhiteboardFileId,
 		validateEmbeddable: validateWhiteboardEmbeddable,
 		renderEmbeddable,
 		onPaste,
 		syncFiles,
-		uploadOutbox,
-		getUploadState: uploadOutbox.getUploadState,
-		retryUpload: uploadOutbox.retryUpload,
-		retryAllUploads: uploadOutbox.retryAllUploads,
-		removeUpload: uploadOutbox.removeUpload,
-		isR2ReadyFileId,
 	}
 }

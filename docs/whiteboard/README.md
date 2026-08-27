@@ -1,5 +1,7 @@
 # Whiteboard
 
+> **Rollback status:** The post-`81242d2` image/R2 write redesign was abandoned. New image/video insertion is temporarily disabled while the board runtime is stabilized. Existing media remains readable from legacy `assets/{ownerKey}/{assetId}` objects and from read-only board-scoped `boards/{boardId}/assets/{fileId}` objects. Board-scoped GET/HEAD works; PUT/DELETE return 405. Scene data remains in the board Durable Object's SQLite store.
+
 Collaborative whiteboards for St. Cecilia Technology: create and join boards from a hub, sync live canvases over Cloudflare Durable Objects, store media in R2, and manage People / share codes from the board header.
 
 The product name is **Whiteboard**. The editor is stock **Excalidraw 0.18.1** (MIT). There is no tldraw license key.
@@ -11,7 +13,7 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 | Area | What it does | Doc |
 |------|----------------|-----|
 | Hub + board UI | Create / join; signed-in Recents, Assets, Library; live `/board/{uuid}` canvas + header manage panel. Share-code joiners land as **Editor**; UUID-only stays **Viewer**. **Group Edit** gates whether Editors can draw | [hub-and-board.md](./hub-and-board.md) |
-| Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; R2 files by `fileId` | [sync-storage.md](./sync-storage.md) |
+| Sync + storage | Native WebSocket → DO `WhiteboardBoard`; Excalidraw scene JSON in SQLite; legacy and read-only-compatible R2 files | [sync-storage.md](./sync-storage.md) |
 | Auth + library | Clerk Google sign-in; cloud-only Recents / Library / Assets; scratch boards expire in 24h | [auth-libraries.md](./auth-libraries.md) |
 | Share codes | Permanent `1A2B3C4D` codes in KV (legacy `1A2B` still joins); Copy Code / Copy Link; hub join. Share-code joiners land as **Editor**. UUID-only stays **Viewer**. Group Edit Off = Editors view-only | [share-codes.md](./share-codes.md) |
 | People + permissions | Owner / Manager / Editor / Viewer; Follow (eyes, pan to unfollow); Follow User (camera locked). **Group Edit** is a live draw gate. UUID-only stays **Viewer** | [people-permissions.md](./people-permissions.md) |
@@ -29,7 +31,8 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 | `/api/whiteboard/boards/:uuid/meta` | DO | GET / PATCH saved-to-library + Google Owner (24h TTL) |
 | `/api/whiteboard/boards/:uuid/participants/:sessionId` | DO | PATCH participant role (Owner / Manager) |
 | `/api/whiteboard/boards/:uuid/force-follow` | DO | PATCH Follow User / force-follow (Owner / Manager) |
-| `/api/whiteboard/assets/:ownerKey/:assetId` | R2 | PUT / GET / DELETE media |
+| `/api/whiteboard/boards/:uuid/assets/:fileId` | R2 | Read-only compatibility media: GET / HEAD; PUT / DELETE return 405 |
+| `/api/whiteboard/assets/:ownerKey/:assetId` | R2 | Legacy owner-key PUT / GET / DELETE media |
 | `/api/whiteboard/assets/claim` | R2 | Move `temp:{boardId}` objects under `google:{id}` |
 | `/api/whiteboard/library/boards` | R2 JSON | Signed-in board index (Clerk) |
 | `/api/whiteboard/library/assets` | R2 JSON | Signed-in asset index (Clerk) |
@@ -82,7 +85,7 @@ flowchart LR
 | `src/scripts/whiteboard-hub.ts` | Hub create / join / lists |
 | `src/scripts/whiteboard-menu.ts` | Manage panel behavior |
 | `src/scripts/whiteboard-library.ts` | Cloud library, scratch host secret, join parsing |
-| `src/lib/whiteboard-*.ts` | Sync protocol, scene publication filter, file-sync plan, upload outbox, board write proof, assets, codes, cloud client, identity, People |
+| `src/lib/whiteboard-*.ts` | Sync protocol, legacy/read-only media helpers, assets, codes, cloud client, identity, People |
 | `scripts/copy-excalidraw-fonts.mjs` | Self-host Excalidraw fonts |
 | `wrangler.jsonc` | DO / R2 / KV bindings |
 

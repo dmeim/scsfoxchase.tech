@@ -9,13 +9,6 @@ export const FRAME_TIMEOUT_MS = 10_000
 export const HELLO_TIMEOUT_MS = 5_000
 /** Cookie name prefix the Durable Object reads on connect (`scsfoxchase_wbj_{boardId}`). */
 export const JOIN_CODE_COOKIE_PREFIX = 'scsfoxchase_wbj_'
-/**
- * JWT-shaped garbage. Clerk cannot verify it in this harness (no JWKS / real
- * secret). Use it to assert `wb:authResult` failure reasons, not a signed-in Owner.
- */
-export const GARBAGE_CLERK_JWT =
-	'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.not-a-real-signature-padding'
-
 export type WorkerFrame = {
 	type?: string
 	elements?: unknown
@@ -265,17 +258,6 @@ export async function waitForHello(
 	timeoutMs = HELLO_TIMEOUT_MS,
 ): Promise<WorkerFrame> {
 	return socket.waitForFrame((frame) => frame.type === 'wb:hello', timeoutMs)
-}
-
-export async function waitForAuthResult(
-	socket: TestSocket,
-	options: { timeoutMs?: number; after?: number } = {},
-): Promise<WorkerFrame> {
-	return socket.waitForFrameAfter(
-		options.after ?? 0,
-		(frame) => frame.type === 'wb:authResult',
-		options.timeoutMs ?? FRAME_TIMEOUT_MS,
-	)
 }
 
 export function framesOfType(

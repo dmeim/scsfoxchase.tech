@@ -12,16 +12,7 @@ export type ClerkWhiteboardAuth = {
 	email: string
 	displayName: string
 	avatarUrl?: string
-	/** True when the Clerk profile lookup failed, so accountId is the Clerk user id, not the Google sub. */
-	profileDegraded?: boolean
 }
-
-export type ClerkVerifyResult =
-	| { ok: true; auth: ClerkWhiteboardAuth }
-	| {
-			ok: false
-			reason: 'no_token' | 'token_invalid' | 'clerk_unreachable' | 'account_not_allowed'
-	  }
 
 function publishableKey(env: Env): string {
 	return (
@@ -46,10 +37,7 @@ function parseAllowedDomains(raw: string | undefined): {
 	return { domains, emails }
 }
 
-export function isEmailAllowed(
-	email: string,
-	env: { PUBLIC_CLERK_ALLOWED_DOMAINS?: string },
-): boolean {
+export function isEmailAllowed(email: string, env: Env): boolean {
 	const { domains, emails } = parseAllowedDomains(
 		env.PUBLIC_CLERK_ALLOWED_DOMAINS,
 	)
@@ -317,87 +305,27 @@ async function resolveClerkProfile(
 	return memory ?? null
 }
 
-/**
- * Build a Clerk auth from a verified `sub` plus an optional profile.
- * An empty email is never an allowlist denial — that used to hang signed-in
- * owners when `users.getUser` timed out and `PUBLIC_CLERK_ALLOWED_DOMAINS` was set.
- */
-export function resolveClerkAuthFromProfile(
+async function authFromClerkUserId(
+	clerk: ReturnType<typeof createClerkClient>,
 	clerkUserId: string,
-	profile: {
-		accountId: string
-		email: string
-		displayName: string
-		avatarUrl?: string
-	} | null,
-	env: { PUBLIC_CLERK_ALLOWED_DOMAINS?: string },
-): ClerkVerifyResult {
-	if (!profile) {
-		return {
-			ok: true,
-			auth: {
-				clerkUserId,
-				accountId: clerkUserId,
-				ownerKey: `google:${clerkUserId}`,
-				email: '',
-				displayName: 'Signed-in user',
-				profileDegraded: true,
-			},
-		}
-	}
+	env: Env,
+): Promise<ClerkWhiteboardAuth | null> {
+	const profile = await resolveClerkProfile(clerk, clerkUserId, env)
+	const accountId = profile?.accountId || clerkUserId
+	const email = profile?.email ?? ''
 
-	const email = profile.email ?? ''
-	if (email !== '' && !isEmailAllowed(email, env)) {
-		return { ok: false, reason: 'account_not_allowed' }
-	}
+	// Empty email must fail when an allowlist is configured (isEmailAllowed
+	// returns false for blank email once domains/emails are set).
+	if (!isEmailAllowed(email, env)) return null
 
-	const accountId = profile.accountId || clerkUserId
 	return {
-		ok: true,
-		auth: {
-			clerkUserId,
-			accountId,
-			ownerKey: `google:${accountId}`,
-			email,
-			displayName: profile.displayName || 'Signed-in user',
-			avatarUrl: profile.avatarUrl,
-			profileDegraded: email === '',
-		},
+		clerkUserId,
+		accountId,
+		ownerKey: `google:${accountId}`,
+		email,
+		displayName: profile?.displayName || 'Signed-in user',
+		avatarUrl: profile?.avatarUrl,
 	}
-}
-
-export function clerkOwnerKeys(auth: ClerkWhiteboardAuth): string[] {
-	return [
-		...new Set([
-			auth.ownerKey,
-			`google:${auth.accountId}`,
-			`google:${auth.clerkUserId}`,
-		]),
-	].filter((key) => key.startsWith('google:') && key !== 'google:')
-}
-
-/** Degraded identities must never match or write a cloud owner key. */
-export function clerkMatchesCloudOwner(
-	auth: ClerkWhiteboardAuth,
-	cloudOwnerKey: string | null,
-): boolean {
-	if (auth.profileDegraded) return false
-	if (!cloudOwnerKey) return false
-	if (clerkOwnerKeys(auth).includes(cloudOwnerKey)) return true
-	const suffix = cloudOwnerKey.startsWith('google:')
-		? cloudOwnerKey.slice('google:'.length)
-		: cloudOwnerKey
-	if (!suffix) return false
-	return (
-		auth.accountId === suffix ||
-		auth.clerkUserId === suffix ||
-		auth.accountId === cloudOwnerKey ||
-		auth.clerkUserId === cloudOwnerKey
-	)
-}
-
-export function shouldWriteCloudOwnerFromClerk(auth: ClerkWhiteboardAuth): boolean {
-	return auth.profileDegraded !== true
 }
 
 function subFromVerifyTokenResult(result: unknown): string {
@@ -439,14 +367,14 @@ export async function requireClerkWhiteboardAuth(
 		const authorization = request.headers.get('Authorization')?.trim() || ''
 		if (authorization.toLowerCase().startsWith('bearer ')) {
 			const token = authorization.slice(7).trim()
-			if (token) {
-				const fromToken = await verifyClerkWhiteboardTokenResult(
-					token,
-					env,
-					request.headers.get('Origin'),
-				)
-				return clerkVerifyToLibraryAuth(fromToken)
-			}
+			const fromToken = token
+				? await verifyClerkWhiteboardToken(
+						token,
+						env,
+						request.headers.get('Origin'),
+					)
+				: null
+			if (fromToken) return { ok: true, auth: fromToken }
 		}
 		return {
 			ok: false,
@@ -463,43 +391,18 @@ export async function requireClerkWhiteboardAuth(
 		}
 	}
 
-	const profile = await resolveClerkProfile(clerk, clerkUserId, env)
-	return clerkVerifyToLibraryAuth(
-		resolveClerkAuthFromProfile(clerkUserId, profile, env),
-	)
-}
+	const auth = await authFromClerkUserId(clerk, clerkUserId, env)
+	if (!auth) {
+		return {
+			ok: false,
+			response: jsonError(
+				403,
+				'This Google account is not allowed for school whiteboards',
+			),
+		}
+	}
 
-function clerkVerifyToLibraryAuth(
-	result: ClerkVerifyResult,
-): { ok: true; auth: ClerkWhiteboardAuth } | { ok: false; response: Response } {
-	if (!result.ok) {
-		if (result.reason === 'account_not_allowed') {
-			return {
-				ok: false,
-				response: jsonError(
-					403,
-					'This Google account is not allowed for school whiteboards',
-				),
-			}
-		}
-		if (result.reason === 'clerk_unreachable') {
-			return {
-				ok: false,
-				response: jsonError(503, 'Sign-in service is temporarily unavailable'),
-			}
-		}
-		return {
-			ok: false,
-			response: jsonError(401, 'Sign in required'),
-		}
-	}
-	if (result.auth.profileDegraded) {
-		return {
-			ok: false,
-			response: jsonError(503, 'Sign-in service is temporarily unavailable'),
-		}
-	}
-	return { ok: true, auth: result.auth }
+	return { ok: true, auth }
 }
 
 /**
@@ -527,39 +430,25 @@ export async function tryClerkWhiteboardAuth(
  * (signature + expiry) instead of wrapping the JWT in a fake Request for
  * `authenticateRequest`, which can fail handshake/azp on Durable Object sockets.
  */
-export async function verifyClerkWhiteboardTokenResult(
+export async function verifyClerkWhiteboardToken(
 	token: string,
 	env: Env,
 	origin?: string | null,
-): Promise<ClerkVerifyResult> {
+): Promise<ClerkWhiteboardAuth | null> {
 	const value = token.trim()
-	if (!value) return { ok: false, reason: 'no_token' }
+	if (!value) return null
 	const secretKey = env.CLERK_SECRET_KEY
 	const pk = publishableKey(env)
-	if (!secretKey || !pk) return { ok: false, reason: 'clerk_unreachable' }
+	if (!secretKey || !pk) return null
 	try {
 		const verified = await verifyToken(value, {
 			secretKey,
 			authorizedParties: authorizedPartiesForToken(value, origin),
 		})
 		const clerkUserId = subFromVerifyTokenResult(verified)
-		if (!clerkUserId) return { ok: false, reason: 'token_invalid' }
-		const profile = await resolveClerkProfile(
-			clerkClient(env),
-			clerkUserId,
-			env,
-		)
-		return resolveClerkAuthFromProfile(clerkUserId, profile, env)
+		if (!clerkUserId) return null
+		return authFromClerkUserId(clerkClient(env), clerkUserId, env)
 	} catch {
-		return { ok: false, reason: 'token_invalid' }
+		return null
 	}
-}
-
-export async function verifyClerkWhiteboardToken(
-	token: string,
-	env: Env,
-	origin?: string | null,
-): Promise<ClerkWhiteboardAuth | null> {
-	const result = await verifyClerkWhiteboardTokenResult(token, env, origin)
-	return result.ok ? result.auth : null
 }

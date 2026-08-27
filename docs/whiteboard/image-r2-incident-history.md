@@ -1,5 +1,7 @@
 # Whiteboard image R2 incident history (handoff)
 
+> **Final status (2026-08-27): PLAN ABANDONED / ROLLBACK IMPLEMENTED.** The post-`81242d2` board-scoped R2 upload redesign was rolled back after the image and board-loading incidents. New image/video insertion is temporarily disabled. Existing media remains readable from legacy `assets/{ownerKey}/{assetId}` and from read-only board-scoped `boards/{boardId}/assets/{fileId}` objects; board-scoped GET/HEAD works, while PUT/DELETE return `405`. The live scene remains in DO SQLite. The retained fixes are share-code mint-once, GET `/meta` no-mint, alarm no-op avoidance, identical-scene persist skipping, and writer exclusion from full scene broadcasts. This file remains historical evidence; the current architecture is documented in [sync-storage.md](./sync-storage.md).
+
 **Purpose:** hand this file to another engineer or coding agent. Production is **still broken**. As of **`a1e9489`** (deployed and live, 2026-08-27 ~14:30 UTC), opening a pre-existing ("old") board still stays on the green **Connecting…** toast.
 
 > **Read §9 before anything else.** §9 documents a large four-phase change (`a1e9489`) that was supposed to make this hang architecturally impossible and did not. It lists exactly what was changed, what was actually verified, what was *not* verified, and the ranked hypotheses for why the hang survived. Several "Do not" rules in §8 were **deliberately reversed** in `a1e9489`; §9.6 lists the corrections. Following §8 blindly will send you backwards.

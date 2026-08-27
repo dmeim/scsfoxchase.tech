@@ -31,21 +31,21 @@ describe('scene survives a cold Durable Object', () => {
 		const boardId = newBoardId()
 		const hostSecret = randomHostSecret()
 		const element = rectangleElement()
-		const mutationId = crypto.randomUUID()
 
 		const owner = await connectAndAuth(boardId, hostSecret)
-		sockets.push(owner)
+		const peer = await connectAndAuth(boardId, hostSecret)
+		sockets.push(owner, peer)
 
 		owner.send({
 			type: 'scene:update',
 			elements: [element],
-			mutationId,
+			full: true,
 		})
-		await owner.waitForFrame(
-			(frame) =>
-				frame.type === 'scene:ack' && frame.mutationId === mutationId,
+		await peer.waitForFrame(
+			(frame) => frame.type === 'scene:sync' && frameHasElement(frame, element.id),
 		)
 		owner.close()
+		peer.close()
 
 		await evictDurableObject(boardStub(boardId), { webSockets: 'close' })
 

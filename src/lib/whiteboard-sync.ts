@@ -12,48 +12,9 @@
 export const UNSAVED_BOARD_TTL_MS = 24 * 60 * 60 * 1000
 export const SCENE_FLUSH_MS = 1000
 export const CLIENT_PING_MS = 25_000
+export const RECONNECT_BASE_MS = 500
+export const RECONNECT_MAX_MS = 60_000
 export const FULL_RESYNC_EVERY = 20
-
-export type SceneBroadcastPlan = {
-	type: 'scene:sync' | 'scene:update'
-	exceptSessionId: string
-}
-
-/**
- * Full scene:sync (explicit full or FULL_RESYNC_EVERY) and incremental
- * scene:update both exclude the writer so the originating tab is not echoed.
- */
-export function sceneBroadcastPlan(input: {
-	full: boolean
-	updatesSinceFullSync: number
-	fromSessionId: string
-	fullResyncEvery?: number
-}): SceneBroadcastPlan {
-	const every = input.fullResyncEvery ?? FULL_RESYNC_EVERY
-	if (input.full || input.updatesSinceFullSync >= every) {
-		return { type: 'scene:sync', exceptSessionId: input.fromSessionId }
-	}
-	return { type: 'scene:update', exceptSessionId: input.fromSessionId }
-}
-
-/**
- * Idle 30s full flush: skip when the scene version has not moved past both
- * the last ack and the last full send. `persistFailedNeedsRetry` must bypass
- * that watermark so a `persist_failed` can retry the same version.
- */
-export function shouldSkipIdleFullFlush(input: {
-	sceneVersion: number
-	acknowledgedVersion: number
-	lastSentFullFlushVersion: number
-	persistFailedNeedsRetry?: boolean
-}): boolean {
-	if (input.persistFailedNeedsRetry) return false
-	return (
-		input.sceneVersion <=
-		Math.max(input.acknowledgedVersion, input.lastSentFullFlushVersion)
-	)
-}
-
 export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
 export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
@@ -63,6 +24,14 @@ export const SCENE_TOO_LARGE_MESSAGE =
 export const SCENE_PERSIST_FAILED_MESSAGE =
 	'Could not save this board. The last change was not stored.'
 
+/** Exponential reconnect backoff with a one-minute outage ceiling. */
+export function reconnectDelayMs(attempt: number): number {
+	const safeAttempt = Number.isFinite(attempt)
+		? Math.max(0, Math.min(30, Math.floor(attempt)))
+		: 0
+	return Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** safeAttempt)
+}
+
 export type SceneErrorCode =
 	| typeof SCENE_TOO_LARGE_CODE
 	| typeof SCENE_PERSIST_FAILED_CODE
@@ -71,8 +40,6 @@ export type SceneErrorMessage = {
 	type: 'wb:error'
 	code: SceneErrorCode
 	message: string
-	/** Present when the error rejected a mutation from a current client. */
-	mutationId?: string
 }
 
 export class ScenePersistError extends Error {
@@ -160,152 +127,6 @@ export function roleCanEdit(role: WhiteboardRole): boolean {
 	return role === 'owner' || role === 'manager' || role === 'editor'
 }
 
-const WHITEBOARD_ROLE_RANK: Record<WhiteboardRole, number> = {
-	viewer: 0,
-	editor: 1,
-	manager: 2,
-	owner: 3,
-}
-
-/**
- * Repeatable `wb:auth` after hello: apply `wb:role` for upgrades and for
- * Clerk identity attaching to an already-editable session. Never demote.
- */
-export function shouldApplySocketReauth(
-	current: {
-		role: WhiteboardRole
-		userId: string
-		isHost: boolean
-		displayName: string
-	},
-	next: {
-		role: WhiteboardRole
-		userId: string
-		isHost: boolean
-		displayName: string
-	},
-): boolean {
-	if (WHITEBOARD_ROLE_RANK[next.role] < WHITEBOARD_ROLE_RANK[current.role]) {
-		return false
-	}
-	return (
-		next.role !== current.role ||
-		next.userId !== current.userId ||
-		next.isHost !== current.isHost ||
-		next.displayName !== current.displayName
-	)
-}
-
-export const ROLE_RESOLVE_DEADLINE_MS = 15_000
-
-export type WbAuthReason =
-	| 'awaiting_token'
-	| 'token_invalid'
-	| 'clerk_unreachable'
-	| 'account_not_allowed'
-	| 'host_mismatch'
-
-export const WB_AUTH_REASONS: readonly WbAuthReason[] = [
-	'awaiting_token',
-	'token_invalid',
-	'clerk_unreachable',
-	'account_not_allowed',
-	'host_mismatch',
-]
-
-export function isWbAuthReason(value: unknown): value is WbAuthReason {
-	return (
-		value === 'awaiting_token' ||
-		value === 'token_invalid' ||
-		value === 'clerk_unreachable' ||
-		value === 'account_not_allowed' ||
-		value === 'host_mismatch'
-	)
-}
-
-export type ClerkVerifyFailureReason =
-	| 'no_token'
-	| 'token_invalid'
-	| 'clerk_unreachable'
-	| 'account_not_allowed'
-
-export type WbAuthOutcome = {
-	roleResolved: boolean
-	reason?: WbAuthReason
-}
-
-/**
- * Maps a Clerk token check onto whether this socket's role is authoritative.
- * Empty-email / allowlist is handled before this; `no_token` falls through to
- * the signed-in-without-JWT path so a missing JWT is never a hard denial.
- */
-export function resolveWbAuthOutcome(input: {
-	signedIn: boolean
-	roleCanEdit: boolean
-	tokenResult?:
-		| { ok: true; profileDegraded: boolean }
-		| { ok: false; reason: ClerkVerifyFailureReason }
-	hostSecretPresented?: boolean
-	hostAccepted?: boolean
-}): WbAuthOutcome {
-	const tokenResult = input.tokenResult
-	if (tokenResult && !(tokenResult.ok === false && tokenResult.reason === 'no_token')) {
-		if (!tokenResult.ok) {
-			if (tokenResult.reason === 'token_invalid') {
-				if (input.roleCanEdit) return { roleResolved: true }
-				return { roleResolved: true, reason: 'token_invalid' }
-			}
-			if (tokenResult.reason === 'account_not_allowed') {
-				if (input.roleCanEdit) return { roleResolved: true }
-				return { roleResolved: true, reason: 'account_not_allowed' }
-			}
-			if (input.roleCanEdit) return { roleResolved: true }
-			return { roleResolved: false, reason: 'clerk_unreachable' }
-		}
-		if (tokenResult.profileDegraded && !input.roleCanEdit) {
-			return { roleResolved: false, reason: 'clerk_unreachable' }
-		}
-		return { roleResolved: true }
-	}
-
-	if (input.signedIn && !input.roleCanEdit) {
-		return { roleResolved: false, reason: 'awaiting_token' }
-	}
-
-	if (input.hostSecretPresented && !input.hostAccepted && !input.signedIn) {
-		return { roleResolved: true, reason: 'host_mismatch' }
-	}
-
-	return { roleResolved: true }
-}
-
-export function shouldForceRoleResolved(input: {
-	roleResolved: boolean
-	connectedAt: number
-	now: number
-	deadlineMs?: number
-}): boolean {
-	if (input.roleResolved) return false
-	const deadline = input.deadlineMs ?? ROLE_RESOLVE_DEADLINE_MS
-	return input.now - input.connectedAt > deadline
-}
-
-/** Retry while the role is unresolved, even if a JWT was already sent. */
-export function shouldRetryWhiteboardAuth(input: {
-	roleResolved: boolean
-	tokenAlreadySent: boolean
-}): boolean {
-	return !input.roleResolved
-}
-
-export type AuthResultMessage = {
-	type: 'wb:authResult'
-	accepted: boolean
-	roleResolved: boolean
-	role: WhiteboardRole
-	reason?: WbAuthReason
-}
-
 /** Live canvas writes: Owner/Manager always; Editor only while Group Edit is on. */
 export function sessionCanEdit(
 	role: WhiteboardRole,
@@ -354,8 +175,6 @@ export type HelloMessage = {
 	// PHASE 3.3
 	role: WhiteboardRole
 	authToken: string
-	/** False until Clerk/host proof settles; omitted by older servers. */
-	roleResolved?: boolean
 }
 
 export type BoardPublicMeta = {
@@ -410,13 +229,6 @@ export type SceneUpdateMessage = {
 	elements: SceneElement[]
 	full?: boolean
 	databaseJson?: string
-	/** Optional client mutation id; old clients omit it. */
-	mutationId?: string
-}
-
-export type SceneAckMessage = {
-	type: 'scene:ack'
-	mutationId: string
 }
 
 export type SceneRequestMessage = {

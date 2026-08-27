@@ -13,17 +13,15 @@ vi.mock('cloudflare:workers', () => ({
 
 import {
 	WhiteboardBoard,
+	shouldApplySocketRoleUpgrade,
 	shouldReplaceStorageAlarm,
 	shouldSkipIdenticalScenePersist,
 } from '../src/worker/WhiteboardBoard'
 import {
-	FULL_RESYNC_EVERY,
 	META_BOARD_ID_KEY,
+	META_CLASS_CAN_EDIT_KEY,
 	META_CREATED_AT_KEY,
 	META_UNSAVED_EXPIRES_AT_KEY,
-	sceneBroadcastPlan,
-	shouldApplySocketReauth,
-	shouldSkipIdleFullFlush,
 	type SceneElement,
 } from '../src/lib/whiteboard-sync'
 
@@ -45,6 +43,7 @@ type BoardPrivate = {
 		opts?: { force?: boolean },
 	) => void
 	scheduleNextAlarm: () => Promise<void>
+	setClassCanEdit: (enabled: boolean) => Promise<void>
 	applySceneUpdate: (
 		fromSessionId: string,
 		incoming: SceneElement[],
@@ -93,9 +92,6 @@ function createHarness(options?: { expiresAt?: string; alarm?: number | null }) 
 			return {
 				toArray: () => (sceneJson ? [{ scene_json: sceneJson }] : []),
 			}
-		}
-		if (/FROM whiteboard_asset_manifest/i.test(q)) {
-			return { toArray: () => [] }
 		}
 		if (isSceneInsert(q)) {
 			sceneJson = typeof binds[0] === 'string' ? binds[0] : sceneJson
@@ -191,6 +187,17 @@ describe('shouldReplaceStorageAlarm', () => {
 		expect(shouldReplaceStorageAlarm(1_000_000, 1_000_400)).toBe(false)
 		expect(shouldReplaceStorageAlarm(null, 1_000_000)).toBe(true)
 		expect(shouldReplaceStorageAlarm(1_000_000, 1_002_000)).toBe(true)
+	})
+})
+
+describe('shouldApplySocketRoleUpgrade', () => {
+	it('allows authoritative upgrades without allowing re-auth demotions', () => {
+		expect(shouldApplySocketRoleUpgrade('viewer', 'editor')).toBe(true)
+		expect(shouldApplySocketRoleUpgrade('editor', 'manager')).toBe(true)
+		expect(shouldApplySocketRoleUpgrade('editor', 'owner')).toBe(true)
+		expect(shouldApplySocketRoleUpgrade('owner', 'viewer')).toBe(false)
+		expect(shouldApplySocketRoleUpgrade('manager', 'editor')).toBe(false)
+		expect(shouldApplySocketRoleUpgrade('editor', 'editor')).toBe(false)
 	})
 })
 
@@ -315,6 +322,23 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		expect(storage.setAlarm).toHaveBeenCalledWith(Date.parse(expiresAt))
 	})
 
+	it('skips repeated writes for an unchanged Group Edit setting', async () => {
+		const { board, storage } = await createBoard()
+
+		await priv(board).setClassCanEdit(false)
+		expect(storage.delete).not.toHaveBeenCalledWith(META_CLASS_CAN_EDIT_KEY)
+
+		await priv(board).setClassCanEdit(true)
+		await priv(board).setClassCanEdit(true)
+		expect(storage.put).toHaveBeenCalledTimes(1)
+		expect(storage.put).toHaveBeenCalledWith(META_CLASS_CAN_EDIT_KEY, true)
+
+		await priv(board).setClassCanEdit(false)
+		await priv(board).setClassCanEdit(false)
+		expect(storage.delete).toHaveBeenCalledTimes(1)
+		expect(storage.delete).toHaveBeenCalledWith(META_CLASS_CAN_EDIT_KEY)
+	})
+
 	it('persists a scene that references an image not yet in R2', async () => {
 		const { board, sqlExec } = await createBoard()
 		priv(board).persistScene({ elements: [], appState: {} })
@@ -335,97 +359,5 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 			false,
 		)
 		expect(sceneInsertCount(sqlExec)).toBe(inserts + 1)
-	})
-})
-
-describe('sceneBroadcastPlan writer exclude', () => {
-	it('excludes the writer from full scene:sync broadcasts', () => {
-		expect(
-			sceneBroadcastPlan({
-				full: true,
-				updatesSinceFullSync: 1,
-				fromSessionId: 'writer-session',
-			}),
-		).toEqual({ type: 'scene:sync', exceptSessionId: 'writer-session' })
-		expect(
-			sceneBroadcastPlan({
-				full: false,
-				updatesSinceFullSync: FULL_RESYNC_EVERY,
-				fromSessionId: 'writer-session',
-			}),
-		).toEqual({ type: 'scene:sync', exceptSessionId: 'writer-session' })
-	})
-})
-
-describe('shouldSkipIdleFullFlush', () => {
-	it('skips when the scene version has not moved', () => {
-		expect(
-			shouldSkipIdleFullFlush({
-				sceneVersion: 10,
-				acknowledgedVersion: 10,
-				lastSentFullFlushVersion: 10,
-			}),
-		).toBe(true)
-	})
-
-	it('retries the same version after persist_failed', () => {
-		expect(
-			shouldSkipIdleFullFlush({
-				sceneVersion: 10,
-				acknowledgedVersion: 10,
-				lastSentFullFlushVersion: 10,
-				persistFailedNeedsRetry: true,
-			}),
-		).toBe(false)
-	})
-})
-
-describe('shouldApplySocketReauth', () => {
-	const guest = {
-		role: 'editor' as const,
-		userId: '11111111-1111-4111-8111-111111111111',
-		isHost: false,
-		displayName: 'Guest',
-	}
-
-	it('upgrades share-code Editor to Owner when Clerk identity arrives', () => {
-		expect(
-			shouldApplySocketReauth(guest, {
-				role: 'owner',
-				userId: 'google-sub',
-				isHost: true,
-				displayName: 'Teacher',
-			}),
-		).toBe(true)
-	})
-
-	it('attaches Clerk identity to a host-secret Owner without a second hello', () => {
-		expect(
-			shouldApplySocketReauth(
-				{
-					role: 'owner',
-					userId: guest.userId,
-					isHost: true,
-					displayName: 'Guest',
-				},
-				{
-					role: 'owner',
-					userId: 'google-sub',
-					isHost: true,
-					displayName: 'Teacher',
-				},
-			),
-		).toBe(true)
-	})
-
-	it('does not demote an editable session', () => {
-		expect(
-			shouldApplySocketReauth(guest, {
-				role: 'viewer',
-				userId: guest.userId,
-				isHost: false,
-				displayName: 'Guest',
-			}),
-		).toBe(false)
 	})
 })

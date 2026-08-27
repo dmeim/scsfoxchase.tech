@@ -10,6 +10,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { generateGuestDisplayName } from '../lib/whiteboard-display-name'
 import {
+	FULL_RESYNC_EVERY,
 	MAX_SCENE_ELEMENTS,
 	MAX_SCENE_JSON_BYTES,
 	META_BOARD_ID_KEY,
@@ -26,17 +27,11 @@ import {
 	isWhiteboardRole,
 	isGuestConnectUserId,
 	mergeSceneElements,
-	sceneBroadcastPlan,
 	parseDatabaseScene,
 	parseSceneElements,
 	parseStoredSceneElements,
 	roleCanEdit,
 	sessionCanEdit,
-	shouldApplySocketReauth,
-	shouldForceRoleResolved,
-	resolveWbAuthOutcome,
-	isWbAuthReason,
-	ROLE_RESOLVE_DEADLINE_MS,
 	sceneTooLargeError,
 	type AssignableRole,
 	type BoardPublicMeta,
@@ -44,16 +39,11 @@ import {
 	type SceneAppState,
 	type SceneElement,
 	type ScenePersistError,
-	type WbAuthReason,
 	type WhiteboardRole,
 } from '../lib/whiteboard-sync'
 import {
-	clerkMatchesCloudOwner,
-	clerkOwnerKeys,
-	shouldWriteCloudOwnerFromClerk,
 	tryClerkWhiteboardAuth,
 	verifyClerkWhiteboardToken,
-	verifyClerkWhiteboardTokenResult,
 	type ClerkWhiteboardAuth,
 } from './clerkAuth'
 import { libraryIndexContainsBoard } from './libraryRoutes'
@@ -76,6 +66,38 @@ const ROLES_KEY = 'meta:roles'
 const ACTIVE_CODE_KEY = 'meta:activeCode'
 const CODE_EXPIRES_AT_KEY = 'meta:codeExpiresAt'
 const CODE_MINT_LOG_KEY = 'meta:codeMintLog'
+/** Skip replacing an alarm when it is already scheduled at the target time. */
+const ALARM_SET_TOLERANCE_MS = 1000
+
+export function shouldSkipIdenticalScenePersist(
+	lastPersistedJson: string | null,
+	nextJson: string,
+	force = false,
+): boolean {
+	return !force && lastPersistedJson === nextJson
+}
+
+export function shouldReplaceStorageAlarm(
+	existingAlarm: number | null | undefined,
+	target: number,
+	toleranceMs = ALARM_SET_TOLERANCE_MS,
+): boolean {
+	if (existingAlarm == null) return true
+	return Math.abs(existingAlarm - target) > toleranceMs
+}
+
+export function shouldApplySocketRoleUpgrade(
+	current: WhiteboardRole,
+	next: WhiteboardRole,
+): boolean {
+	const rank: Record<WhiteboardRole, number> = {
+		viewer: 0,
+		editor: 1,
+		manager: 2,
+		owner: 3,
+	}
+	return rank[next] > rank[current]
+}
 
 const SCENE_TABLE_SQL = `
 	CREATE TABLE IF NOT EXISTS excalidraw_scene (
@@ -92,44 +114,6 @@ const SCENE_TABLE_V2_SQL = `
 		updated_at INTEGER NOT NULL
 	)
 `
-
-const ASSET_MANIFEST_TABLE_SQL = `
-	CREATE TABLE IF NOT EXISTS whiteboard_asset_manifest (
-		file_id TEXT PRIMARY KEY,
-		r2_key TEXT NOT NULL,
-		mime_type TEXT NOT NULL,
-		size_bytes INTEGER NOT NULL,
-		etag TEXT,
-		status TEXT NOT NULL CHECK (status IN ('ready', 'deleted')),
-		created_at INTEGER NOT NULL,
-		updated_at INTEGER NOT NULL
-	)
-`
-
-const MAX_ASSET_BYTES = 8 * 1024 * 1024
-const ASSET_MIME_RE = /^(image|video)\/[a-z0-9.+-]+$/i
-/** Skip setAlarm when the existing alarm is already this close to the target. */
-const ALARM_SET_TOLERANCE_MS = 1000
-
-/** Identical serialized scene: skip SQLite UPSERT unless the merge accepted elements. */
-export function shouldSkipIdenticalScenePersist(
-	lastPersistedJson: string | null,
-	nextJson: string,
-	force = false,
-): boolean {
-	if (force) return false
-	return lastPersistedJson === nextJson
-}
-
-/** Avoid rewriting the same unsaved-TTL alarm every GET /meta poll. */
-export function shouldReplaceStorageAlarm(
-	existingAlarm: number | null | undefined,
-	target: number,
-	toleranceMs = ALARM_SET_TOLERANCE_MS,
-): boolean {
-	if (existingAlarm == null) return true
-	return Math.abs(existingAlarm - target) > toleranceMs
-}
 
 export type WipeStoredDataResult = {
 	objectId: string
@@ -263,13 +247,8 @@ interface SocketAttachment {
 	role: WhiteboardRole
 	authToken: string
 	meta: SessionMeta
-	/** @deprecated Hibernation compat; derive `roleResolved` instead. */
+	/** Waiting for first-message Clerk / host proof (`wb:auth`). */
 	pendingClerkAuth?: boolean
-	/** False until Clerk/host proof settles the role. */
-	roleResolved: boolean
-	/** `Date.now()` at connect; used for the 15s role-resolve deadline. */
-	connectedAt: number
-	lastAuthReason?: WbAuthReason
 	connectOrigin?: string
 	/** Voluntary Follow target; survives hibernation with the socket. */
 	followTargetSessionId?: string
@@ -303,28 +282,6 @@ type ParticipantPublic = {
 type LiveScene = {
 	elements: SceneElement[]
 	appState: SceneAppState
-}
-
-export type BoardAssetManifest = {
-	fileId: string
-	r2Key: string
-	mimeType: string
-	size: number
-	etag: string | null
-	status: 'ready' | 'deleted'
-	createdAt: number
-	updatedAt: number
-}
-
-type AssetManifestRow = {
-	file_id: string
-	r2_key: string
-	mime_type: string
-	size_bytes: number
-	etag: string | null
-	status: string
-	created_at: number
-	updated_at: number
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -385,12 +342,7 @@ function sanitizeAssetPrefix(raw: string | null | undefined): string | null {
 
 const BOARD_UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const BOARD_FILE_ID_RE = /^[0-9a-f]{64}$/
 const PLAYER_OWNER_KEY_RE = /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/
-
-function isBoardAssetFileId(value: string): boolean {
-	return BOARD_UUID_RE.test(value) || BOARD_FILE_ID_RE.test(value)
-}
 
 function parsePersistedPlayerLink(
 	link: unknown,
@@ -456,8 +408,6 @@ function normalizeAttachment(
 			: raw?.canEdit === true
 				? 'editor'
 				: 'viewer'
-	const roleResolved =
-		raw?.roleResolved ?? (raw?.pendingClerkAuth === true ? false : true)
 	return {
 		sessionId: raw?.sessionId ?? sessionId,
 		isHost,
@@ -470,15 +420,7 @@ function normalizeAttachment(
 			userId: meta.userId ?? '',
 			isHost: Boolean(meta.isHost || isHost),
 		},
-		pendingClerkAuth: !roleResolved,
-		roleResolved,
-		connectedAt:
-			typeof raw?.connectedAt === 'number' && Number.isFinite(raw.connectedAt)
-				? raw.connectedAt
-				: Date.now(),
-		lastAuthReason: isWbAuthReason(raw?.lastAuthReason)
-			? raw.lastAuthReason
-			: undefined,
+		pendingClerkAuth: Boolean(raw?.pendingClerkAuth),
 		connectOrigin:
 			typeof raw?.connectOrigin === 'string' ? raw.connectOrigin : '',
 		followTargetSessionId:
@@ -537,7 +479,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private forceFollowNeedsRebroadcast = false
 	private sceneCache: LiveScene | null = null
 	private sceneLoaded = false
-	/** Last `scene_json` blob written (or loaded). Identical UPSERTs are skipped. */
+	/** Last scene_json blob written or loaded; identical writes are no-ops. */
 	private lastPersistedJson: string | null = null
 	private updatesSinceFullSync = 0
 
@@ -553,7 +495,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				await this.clearAllStorage()
 			}
 			migrateExcalidrawSceneTable(this.ctx.storage)
-			this.ctx.storage.sql.exec(ASSET_MANIFEST_TABLE_SQL)
 		})
 	}
 
@@ -573,8 +514,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		} catch {
 			// no alarm set
 		}
-		const boardId = await this.ctx.storage.get<string>(META_BOARD_ID_KEY)
-		await this.cleanupBoardAssets(boardId)
 		await this.ctx.storage.deleteAll()
 		this.resetLiveState()
 	}
@@ -604,7 +543,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			await this.clearActiveCodeKeys()
 			await this.clearAllStorage()
 			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
-			this.ctx.storage.sql.exec(ASSET_MANIFEST_TABLE_SQL)
 			return {
 				objectId: this.ctx.id.toString(),
 				tablesBefore,
@@ -616,19 +554,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	/**
 	 * Asset PUT/DELETE gate used by assetRoutes. Accepts the creating host
-	 * secret, a live can-edit WebSocket session, or a Clerk identity that
-	 * matches the cloud owner / a stored editor role.
+	 * secret or a live can-edit WebSocket session. Does not mint a host hash.
 	 */
 	async assertAssetWriteAccess(opts: {
 		hostSecret?: string | null
 		sessionId?: string | null
 		authToken?: string | null
-		clerk?: {
-			accountId: string
-			ownerKey: string
-			clerkUserId: string
-			profileDegraded?: boolean
-		} | null
 	}): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
 		this.hydrateSockets()
 		const hostSecret =
@@ -656,37 +587,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				}
 			}
 		}
-		if (opts.clerk) {
-			const clerkAuth: ClerkWhiteboardAuth = {
-				clerkUserId: opts.clerk.clerkUserId,
-				accountId: opts.clerk.accountId,
-				ownerKey: opts.clerk.ownerKey,
-				email: '',
-				displayName: '',
-				profileDegraded: opts.clerk.profileDegraded,
-			}
-			const cloudOwnerKey =
-				(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-			if (clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
-				return { ok: true }
-			}
-			const stored = await this.readStoredRoles()
-			const storedRole =
-				stored[clerkAuth.accountId] ??
-				stored[clerkAuth.ownerKey] ??
-				stored[clerkAuth.clerkUserId]
-			if (
-				storedRole === 'manager' ||
-				storedRole === 'editor'
-			) {
-				if (sessionCanEdit(storedRole, await this.readClassCanEdit())) {
-					return { ok: true }
-				}
-			}
-		}
-		const presented = Boolean(
-			hostSecret || (sessionId && authToken) || opts.clerk,
-		)
+		const presented = Boolean(hostSecret || (sessionId && authToken))
 		return {
 			ok: false,
 			status: presented ? 403 : 401,
@@ -694,144 +595,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				? "Not allowed to write this board's assets"
 				: 'Host secret or editor session required',
 		}
-	}
-
-	/**
-	 * Register a board-scoped binary after its R2 PUT has completed. The
-	 * operation is an upsert so retries after a lost HTTP response are safe.
-	 */
-	async registerBoardAssetManifest(opts: {
-		boardId: string
-		fileId: string
-		r2Key: string
-		mimeType: string
-		size: number
-		etag?: string | null
-	}): Promise<BoardAssetManifest> {
-		const boardId = typeof opts.boardId === 'string' ? opts.boardId.trim() : ''
-		const fileId = typeof opts.fileId === 'string' ? opts.fileId.trim() : ''
-		const mimeType =
-			typeof opts.mimeType === 'string' ? opts.mimeType.trim().toLowerCase() : ''
-		const r2Key = typeof opts.r2Key === 'string' ? opts.r2Key.trim() : ''
-		if (!BOARD_UUID_RE.test(boardId) || !isBoardAssetFileId(fileId)) {
-			throw new Error('Invalid board asset id')
-		}
-		if (r2Key !== `boards/${boardId}/assets/${fileId}`) {
-			throw new Error('Invalid board asset key')
-		}
-		if (!ASSET_MIME_RE.test(mimeType)) {
-			throw new Error('Invalid board asset mime type')
-		}
-		if (
-			!Number.isInteger(opts.size) ||
-			opts.size <= 0 ||
-			opts.size > MAX_ASSET_BYTES
-		) {
-			throw new Error('Invalid board asset size')
-		}
-
-		const storedBoardId =
-			(await this.ctx.storage.get<string>(META_BOARD_ID_KEY)) ?? null
-		if (storedBoardId && storedBoardId !== boardId) {
-			throw new Error('Board id does not match this Durable Object')
-		}
-		if (!storedBoardId) {
-			await this.ctx.storage.put(META_BOARD_ID_KEY, boardId)
-		}
-
-		const existing = this.readBoardAssetManifestRow(fileId)
-		const now = Date.now()
-		const createdAt = existing?.created_at ?? now
-		const etag =
-			typeof opts.etag === 'string' && opts.etag.trim()
-				? opts.etag.trim()
-				: null
-		if (existing) {
-			this.ctx.storage.sql.exec(
-				`UPDATE whiteboard_asset_manifest
-				 SET r2_key = ?, mime_type = ?, size_bytes = ?, etag = ?,
-				     status = 'ready', updated_at = ?
-				 WHERE file_id = ?`,
-				r2Key,
-				mimeType,
-				opts.size,
-				etag,
-				now,
-				fileId,
-			)
-		} else {
-			this.ctx.storage.sql.exec(
-				`INSERT INTO whiteboard_asset_manifest
-				 (file_id, r2_key, mime_type, size_bytes, etag, status, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, 'ready', ?, ?)`,
-				fileId,
-				r2Key,
-				mimeType,
-				opts.size,
-				etag,
-				createdAt,
-				now,
-			)
-		}
-		const manifest = this.readBoardAssetManifestRow(fileId)
-		if (!manifest || manifest.status !== 'ready') {
-			throw new Error('Could not register board asset manifest')
-		}
-		return this.boardAssetManifestFromRow(manifest)
-	}
-
-	/** Best-effort GC index lookup. Asset GET/HEAD do not call this. */
-	async getBoardAssetManifest(opts: {
-		fileId: string
-	}): Promise<BoardAssetManifest | null> {
-		const fileId = typeof opts.fileId === 'string' ? opts.fileId.trim() : ''
-		if (!isBoardAssetFileId(fileId)) return null
-		const row = this.readBoardAssetManifestRow(fileId)
-		if (!row || row.status !== 'ready') return null
-		return this.boardAssetManifestFromRow(row)
-	}
-
-	/**
-	 * Mark a board asset deleted only when no live scene element references it.
-	 * The R2 delete happens in the Worker after this check/transition.
-	 */
-	async deleteBoardAssetManifest(opts: {
-		fileId: string
-	}): Promise<
-		| { ok: true; deleted: boolean }
-		| { ok: false; status: number; error: string }
-	> {
-		const fileId = typeof opts.fileId === 'string' ? opts.fileId.trim() : ''
-		if (!isBoardAssetFileId(fileId)) {
-			return { ok: false, status: 400, error: 'Invalid fileId' }
-		}
-		const scene = await this.loadScene()
-		const referenced = scene.elements.some(
-			(element) =>
-				!element.isDeleted &&
-				element.type === 'image' &&
-				element.fileId === fileId,
-		)
-		if (referenced) {
-			return {
-				ok: false,
-				status: 409,
-				error: 'Asset is referenced by this board',
-			}
-		}
-
-		const row = this.readBoardAssetManifestRow(fileId)
-		if (!row || row.status === 'deleted') {
-			return { ok: true, deleted: false }
-		}
-		this.ctx.storage.sql.exec(
-			`UPDATE whiteboard_asset_manifest
-			 SET status = 'deleted', updated_at = ?
-			 WHERE file_id = ?`,
-			Date.now(),
-			fileId,
-		)
-		return { ok: true, deleted: true }
 	}
 
 	/**
@@ -959,7 +722,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		if (cloudOwnerKey && cloudOwnerKey.startsWith('google:')) {
 			return Boolean(
 				opts.clerkAuth &&
-					clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey),
+					this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey),
 			)
 		}
 		return true
@@ -1039,7 +802,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		// Do not resolve Clerk on the upgrade request. Browsers cannot send
 		// Authorization headers on a WebSocket, and a slow Clerk BAPI call
 		// here blocks the 101 handshake and the initial scene:sync. Role is
-		// upgraded after connect via `wb:auth` / `wb:role`.
+		// decided at first-message `wb:auth` (finishPendingConnectAuth).
 		const isHost = await this.hostProvesScratchOwner(headerHost, {
 			mint: true,
 			clerkAuth: null,
@@ -1049,6 +812,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			sanitizeDisplayName(url.searchParams.get('displayName')) ||
 			generateGuestDisplayName(guestUserId || sessionId)
 
+		// Always wait for first-message `wb:auth` so scratch host proof can
+		// arrive off the query string (browsers cannot set WS headers).
+		const pendingClerkAuth = true
 		const userId = guestUserId
 		const joinedViaShareCode = await this.presentedJoinCodeIsActive(
 			joinCodeFromConnectRequest(request, boardId),
@@ -1089,9 +855,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			role,
 			authToken,
 			meta,
-			pendingClerkAuth: true,
-			roleResolved: false,
-			connectedAt: Date.now(),
+			pendingClerkAuth,
 			connectOrigin: request.headers.get('Origin') ?? '',
 			joinedViaShareCode,
 			boardId,
@@ -1099,8 +863,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
 
-		await this.sendConnectHello(serverWebSocket, attachment)
-		await this.sendFullScene(serverWebSocket)
+		// Do not make the HTTP 101 wait on an old/large scene read. The accepted
+		// socket queues this initial frame, and waitUntil keeps delivery alive.
+		this.ctx.waitUntil(
+			this.sendFullScene(serverWebSocket).catch(() => {
+				sendJson(serverWebSocket, {
+					type: 'wb:error',
+					code: 'persist_failed',
+					message: 'This board could not load its saved scene.',
+				})
+			}),
+		)
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
 	}
@@ -1123,46 +896,37 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			classCanEdit: await this.readClassCanEdit(),
 			role: attachment.role,
 			authToken: attachment.authToken,
-			roleResolved: attachment.roleResolved,
 		})
 	}
 
 	/**
-	 * Resolve identity + role from a `wb:auth` payload. Always returns an
-	 * attachment; `roleResolved` / `reason` say whether the role is final.
+	 * Resolve identity + role from a `wb:auth` payload. Returns null when the
+	 * caller says it is signed in but has no JWT yet — the socket must stay
+	 * pending (client shows "Connecting…") rather than finalize as Viewer and
+	 * lock a real Owner out of the tools.
 	 */
 	private async resolveAuthMessage(
 		attachment: SocketAttachment,
 		data: Record<string, unknown>,
 		opts: { mintHost: boolean },
-	): Promise<{
-		next: SocketAttachment
-		roleResolved: boolean
-		reason?: WbAuthReason
-	}> {
+	): Promise<SocketAttachment | null> {
+		// Identity comes only from this message. Clerk is never resolved during
+		// the upgrade, so there is nothing carried over from connect.
 		let clerkAuth: ClerkWhiteboardAuth | null = null
-		let tokenResult:
-			| { ok: true; profileDegraded: boolean }
-			| { ok: false; reason: 'no_token' | 'token_invalid' | 'clerk_unreachable' | 'account_not_allowed' }
-			| undefined
 		const rawToken = 'token' in data ? data.token : undefined
 		const token = typeof rawToken === 'string' ? rawToken.trim() : ''
 		if (token) {
-			const fromToken = await verifyClerkWhiteboardTokenResult(
+			const fromToken = await verifyClerkWhiteboardToken(
 				token,
 				this.env,
 				attachment.connectOrigin,
 			)
-			tokenResult = fromToken.ok
-				? { ok: true, profileDegraded: fromToken.auth.profileDegraded === true }
-				: { ok: false, reason: fromToken.reason }
-			if (fromToken.ok) clerkAuth = fromToken.auth
+			if (fromToken) clerkAuth = fromToken
 		}
-		const signedIn = data.signedIn === true
+		const signedInWithoutClerk = !clerkAuth && data.signedIn === true
 
 		const hostSecret =
 			typeof data.hostSecret === 'string' ? data.hostSecret : ''
-		const hostSecretPresented = Boolean(hostSecret && !looksLikeJwt(hostSecret))
 		const isHost =
 			attachment.isHost ||
 			(await this.hostProvesScratchOwner(hostSecret, {
@@ -1188,33 +952,17 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			joinedViaShareCode,
 			boardId,
 		})
-		const outcome = resolveWbAuthOutcome({
-			signedIn,
-			roleCanEdit: roleCanEdit(role),
-			tokenResult,
-			hostSecretPresented,
-			hostAccepted: isHost,
-		})
-		const settled =
-			outcome.roleResolved ||
-			shouldForceRoleResolved({
-				roleResolved: false,
-				connectedAt: attachment.connectedAt,
-				now: Date.now(),
-				deadlineMs: ROLE_RESOLVE_DEADLINE_MS,
-			})
-		const roleResolved = settled
-		const reason = settled
-			? (outcome.reason ?? (outcome.roleResolved ? undefined : 'awaiting_token'))
-			: outcome.reason
-		const next: SocketAttachment = {
+		// Host proof on an unclaimed board already earns Owner, so greeting is
+		// safe. Anything less could be a real Owner whose Clerk session has not
+		// loaded yet — keep that socket pending instead of locking it to Viewer.
+		if (signedInWithoutClerk && !roleCanEdit(role)) return null
+
+		return {
 			...attachment,
 			isHost,
 			role,
 			canEdit: sessionCanEdit(role, await this.readClassCanEdit()),
-			pendingClerkAuth: !roleResolved,
-			roleResolved,
-			lastAuthReason: reason,
+			pendingClerkAuth: false,
 			joinedViaShareCode,
 			boardId,
 			meta: {
@@ -1224,101 +972,67 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				isHost,
 			},
 		}
-		return {
-			next,
-			roleResolved,
-			reason,
-		}
 	}
 
-	/**
-	 * Apply a `wb:auth` frame: always reply with `wb:authResult`. Hello is
-	 * sent once at connect; later role changes go through `wb:role`.
-	 */
-	private async applyAuthFrame(
+	private async finishPendingConnectAuth(
 		ws: WebSocket,
 		attachment: SocketAttachment,
 		data: Record<string, unknown>,
 	): Promise<SocketAttachment> {
-		const resolved = await this.resolveAuthMessage(attachment, data, {
-			mintHost: !attachment.roleResolved,
+		const next = await this.resolveAuthMessage(attachment, data, {
+			mintHost: true,
 		})
-		let next = resolved.next
-		if (
-			attachment.roleResolved &&
-			!next.meta.userId &&
-			attachment.meta.userId
-		) {
-			next = {
-				...next,
-				meta: {
-					...next.meta,
-					userId: attachment.meta.userId,
-					displayName: next.meta.displayName || attachment.meta.displayName,
-				},
-			}
-		}
-		if (
-			attachment.roleResolved &&
-			!shouldApplySocketReauth(
-				{
-					role: attachment.role,
-					userId: attachment.meta.userId,
-					isHost: attachment.isHost,
-					displayName: attachment.meta.displayName,
-				},
-				{
-					role: next.role,
-					userId: next.meta.userId,
-					isHost: next.isHost,
-					displayName: next.meta.displayName,
-				},
-			)
-		) {
-			next = {
-				...attachment,
-				roleResolved: attachment.roleResolved || next.roleResolved,
-				pendingClerkAuth: !(attachment.roleResolved || next.roleResolved),
-				lastAuthReason: resolved.reason ?? attachment.lastAuthReason,
-			}
-		}
+		if (!next) return attachment
+		// Another `wb:auth` may have greeted this socket while the Clerk
+		// verification above was in flight. One hello per socket.
+		const current = normalizeAttachment(
+			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+			attachment.sessionId,
+		)
+		if (!current.pendingClerkAuth) return current
 		ws.serializeAttachment(next)
-		const accepted =
-			next.role !== attachment.role ||
-			next.canEdit !== attachment.canEdit ||
-			next.roleResolved !== attachment.roleResolved ||
-			next.meta.userId !== attachment.meta.userId ||
-			next.isHost !== attachment.isHost ||
-			next.meta.displayName !== attachment.meta.displayName
-		sendJson(ws, {
-			type: 'wb:authResult',
-			accepted,
-			roleResolved: next.roleResolved,
-			role: next.role,
-			...(resolved.reason ? { reason: resolved.reason } : {}),
-		})
-		if (
-			next.role !== attachment.role ||
-			next.canEdit !== attachment.canEdit
-		) {
-			sendJson(ws, {
-				type: 'wb:role',
-				role: next.role,
-				canEdit: next.canEdit,
-				roleResolved: next.roleResolved,
-			})
-			this.broadcastParticipants()
-			void this.broadcastForceFollow()
-			void this.refreshFollowedFlags()
-		} else if (
-			next.meta.userId !== attachment.meta.userId ||
-			next.roleResolved !== attachment.roleResolved
-		) {
-			this.broadcastParticipants()
-			void this.broadcastForceFollow()
-			void this.refreshFollowedFlags()
-		}
+		await this.sendConnectHello(ws, next)
+		this.broadcastParticipants()
+		void this.broadcastForceFollow()
+		void this.refreshFollowedFlags()
 		return next
+	}
+
+	/**
+	 * A second `wb:auth` on an already-greeted socket. Clerk can settle well
+	 * after connect (slow Chromebook, cold Clerk script), so the client
+	 * re-sends once it holds a real JWT. Upgrade in place via `wb:role` —
+	 * one hello per socket, and never downgrade an existing session.
+	 */
+	private async reauthenticateSocket(
+		ws: WebSocket,
+		attachment: SocketAttachment,
+		data: Record<string, unknown>,
+	): Promise<void> {
+		const token = typeof data.token === 'string' ? data.token.trim() : ''
+		const hostSecret =
+			typeof data.hostSecret === 'string' ? data.hostSecret.trim() : ''
+		if (!token && !hostSecret) return
+		// `mintHost: false` — a greeted socket must not be able to plant the
+		// host hash on a board that has none, which would lock the real
+		// creator's leftover secret out for good.
+		const next = await this.resolveAuthMessage(attachment, data, {
+			mintHost: false,
+		})
+		if (!next) return
+		// Upgrades only. Demotions belong to the People PATCH and the Group Edit
+		// resync; letting a re-auth carry one means any frame that fails to
+		// resolve Clerk can strip a session that is already authenticated.
+		if (!shouldApplySocketRoleUpgrade(attachment.role, next.role)) return
+		ws.serializeAttachment(next)
+		sendJson(ws, {
+			type: 'wb:role',
+			role: next.role,
+			canEdit: next.canEdit,
+		})
+		this.broadcastParticipants()
+		void this.broadcastForceFollow()
+		void this.refreshFollowedFlags()
 	}
 
 	private async handleMetaHttp(
@@ -1372,8 +1086,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				if (!nextTitle) {
 					return json(400, { error: 'Enter a board name' })
 				}
-				await this.ctx.storage.put(META_TITLE_KEY, nextTitle)
-				this.broadcastTitle(nextTitle)
+				const existingTitle = await this.ctx.storage.get<string>(META_TITLE_KEY)
+				if (existingTitle !== nextTitle) {
+					await this.ctx.storage.put(META_TITLE_KEY, nextTitle)
+					this.broadcastTitle(nextTitle)
+				}
 			}
 			if (hasClassCanEdit) {
 				await this.setClassCanEdit(body.classCanEdit === true)
@@ -1415,7 +1132,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			nextOwner !== undefined && nextOwner !== existingOwner
 		if (ownerChanging && existingGoogle) {
 			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
-			if (!clerkAuth || !clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
+			if (!clerkAuth || !this.clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
 				return json(403, {
 					error: 'Host secret cannot change the Google owner of a saved board',
 				})
@@ -1428,7 +1145,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			existingGoogle
 		) {
 			const clerkAuth = await this.tryClerkFromMetaRequest(request, url)
-			if (!clerkAuth || !clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
+			if (!clerkAuth || !this.clerkMatchesCloudOwner(clerkAuth, existingOwner)) {
 				return json(403, {
 					error: 'Host secret cannot unsaved a Google-owned board',
 				})
@@ -1436,9 +1153,20 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		if (typeof body.savedToLibrary === 'boolean') {
-			await this.ctx.storage.put(META_SAVED_TO_LIBRARY_KEY, body.savedToLibrary)
+			const existingSaved = await this.isSavedToLibrary()
+			if (existingSaved !== body.savedToLibrary) {
+				await this.ctx.storage.put(
+					META_SAVED_TO_LIBRARY_KEY,
+					body.savedToLibrary,
+				)
+			}
 			if (body.savedToLibrary) {
-				await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+				const existingExpiry = await this.ctx.storage.get(
+					META_UNSAVED_EXPIRES_AT_KEY,
+				)
+				if (existingExpiry !== undefined) {
+					await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
+				}
 			} else {
 				const createdAt =
 					(await this.ctx.storage.get<string>(META_CREATED_AT_KEY)) ??
@@ -1446,7 +1174,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				const expiresAt = new Date(
 					Date.parse(createdAt) + UNSAVED_BOARD_TTL_MS,
 				).toISOString()
-				await this.ctx.storage.put(META_UNSAVED_EXPIRES_AT_KEY, expiresAt)
+				const existingExpiry = await this.ctx.storage.get<string>(
+					META_UNSAVED_EXPIRES_AT_KEY,
+				)
+				if (existingExpiry !== expiresAt) {
+					await this.ctx.storage.put(META_UNSAVED_EXPIRES_AT_KEY, expiresAt)
+				}
 			}
 		}
 
@@ -1459,12 +1192,19 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		if ('tempAssetPrefix' in body) {
+			const existingPrefix = await this.ctx.storage.get<string>(
+				META_TEMP_ASSET_PREFIX_KEY,
+			)
 			if (body.tempAssetPrefix === null) {
-				await this.ctx.storage.delete(META_TEMP_ASSET_PREFIX_KEY)
+				if (existingPrefix !== undefined) {
+					await this.ctx.storage.delete(META_TEMP_ASSET_PREFIX_KEY)
+				}
 			} else if (typeof body.tempAssetPrefix === 'string') {
 				const prefix = sanitizeAssetPrefix(body.tempAssetPrefix)
 				if (!prefix) return json(400, { error: 'Invalid tempAssetPrefix' })
-				await this.ctx.storage.put(META_TEMP_ASSET_PREFIX_KEY, prefix)
+				if (existingPrefix !== prefix) {
+					await this.ctx.storage.put(META_TEMP_ASSET_PREFIX_KEY, prefix)
+				}
 			}
 		}
 
@@ -1516,7 +1256,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	): Promise<boolean> {
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		if (cloudOwnerKey && clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
+		if (cloudOwnerKey && this.clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
 			return true
 		}
 		const stored = await this.readStoredRoles()
@@ -1622,7 +1362,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		if (!clerkAuth) return null
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
-		if (cloudOwnerKey && clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
+		if (cloudOwnerKey && this.clerkMatchesCloudOwner(clerkAuth, cloudOwnerKey)) {
 			return {
 				role: 'owner',
 				userId: clerkAuth.accountId,
@@ -1665,7 +1405,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	/**
 	 * First connect starts the 24h unsaved clock. Later connects / Chromebook
 	 * refreshes must not reset it or delete the scene.
-	 * GET /meta polls skip share-code mint (KV already has the key from connect).
 	 */
 	private async ensureBoardLifetime(
 		boardId: string,
@@ -1748,7 +1487,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 						appState: {},
 					}
 				: { elements: [], appState: {} }
-			this.lastPersistedJson = row?.scene_json ?? null
+			// Keep the exact stored representation so a reconnect followed by an
+			// unchanged full resync can take the identical-write fast path.
+			this.lastPersistedJson = row ? row.scene_json : null
 			return this.sceneCache
 		}
 
@@ -1770,7 +1511,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				elements: [],
 				appState: {},
 			}
-		this.lastPersistedJson = row.live_json || row.database_json || null
 		if (
 			(!this.sceneCache.appState ||
 				Object.keys(this.sceneCache.appState).length === 0) &&
@@ -1779,38 +1519,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			const database = parseDatabaseScene(row.database_json)
 			if (database) this.sceneCache.appState = database.appState
 		}
+		this.lastPersistedJson = row.live_json || JSON.stringify(this.sceneCache)
 		return this.sceneCache
 	}
 
-	private readBoardAssetManifestRow(
-		fileId: string,
-	): AssetManifestRow | null {
-		const row = this.ctx.storage.sql
-			.exec<AssetManifestRow>(
-				`SELECT file_id, r2_key, mime_type, size_bytes, etag, status,
-				        created_at, updated_at
-				 FROM whiteboard_asset_manifest
-				 WHERE file_id = ?`,
-				fileId,
-			)
-			.toArray()[0]
-		return row ?? null
-	}
-
-	private boardAssetManifestFromRow(row: AssetManifestRow): BoardAssetManifest {
-		return {
-			fileId: row.file_id,
-			r2Key: row.r2_key,
-			mimeType: row.mime_type,
-			size: row.size_bytes,
-			etag: row.etag,
-			status: row.status === 'deleted' ? 'deleted' : 'ready',
-			createdAt: row.created_at,
-			updatedAt: row.updated_at,
-		}
-	}
-
-	private persistScene(scene: LiveScene, opts?: { force?: boolean }): void {
+	private persistScene(scene: LiveScene, opts: { force?: boolean } = {}): void {
 		if (scene.elements.length > MAX_SCENE_ELEMENTS) {
 			throw sceneTooLargeError()
 		}
@@ -1821,11 +1534,13 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		if (liveJson.length > MAX_SCENE_JSON_BYTES) {
 			throw sceneTooLargeError()
 		}
+		// Accepted element changes are passed with force=true so they are never
+		// skipped, even if serialization happens to produce the same blob.
 		if (
 			shouldSkipIdenticalScenePersist(
 				this.lastPersistedJson,
 				liveJson,
-				opts?.force === true,
+				opts.force === true,
 			)
 		) {
 			this.sceneCache = scene
@@ -1868,7 +1583,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 		if (rewritten === 0) return 0
 		const nextScene: LiveScene = { elements, appState: scene.appState }
-		this.persistScene(nextScene)
+		this.persistScene(nextScene, { force: rewritten > 0 })
 		this.updatesSinceFullSync = 0
 		this.broadcastScene(
 			{
@@ -1903,7 +1618,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private notifyScenePersistError(
 		fromSessionId: string,
 		error: ScenePersistError,
-		mutationId?: string | null,
 	): void {
 		const payload = {
 			type: 'wb:error' as const,
@@ -1911,12 +1625,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			message: error.message,
 		}
 		const origin = this.sessionIdToWs.get(fromSessionId)
-		if (origin) {
-			sendJson(
-				origin,
-				mutationId ? { ...payload, mutationId } : payload,
-			)
-		}
+		if (origin) sendJson(origin, payload)
 		for (const [sessionId, ws] of this.sessionIdToWs) {
 			if (sessionId === fromSessionId) continue
 			const attachment = normalizeAttachment(
@@ -1947,12 +1656,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.persistScene(nextScene, { force: accepted.length > 0 })
 
 		this.updatesSinceFullSync += 1
-		const plan = sceneBroadcastPlan({
-			full,
-			updatesSinceFullSync: this.updatesSinceFullSync,
-			fromSessionId,
-		})
-		if (plan.type === 'scene:sync') {
+		if (full || this.updatesSinceFullSync >= FULL_RESYNC_EVERY) {
 			this.updatesSinceFullSync = 0
 			this.broadcastScene(
 				{
@@ -1960,14 +1664,43 @@ export class WhiteboardBoard extends DurableObject<Env> {
 					elements: nextScene.elements,
 					appState: nextScene.appState,
 				},
-				plan.exceptSessionId,
+				fromSessionId,
 			)
 			return
 		}
 
 		this.broadcastScene(
 			{ type: 'scene:update', elements: accepted, full: false },
-			plan.exceptSessionId,
+			fromSessionId,
+		)
+	}
+
+	private clerkOwnerKeys(auth: ClerkWhiteboardAuth): string[] {
+		return [
+			...new Set([
+				auth.ownerKey,
+				`google:${auth.accountId}`,
+				`google:${auth.clerkUserId}`,
+			]),
+		].filter((key) => key.startsWith('google:') && key !== 'google:')
+	}
+
+	/** Recents/DO may store `google:{sub}` while the JWT has `google:{clerkUserId}` (or the reverse). */
+	private clerkMatchesCloudOwner(
+		auth: ClerkWhiteboardAuth,
+		cloudOwnerKey: string | null,
+	): boolean {
+		if (!cloudOwnerKey) return false
+		if (this.clerkOwnerKeys(auth).includes(cloudOwnerKey)) return true
+		const suffix = cloudOwnerKey.startsWith('google:')
+			? cloudOwnerKey.slice('google:'.length)
+			: cloudOwnerKey
+		if (!suffix) return false
+		return (
+			auth.accountId === suffix ||
+			auth.clerkUserId === suffix ||
+			auth.accountId === cloudOwnerKey ||
+			auth.clerkUserId === cloudOwnerKey
 		)
 	}
 
@@ -1976,8 +1709,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		boardId: string,
 	): Promise<boolean> {
 		if (!boardId) return false
-		if (!shouldWriteCloudOwnerFromClerk(auth)) return false
-		for (const key of clerkOwnerKeys(auth)) {
+		for (const key of this.clerkOwnerKeys(auth)) {
 			if (await libraryIndexContainsBoard(this.env, key, boardId)) {
 				return true
 			}
@@ -1995,12 +1727,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		auth: ClerkWhiteboardAuth,
 		boardId: string,
 	): Promise<void> {
-		if (!shouldWriteCloudOwnerFromClerk(auth)) return
-
 		const current =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
 
-		if (clerkMatchesCloudOwner(auth, current)) {
+		if (this.clerkMatchesCloudOwner(auth, current)) {
 			if (current !== auth.ownerKey) {
 				await this.ctx.storage.put(META_CLOUD_OWNER_KEY, auth.ownerKey)
 			}
@@ -2035,7 +1765,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
 
 		if (opts.clerkAuth) {
-			if (clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey)) {
+			if (this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey)) {
 				return 'owner'
 			}
 			const stored = await this.readStoredRoles()
@@ -2080,6 +1810,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private async setClassCanEdit(enabled: boolean): Promise<void> {
+		if ((await this.readClassCanEdit()) === enabled) return
 		if (enabled) {
 			await this.ctx.storage.put(META_CLASS_CAN_EDIT_KEY, true)
 			return
@@ -2116,7 +1847,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				type: 'wb:role',
 				role: next.role,
 				canEdit: next.canEdit,
-				roleResolved: next.roleResolved,
 			})
 			changed = true
 		}
@@ -2298,7 +2028,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 					type: 'wb:role',
 					role,
 					canEdit: next.canEdit,
-					roleResolved: next.roleResolved,
 				})
 			}
 		}
@@ -2407,7 +2136,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 			sessionId,
 		)
-		if (!attachment.roleResolved) return null
+		if (attachment.pendingClerkAuth) return null
 		return {
 			sessionId,
 			userId: attachment.meta.userId,
@@ -2425,7 +2154,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
 			)
-			if (!attachment.roleResolved) continue
+			if (attachment.pendingClerkAuth) continue
 			rows.push({
 				sessionId,
 				userId: attachment.meta.userId,
@@ -2608,8 +2337,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	/**
 	 * Mint once if missing. Existing codes (including leftover 4-character)
-	 * are returned without a KV PUT. Leftover `meta:codeExpiresAt` is deleted
-	 * only when that key is still present.
+	 * are kept and rewritten to KV without TTL.
 	 */
 	private async ensureShareCode(boardId: string): Promise<CodeState | null> {
 		if (!this.env.WHITEBOARD_CODES || !boardId) return null
@@ -2716,7 +2444,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		} catch {
 			existing = null
 		}
-		if (!shouldReplaceStorageAlarm(existing, target)) return
+		if (!shouldReplaceStorageAlarm(existing, target)) {
+			return
+		}
 		await this.ctx.storage.setAlarm(target)
 	}
 
@@ -2725,9 +2455,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
 		this.lastPersistedJson = null
-		await this.cleanupBoardAssets(
-			(await this.ctx.storage.get<string>(META_BOARD_ID_KEY)) ?? undefined,
-		)
 		await this.cleanupTempAssets()
 		await this.clearActiveCodeKeys()
 		await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
@@ -2736,40 +2463,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			{ type: 'scene:sync', elements: [], appState: {} },
 			null,
 		)
-	}
-
-	/** Best-effort deletion for board-scoped binaries; legacy owner keys are untouched. */
-	private async cleanupBoardAssets(boardId?: string): Promise<void> {
-		const id = typeof boardId === 'string' ? boardId.trim() : ''
-		if (!BOARD_UUID_RE.test(id)) return
-		try {
-			this.ctx.storage.sql.exec(
-				`UPDATE whiteboard_asset_manifest
-				 SET status = 'deleted', updated_at = ?`,
-				Date.now(),
-			)
-		} catch {
-			// The manifest may not exist while migrating an older Durable Object.
-		}
-		if (!this.env.WHITEBOARD_ASSETS) return
-		try {
-			let cursor: string | undefined
-			do {
-				const listed = await this.env.WHITEBOARD_ASSETS.list({
-					prefix: `boards/${id}/assets/`,
-					cursor,
-					limit: 100,
-				})
-				await Promise.all(
-					listed.objects.map((object) =>
-						this.env.WHITEBOARD_ASSETS.delete(object.key),
-					),
-				)
-				cursor = listed.truncated ? listed.cursor : undefined
-			} while (cursor)
-		} catch {
-			// R2 cleanup is best-effort; scene/manifest cleanup still completes.
-		}
 	}
 
 	/** Phase 3.2 stores `meta:tempAssetPrefix`; we best-effort delete that R2 prefix. */
@@ -2832,42 +2525,22 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 		if (!parsed || typeof parsed !== 'object') return
 		const data = parsed as Record<string, unknown>
-		let attachment = normalizeAttachment(
+		const attachment = normalizeAttachment(
 			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 			sessionId,
 		)
-		if (
-			data.type !== 'wb:auth' &&
-			shouldForceRoleResolved({
-				roleResolved: attachment.roleResolved,
-				connectedAt: attachment.connectedAt,
-				now: Date.now(),
-				deadlineMs: ROLE_RESOLVE_DEADLINE_MS,
-			})
-		) {
-			attachment = {
-				...attachment,
-				roleResolved: true,
-				pendingClerkAuth: false,
+		if (attachment.pendingClerkAuth) {
+			if (data.type !== 'wb:auth') {
+				// Scene/ping/follow must not mint Owner or lock Viewer before
+				// Clerk + host proof arrive. Drop until `wb:auth`.
+				return
 			}
-			ws.serializeAttachment(attachment)
-			sendJson(ws, {
-				type: 'wb:authResult',
-				accepted: true,
-				roleResolved: true,
-				role: attachment.role,
-				reason: attachment.lastAuthReason ?? 'awaiting_token',
-			})
-		}
-
-		const type = data.type
-		if (type === 'wb:auth') {
-			await this.applyAuthFrame(ws, attachment, data)
+			await this.finishPendingConnectAuth(ws, attachment, data)
 			return
 		}
-
-		if (type === 'ping') {
-			sendJson(ws, { type: 'pong' })
+		const type = data.type
+		if (type === 'wb:auth') {
+			await this.reauthenticateSocket(ws, attachment, data)
 			return
 		}
 
@@ -2901,25 +2574,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		if (type === 'scene:update') {
-			const latest = normalizeAttachment(
+			const attachment = normalizeAttachment(
 				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
 			)
-			const mutationId =
-				typeof data.mutationId === 'string' && data.mutationId.length <= 256
-					? data.mutationId
-					: null
-			if (!latest.roleResolved) {
-				sendJson(ws, {
-					type: 'wb:error',
-					code: 'role_unresolved',
-					message:
-						'Your access is still being checked. The change was not stored.',
-					...(mutationId !== null ? { mutationId } : {}),
-				})
-				return
-			}
-			if (!sessionCanEdit(latest.role, await this.readClassCanEdit())) {
+			// PHASE 3.3: Viewers and frozen Editors cannot mutate the document.
+			if (!sessionCanEdit(attachment.role, await this.readClassCanEdit())) {
 				return
 			}
 			try {
@@ -2940,15 +2600,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 					databaseJson,
 					data.full === true,
 				)
-				if (mutationId !== null) {
-					sendJson(ws, { type: 'scene:ack', mutationId })
-				}
 			} catch (err) {
-				this.notifyScenePersistError(
-					sessionId,
-					asScenePersistError(err),
-					mutationId,
-				)
+				this.notifyScenePersistError(sessionId, asScenePersistError(err))
 			}
 		}
 	}

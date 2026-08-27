@@ -62,7 +62,7 @@ export default {
 	): Promise<Response> {
 		const url = new URL(request.url)
 
-		// Disambiguates laptop wrangler deploy vs GitHub Workers Builds (which commit is live).
+		// Disambiguates the deployed Workers Build from a local preview upload.
 		if (url.pathname === '/api/whiteboard/version') {
 			return new Response(
 				JSON.stringify({ sha: __BUILD_SHA__, builtAt: __BUILD_TIME__ }),
@@ -114,7 +114,7 @@ export default {
 			if (forceFollowResponse) return forceFollowResponse
 		}
 
-		// PHASE 3.2/ToDo 1 — legacy and board-scoped R2 assets
+		// R2 assets: legacy owner-key operations plus read-only board compatibility.
 		if (
 			url.pathname.startsWith('/api/whiteboard/assets') ||
 			isBoardAssetPath(url.pathname)

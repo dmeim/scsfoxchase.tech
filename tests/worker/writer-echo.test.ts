@@ -29,7 +29,6 @@ describe('writer is excluded from full scene broadcasts', () => {
 		const boardId = newBoardId()
 		const hostSecret = randomHostSecret()
 		const element = rectangleElement()
-		const mutationId = crypto.randomUUID()
 
 		const writer = await connectAndAuth(boardId, hostSecret)
 		const peer = await connectAndAuth(boardId, hostSecret)
@@ -39,13 +38,9 @@ describe('writer is excluded from full scene broadcasts', () => {
 		writer.send({
 			type: 'scene:update',
 			elements: [element],
-			mutationId,
+			full: true,
 		})
 
-		await writer.waitForFrame(
-			(frame) =>
-				frame.type === 'scene:ack' && frame.mutationId === mutationId,
-		)
 		const peerFrame = await peer.waitForFrame(
 			(frame) =>
 				(frame.type === 'scene:update' || frame.type === 'scene:sync') &&
@@ -56,7 +51,10 @@ describe('writer is excluded from full scene broadcasts', () => {
 		await collectFrames(writer, 750)
 		const echoedSync = writer.frames
 			.slice(writerMark)
-			.filter((frame) => frame.type === 'scene:sync')
+			.filter(
+				(frame) =>
+					frame.type === 'scene:sync' && frameHasElement(frame, element.id),
+			)
 		expect(echoedSync).toEqual([])
 	})
 })

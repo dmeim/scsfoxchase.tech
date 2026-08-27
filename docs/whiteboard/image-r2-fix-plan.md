@@ -1,6 +1,8 @@
 # Whiteboard images + R2: permanent fix plan
 
-**Status:** proposal, awaiting review. No code changed. No commit, push, or deploy.
+> **Final status (2026-08-27): PLAN ABANDONED / ROLLBACK IMPLEMENTED.** This proposal was not adopted. The post-`81242d2` board-scoped upload design (manifest, outbox, scene acknowledgements, and related write-proof/auth protocol) was removed. New image/video insertion is temporarily disabled. Existing media remains readable from legacy `assets/{ownerKey}/{assetId}` and from read-only board-scoped `boards/{boardId}/assets/{fileId}` objects; board-scoped GET/HEAD works, while PUT/DELETE return `405`. The live scene remains in DO SQLite. Retained anti-usage fixes are share-code mint-once / GET `/meta` no-mint, alarm no-op avoidance, identical scene persist skipping, and writer exclusion from full scene broadcasts. Keep this document as historical design context only; see [sync-storage.md](./sync-storage.md) for the implemented runtime.
+
+**Historical status:** proposal that was reviewed and abandoned. The implementation rollback is recorded above; no further work should follow this plan.
 **Written against:** `f74692b` (`fix(whiteboard): stop hello hang and idle KV/DO write spam`).
 **Companion:** [`image-r2-incident-history.md`](./image-r2-incident-history.md) is the incident record. This file is the fix.
 

@@ -25,10 +25,6 @@ import {
 	isBoardUuid,
 	readBoardIdFromPath,
 } from '../scripts/whiteboard-library'
-import {
-	boardWriteProofRequiredError,
-	headersHaveBoardWriteProof,
-} from './whiteboard-board-write-proof'
 import { getBoardSessionAuth } from './whiteboard-participants'
 import {
 	WHITEBOARD_PREVIEW_KIND,
@@ -64,6 +60,7 @@ export type WhiteboardAssetEntry = {
 
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const CONTENT_HASH_RE = /^[0-9a-f]{64}$/i
 
 export function isAssetUuid(value: string): boolean {
 	return UUID_RE.test(value.trim())
@@ -112,9 +109,12 @@ export function assetResolveUrl(ownerKey: string, assetId: string): string {
 	return `/api/whiteboard/assets/${encodeURIComponent(ownerKey)}/${encodeURIComponent(assetId)}`
 }
 
-/** New canvas assets are scoped to a board; legacy owner-key URLs stay intact. */
-export function boardAssetResolveUrl(boardId: string, fileId: string): string {
-	return `/api/whiteboard/boards/${encodeURIComponent(boardId)}/assets/${encodeURIComponent(fileId)}`
+/**
+ * Read-only compatibility URL for objects written by the reverted
+ * board-scoped R2 implementation. New uploads must not use this route.
+ */
+export function boardAssetResolveUrl(boardId: string, assetId: string): string {
+	return `/api/whiteboard/boards/${encodeURIComponent(boardId)}/assets/${encodeURIComponent(assetId)}`
 }
 
 export function r2KeyFor(ownerKey: string, assetId: string): string {
@@ -264,34 +264,15 @@ export async function removeAssetActive(assetId: string): Promise<boolean> {
 function assertUploadAllowed(file: File): void {
 	const mime = (file.type || '').split(';')[0].trim().toLowerCase()
 	if (!mime || !ALLOWED_MIME.has(mime)) {
-		throw uploadError(
+		throw new Error(
 			'Unsupported file type. Use JPEG, PNG, GIF, WebP, SVG, or MP4/WebM.',
-			415,
 		)
 	}
 	if (file.size > MAX_ASSET_BYTES) {
-		throw uploadError(
+		throw new Error(
 			`File too large (max ${MAX_ASSET_BYTES / (1024 * 1024)} MB).`,
-			413,
 		)
 	}
-}
-
-function uploadError(message: string, status: number): Error & { status: number } {
-	const error = new Error(message) as Error & { status: number }
-	error.status = status
-	return error
-}
-
-async function responseError(res: Response, fallback: string): Promise<Error & { status: number }> {
-	let message = fallback
-	try {
-		const body = (await res.json()) as { error?: unknown }
-		if (typeof body.error === 'string' && body.error) message = body.error
-	} catch {
-		// ignore non-JSON error responses
-	}
-	return uploadError(message, res.status)
 }
 
 // ---------------------------------------------------------------------------
@@ -336,14 +317,9 @@ export function playerPath(ownerKey: string, fileId: string): string {
 	return `/whiteboard-player?${params.toString()}`
 }
 
-export function boardPlayerPath(boardId: string, fileId: string): string {
-	const params = new URLSearchParams({ board: boardId, id: fileId })
-	return `/whiteboard-player?${params.toString()}`
-}
-
 export function parsePlayerPath(
 	link: string,
-): { ownerKey: string; fileId: string; boardId?: string } | null {
+): { ownerKey: string; fileId: string; boardId: string } | null {
 	if (!link) return null
 	let url: URL
 	try {
@@ -355,15 +331,11 @@ export function parsePlayerPath(
 	const ownerKey = url.searchParams.get('owner') || ''
 	const fileId = url.searchParams.get('id') || ''
 	const boardId = url.searchParams.get('board') || ''
-	if (
-		(!ownerKey && !isBoardUuid(boardId)) ||
-		(ownerKey && !isOwnerKeyShape(ownerKey)) ||
-		(boardId && !isBoardUuid(boardId)) ||
-		!isAssetUuid(fileId)
-	) {
-		return null
-	}
-	return { ownerKey, fileId, ...(boardId ? { boardId } : {}) }
+	if (!isAssetUuid(fileId) && !CONTENT_HASH_RE.test(fileId)) return null
+	if (ownerKey && !isOwnerKeyShape(ownerKey)) return null
+	if (boardId && !isAssetUuid(boardId)) return null
+	if (!ownerKey && !boardId) return null
+	return { ownerKey, fileId, boardId }
 }
 
 function isOwnerKeyShape(value: string): boolean {
@@ -388,32 +360,6 @@ async function assetWriteHeaders(
 			headers['X-Board-Session'] = sessionAuth.sessionId
 			headers['X-Board-Auth'] = sessionAuth.authToken
 		}
-	}
-	return headers
-}
-
-/**
- * Auth/proof headers for the board-scoped PUT contract.
- * Clerk `Authorization` is attached when present, alongside host/session
- * proof. JWT-only is allowed through so the server can decide; missing every
- * proof still fails closed as 401.
- */
-export async function boardAssetWriteHeaders(
-	boardId: string,
-): Promise<Record<string, string>> {
-	const headers: Record<string, string> = {
-		...(await getAuthHeaders()),
-		'X-Board-Id': boardId,
-	}
-	const hostSecret = getHostSecret(boardId)
-	if (hostSecret) headers['X-Board-Host'] = hostSecret
-	const sessionAuth = getBoardSessionAuth(boardId)
-	if (sessionAuth) {
-		headers['X-Board-Session'] = sessionAuth.sessionId
-		headers['X-Board-Auth'] = sessionAuth.authToken
-	}
-	if (!headersHaveBoardWriteProof(headers) && !headers.Authorization) {
-		throw boardWriteProofRequiredError()
 	}
 	return headers
 }
@@ -477,112 +423,14 @@ export async function uploadCanvasBytes(opts: {
 		keepalive: opts.keepalive === true,
 	})
 	if (!res.ok) {
-		throw await responseError(res, `Upload failed (${res.status})`)
-	}
-}
-
-export type BoardAssetUploadOptions = {
-	boardId: string
-	fileId: string
-	bytes: Blob
-	mimeType: string
-}
-
-/** Upload a new canvas image to the board-scoped asset route. */
-export async function uploadBoardAssetBytes(
-	opts: BoardAssetUploadOptions,
-): Promise<void> {
-	assertUploadAllowed(
-		new File([opts.bytes], opts.fileId, { type: opts.mimeType }),
-	)
-	const mimeType = (opts.mimeType || '').split(';')[0].trim().toLowerCase()
-	const headers = {
-		'Content-Type': mimeType,
-		...(await boardAssetWriteHeaders(opts.boardId)),
-	}
-	const res = await fetch(boardAssetResolveUrl(opts.boardId, opts.fileId), {
-		method: 'PUT',
-		headers,
-		body: opts.bytes,
-	})
-	if (!res.ok) {
-		throw await responseError(res, `Upload failed (${res.status})`)
-	}
-}
-
-export async function fetchBoardAssetBytes(
-	boardId: string,
-	fileId: string,
-): Promise<{ blob: Blob; mimeType: string } | null> {
-	try {
-		const res = await fetch(boardAssetResolveUrl(boardId, fileId))
-		if (!res.ok) return null
-		const mimeType = (
-			res.headers.get('Content-Type') || 'application/octet-stream'
-		)
-			.split(';')[0]
-			.trim()
-			.toLowerCase()
-		return { blob: await res.blob(), mimeType }
-	} catch {
-		return null
-	}
-}
-
-/**
- * Read bytes from the legacy `assets/{ownerKey}/{assetId}` route. Boards created
- * before board-scoped keys still reference these objects, so image hydrate falls
- * back to this when the board-scoped GET 404s. Write support is gone; this is
- * read-only and must stay that way.
- */
-export async function fetchOwnerAssetBytes(
-	ownerKey: string,
-	fileId: string,
-): Promise<{ blob: Blob; mimeType: string } | null> {
-	try {
-		const res = await fetch(assetResolveUrl(ownerKey, fileId))
-		if (!res.ok) return null
-		const mimeType = (
-			res.headers.get('Content-Type') || 'application/octet-stream'
-		)
-			.split(';')[0]
-			.trim()
-			.toLowerCase()
-		return { blob: await res.blob(), mimeType }
-	} catch {
-		return null
-	}
-}
-
-export async function hasBoardAsset(
-	boardId: string,
-	fileId: string,
-): Promise<boolean> {
-	try {
-		const res = await fetch(boardAssetResolveUrl(boardId, fileId), {
-			method: 'HEAD',
-		})
-		return res.ok
-	} catch {
-		return false
-	}
-}
-
-export type BoardScopedAssetAdapter = {
-	upload: (fileId: string, bytes: Blob, mimeType: string) => Promise<void>
-	fetch: (fileId: string) => Promise<{ blob: Blob; mimeType: string } | null>
-	has: (fileId: string) => Promise<boolean>
-}
-
-/** Adapter form for callers that keep a board-scoped upload dependency. */
-export function createBoardScopedAssetAdapter(
-	boardId: string,
-): BoardScopedAssetAdapter {
-	return {
-		upload: (fileId, bytes, mimeType) =>
-			uploadBoardAssetBytes({ boardId, fileId, bytes, mimeType }),
-		fetch: (fileId) => fetchBoardAssetBytes(boardId, fileId),
-		has: (fileId) => hasBoardAsset(boardId, fileId),
+		let message = `Upload failed (${res.status})`
+		try {
+			const body = (await res.json()) as { error?: string }
+			if (body.error) message = body.error
+		} catch {
+			// ignore
+		}
+		throw new Error(message)
 	}
 }
 
@@ -607,6 +455,26 @@ export async function fetchCanvasBytes(
 		}
 	}
 	return null
+}
+
+/** Read a board-scoped object left by the reverted uploader, without writing it. */
+export async function fetchBoardCanvasBytes(
+	boardId: string,
+	fileId: string,
+): Promise<{ blob: Blob; mimeType: string } | null> {
+	try {
+		const res = await fetch(boardAssetResolveUrl(boardId, fileId))
+		if (!res.ok) return null
+		const mimeType = (
+			res.headers.get('Content-Type') || 'application/octet-stream'
+		)
+			.split(';')[0]
+			.trim()
+			.toLowerCase()
+		return { blob: await res.blob(), mimeType }
+	} catch {
+		return null
+	}
 }
 
 export async function claimTempCanvasAssets(

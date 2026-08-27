@@ -658,10 +658,14 @@ export function formatAccessedDate(iso: string): string {
  * can write Recents. Opening a Recents row retries touch once `savedToLibrary`
  * is backfilled. Page-load touch before connect is expected to fail closed.
  */
-function bindBoardPageScratchClaim(): void {
+let boardPageScratchClaimBound = false;
+
+export function bindBoardPageScratchClaim(): void {
   if (typeof window === 'undefined') return;
+  if (boardPageScratchClaimBound) return;
   const boardId = readBoardIdFromPath();
   if (!boardId) return;
+  boardPageScratchClaimBound = true;
   const tryClaim = () => {
     if (!isSignedIn()) return;
     void touchBoardActive(boardId).catch(() => {
@@ -672,5 +676,3 @@ function bindBoardPageScratchClaim(): void {
   onAuthChange(tryClaim);
   window.addEventListener('scsfoxchase:whiteboard-hello', tryClaim);
 }
-
-bindBoardPageScratchClaim();

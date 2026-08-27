@@ -1,5 +1,7 @@
 # Hub and board UI
 
+> **Media rollback status:** New image/video insertion is temporarily disabled. Existing canvas media remains readable from legacy `assets/{ownerKey}/{assetId}` objects, and from abandoned board-scoped objects through read-only `boards/{boardId}/assets/{fileId}` GET/HEAD. Board-scoped PUT/DELETE return `405`; this pause does not change board scene or collaboration behavior.
+
 How teachers and students create, join, and manage whiteboards in the browser.
 
 ## Overview
@@ -50,7 +52,7 @@ Shown only while signed in (`[data-wb-cloud-lists]`). Signed-out hub copy explai
 |---------|---------|
 | **Recents** | Up to 8 boards by `lastAccessedAt` from the Google library |
 | **Library** | Full sorted cloud board list |
-| **Assets** | Hidden for now — canvas uploads stay on the board (`assets/{ownerKey}/{fileId}`) and are not a class media library |
+| **Assets** | Hidden for now — canvas media is not a class media library; new image/video insertion is temporarily disabled |
 
 Recents and Library cards support **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row and **frees the share-code KV mapping**. `/board/{uuid}` may still load (UUID access is a separate capability). Board delete does not wipe Durable Object scene or R2 media for classmates still on the board.
 
@@ -83,7 +85,7 @@ Fonts: `board.astro` sets `window.EXCALIDRAW_ASSET_PATH = '/excalidraw/'` in `<h
 1. Reads `boardId` from the path (or optional prop).
 2. Opens a native WebSocket to `/api/whiteboard/connect/{uuid}` (`sessionId` required; optional `displayName` and guest `userId` on the query). Scratch host proof and Clerk JWT are the first message (`wb:auth`), not the URL. `X-Board-Host` is also accepted on the upgrade if a client can set it. Excalidraw mounts immediately in view-only mode rather than waiting for `wb:hello`, so the scene paints as soon as it arrives; the `key` remount flips it out of view mode when a can-edit role lands.
 3. Merges remote elements with `reconcileElements`; remote applies use `captureUpdate: NEVER`.
-4. Uploads image/GIF bytes to R2 by Excalidraw `fileId`; MP4/WebM become a same-origin `/whiteboard-player` embed. YouTube / Vimeo stay stock.
+4. Existing image/GIF and MP4/WebM references are hydrated/read from R2. New image/video insertion is temporarily disabled; the board-scoped compatibility route is GET/HEAD only. YouTube / Vimeo stay stock.
 5. Handles custom DO messages (`wb:hello`, `wb:participants`, `wb:role`, `wb:forceFollow`, `wb:sceneBounds`) and bridges Follow / roles to the manage panel via `window` events.
 
 Sync and asset details: [sync-storage.md](./sync-storage.md).  
