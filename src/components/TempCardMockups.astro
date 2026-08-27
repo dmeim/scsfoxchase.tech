@@ -158,6 +158,16 @@ const nestedGroups = [
   { label: 'School tools', options: schoolOptions },
 ];
 
+// Keep this concept aligned with every destination in the three homepage bars.
+const homepageSearchGroups = [
+  { label: 'Google', options: googleOptions },
+  { label: 'G-Suite', options: workspaceOptions },
+  {
+    label: 'Sites',
+    options: [researchOptions[0], researchOptions[1], schoolOptions[1], researchOptions[2]],
+  },
+];
+
 const tabRoutes = [
   { group: 'Workspace', option: workspaceOptions[0] },
   { group: 'Google', option: googleOptions[0] },
@@ -177,24 +187,25 @@ const railRoutes = [
 <div class="temp-page temp-search-page" id="top">
   <div class="temp-shell">
 
-    <!-- Candidate 2 -->
-    <section class="temp-candidate" id="candidate-2">
-      <div class="temp-stage temp-stage--command">
-        <form class="temp-search-form temp-command-form" id="temp-command-form" data-temp-search-form data-selected-url={googleOptions[0].url}>
-          <div class="temp-command-bar">
-            <div class="temp-menu-wrap temp-command-menu-wrap">
-              <button type="button" class="temp-command-prefix" data-temp-menu-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a search destination">
+    <!-- Unified homepage-style search -->
+    <section class="temp-candidate" id="unified-home-search">
+      <div class="temp-stage temp-stage--home-search">
+        <form class="temp-search-form temp-home-search-form" id="temp-command-form" data-temp-search-form data-selected-url={googleOptions[0].url}>
+          <div class="temp-home-search-bar">
+            <div class="temp-menu-wrap temp-home-menu-wrap">
+              <button type="button" class="temp-home-picker" data-temp-menu-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a search destination">
                 <img src={googleOptions[0].icon} alt="" data-temp-selected-icon />
-                <span data-temp-selected-group>Google</span><i>›</i><strong data-temp-selected-label>Web</strong><span class="temp-chevron" aria-hidden="true">⌄</span>
+                <strong data-temp-selected-label>Web</strong>
+                <svg class="temp-home-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
               </button>
-              <div class="temp-menu temp-menu--command" data-temp-menu role="listbox" aria-label="Search destinations">
-                <div class="temp-menu-columns">
-                  {nestedGroups.map((group, groupIndex) => (
-                    <div class="temp-menu-group">
-                      <p>{group.label}</p>
+              <div class="temp-menu temp-home-menu" data-temp-menu role="listbox" aria-label="Search destinations">
+                <div class="temp-home-menu-columns">
+                  {homepageSearchGroups.map((group, groupIndex) => (
+                    <div class="temp-home-menu-group" role="group" aria-labelledby={`temp-home-group-${groupIndex}`}>
+                      <p id={`temp-home-group-${groupIndex}`}>{group.label}</p>
                       {group.options.map((option, optionIndex) => (
-                        <button type="button" role="option" class:list={['temp-option', groupIndex === 0 && optionIndex === 0 && 'is-selected']} aria-selected={groupIndex === 0 && optionIndex === 0 ? 'true' : 'false'} data-temp-option data-label={option.label} data-group={group.label} data-icon={option.icon} data-placeholder={option.placeholder} data-url={option.url}>
-                          <img src={option.icon} alt="" /><span>{option.label}</span>
+                        <button type="button" role="option" class:list={['temp-home-option', groupIndex === 0 && optionIndex === 0 && 'is-selected']} aria-selected={groupIndex === 0 && optionIndex === 0 ? 'true' : 'false'} data-temp-option data-label={option.label} data-group={group.label} data-icon={option.icon} data-placeholder={option.placeholder} data-url={option.url}>
+                          <img src={option.icon} alt="" /><span>{option.label}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
                         </button>
                       ))}
                     </div>
@@ -202,9 +213,10 @@ const railRoutes = [
                 </div>
               </div>
             </div>
-            <input class="temp-search-input" type="search" name="q" placeholder={googleOptions[0].placeholder} aria-label="Universal search" autocomplete="off" />
-            <button type="button" class="temp-clear-button" data-temp-clear aria-label="Clear search">×</button>
-            <button type="submit" class="temp-command-submit" aria-label="Search"><span>Search</span><b>↗</b></button>
+            <span class="temp-home-bar-separator" aria-hidden="true"></span>
+            <input class="temp-search-input temp-home-search-input" type="search" name="q" placeholder={googleOptions[0].placeholder} aria-label="Search the selected destination" autocomplete="off" />
+            <button type="button" class="temp-clear-button temp-home-clear" data-temp-clear aria-label="Clear search"><img src="/images/x.svg" alt="" /></button>
+            <button type="submit" class="temp-home-submit" aria-label="Search selected destination"><img src="/images/search.png" alt="" /></button>
           </div>
         </form>
       </div>

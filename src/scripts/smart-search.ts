@@ -1,5 +1,3 @@
-// Ported from js/smart-search.js — ESM, same picker + submit behavior
-
 function initSmartSearch() {
   document.querySelectorAll<HTMLFormElement>('[data-smart-search]').forEach((form) => {
     const toggle = form.querySelector<HTMLButtonElement>('.smart-search-toggle');
@@ -7,7 +5,8 @@ function initSmartSearch() {
     const label = form.querySelector<HTMLElement>('.smart-search-label');
     const icon = form.querySelector<HTMLImageElement>('.smart-search-icon');
     const input = form.querySelector<HTMLInputElement>('.smart-search-input');
-    const options = form.querySelectorAll<HTMLButtonElement>('.smart-search-option');
+    const clear = form.querySelector<HTMLButtonElement>('[data-smart-search-clear]');
+    const options = Array.from(form.querySelectorAll<HTMLButtonElement>('.smart-search-option'));
     if (!toggle || !menu || !label || !icon || !input) return;
 
     let currentUrl =
@@ -20,15 +19,26 @@ function initSmartSearch() {
 
     const positionMenu = () => {
       const rect = toggle.getBoundingClientRect();
-      menu.style.top = `${rect.bottom + 8}px`;
-      menu.style.left = `${rect.left}px`;
+      const menuWidth = Math.min(720, window.innerWidth - 32);
+      const left = Math.max(16, Math.min(rect.left, window.innerWidth - menuWidth - 16));
+      menu.style.top = `${rect.bottom + 10}px`;
+      menu.style.left = `${left}px`;
     };
 
-    toggle.addEventListener('click', () => {
-      const willOpen = !menu.classList.contains('open');
-      if (willOpen) positionMenu();
-      menu.classList.toggle('open', willOpen);
-      toggle.setAttribute('aria-expanded', String(willOpen));
+    const setMenuOpen = (open: boolean, focusFirst = false) => {
+      menu.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      if (!open) return;
+      positionMenu();
+      if (focusFirst) options[0]?.focus();
+    };
+
+    toggle.addEventListener('click', () => setMenuOpen(!menu.classList.contains('open')));
+
+    toggle.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowDown') return;
+      event.preventDefault();
+      setMenuOpen(true, true);
     });
 
     window.addEventListener('resize', () => {
@@ -43,10 +53,32 @@ function initSmartSearch() {
       true,
     );
 
+    menu.addEventListener('keydown', (event) => {
+      const currentIndex = options.indexOf(document.activeElement as HTMLButtonElement);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMenu();
+        toggle.focus();
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? options.length - 1
+          : Math.max(0, Math.min(options.length - 1, currentIndex + (event.key === 'ArrowDown' ? 1 : -1)));
+      options[nextIndex]?.focus();
+    });
+
     options.forEach((option) => {
       option.addEventListener('click', () => {
-        options.forEach((item) => item.classList.remove('active'));
+        options.forEach((item) => {
+          item.classList.remove('active');
+          item.setAttribute('aria-selected', 'false');
+        });
         option.classList.add('active');
+        option.setAttribute('aria-selected', 'true');
         currentUrl = option.dataset.url || '';
         label.textContent = option.dataset.label || '';
         icon.src = option.dataset.icon || '';
@@ -54,6 +86,11 @@ function initSmartSearch() {
         closeMenu();
         input.focus();
       });
+    });
+
+    clear?.addEventListener('click', () => {
+      input.value = '';
+      input.focus();
     });
 
     form.addEventListener('submit', (event) => {
@@ -72,6 +109,10 @@ function initSmartSearch() {
 
     document.addEventListener('click', (event) => {
       if (!form.contains(event.target as Node)) closeMenu();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && menu.classList.contains('open')) closeMenu();
     });
   });
 }
