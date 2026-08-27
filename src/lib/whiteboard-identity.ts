@@ -26,9 +26,13 @@ const AUTH_STORE_KEY = '__scsfoxchaseWhiteboardAuth'
 /** Clerk `getToken` hang budget. Empty token is OK; callers must still resolve. */
 export const AUTH_GET_TOKEN_SETTLE_MS = 2_000
 
+export type SessionTokenGetterOptions = {
+	skipCache?: boolean
+}
+
 type WhiteboardAuthStore = {
 	identity: WhiteboardIdentity | null
-	sessionTokenGetter: (() => Promise<string | null>) | null
+	sessionTokenGetter: ((options?: SessionTokenGetterOptions) => Promise<string | null>) | null
 	authResolved: boolean
 	/** Last non-empty JWT from a settled `getToken`. Sync peek for first `wb:auth`. */
 	lastToken: string | null
@@ -146,7 +150,7 @@ export function onAuthChange(
 }
 
 export function setSessionTokenGetter(
-	getter: (() => Promise<string | null>) | null,
+	getter: ((options?: SessionTokenGetterOptions) => Promise<string | null>) | null,
 ): void {
 	getAuthStore().sessionTokenGetter = getter
 }
@@ -206,6 +210,27 @@ export async function getSessionToken(): Promise<string | null> {
 	} catch {
 		return store.lastToken
 	}
+}
+
+/** Force Clerk to skip its JWT cache. Use only on auth retry, never the first frame. */
+export async function getSessionTokenFresh(
+	timeoutMs = AUTH_GET_TOKEN_SETTLE_MS,
+): Promise<string | null> {
+	const store = getAuthStore()
+	const getter = store.sessionTokenGetter
+	const fetchFresh = async () => {
+		if (!getter) return store.lastToken
+		try {
+			return rememberToken(await getter({ skipCache: true })) ?? store.lastToken
+		} catch {
+			return store.lastToken
+		}
+	}
+	return raceSettled(
+		fetchFresh().then((value) => nonEmptyToken(value)),
+		timeoutMs,
+		peekSessionToken(),
+	)
 }
 
 /** `getSessionToken` that cannot hang past `timeoutMs` (empty / cached token OK). */

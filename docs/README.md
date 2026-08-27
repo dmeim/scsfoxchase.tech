@@ -66,7 +66,8 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 
 - **Live domain:** [https://scsfoxchase.tech](https://scsfoxchase.tech)
 - **Build:** `npm run build` → assets under `dist/client/`
-- **Deploy:** `npx wrangler deploy` (or `npm run deploy`)
+- **Deploy:** GitHub **Workers Builds** on `main` is the only production deployer. Deploying from a laptop is discouraged — Workers Builds rebuilds the same commit shortly after and replaces it. For a pre-merge check use `npx wrangler versions upload`.
+- **Which commit is live:** `GET /api/whiteboard/version` → `{ sha, builtAt }`. Confirm it before trusting any production observation.
 
 ### Where things live
 
@@ -115,8 +116,9 @@ npm install
 npm run dev       # Astro dev (host open)
 npm run build     # → dist/client/
 npm run preview   # production build preview
-npm run deploy    # build + wrangler deploy
 ```
+
+Production deploys run from GitHub Workers Builds on `main`, not from a laptop. See [deployment.md](./deployment.md).
 
 ### Root companions (outside this tree)
 

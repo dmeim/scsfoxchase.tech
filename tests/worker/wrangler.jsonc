@@ -1,0 +1,32 @@
+{
+	"name": "scsfoxchase-tech-worker-tests",
+	"compatibility_date": "2026-07-14",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "../../src/worker.ts",
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "WHITEBOARDS",
+				"class_name": "WhiteboardBoard"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "whiteboard-v1",
+			"new_sqlite_classes": ["WhiteboardBoard"]
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "WHITEBOARD_ASSETS",
+			"bucket_name": "scsfoxchase-tech-whiteboards-worker-tests"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "WHITEBOARD_CODES",
+			"id": "whiteboard-codes-worker-tests"
+		}
+	]
+}

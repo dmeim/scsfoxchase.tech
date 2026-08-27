@@ -14,7 +14,7 @@
     "test": "vitest run",
     "build": "astro build",
     "preview": "astro preview",
-    "deploy": "npm run build && wrangler deploy"
+    "preview:upload": "npm run build && wrangler versions upload"
   },
   "keywords": [],
   "author": "",
@@ -33,6 +33,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260804.1",
     "fake-indexeddb": "^6.2.5",
     "typescript": "^7.0.2",

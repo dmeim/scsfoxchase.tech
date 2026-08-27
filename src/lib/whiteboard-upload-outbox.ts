@@ -1,10 +1,9 @@
 /**
  * Durable client-side upload queue for board-scoped whiteboard assets.
  *
- * Uploads are intentionally kept separate from Excalidraw's BinaryFiles state.
- * Excalidraw can discard a file after a reload or before a scene acknowledgement;
- * this outbox is the source of truth until the server has acknowledged the
- * scene version that references the file.
+ * The queue never gates a scene flush. Blob stays in IndexedDB until R2
+ * confirms, then the blob is deleted. 401/403 stay retryable; 413/415 and
+ * hash mismatch are terminal.
  */
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { uploadBoardAssetBytes } from './whiteboard-assets'
@@ -29,13 +28,13 @@ export const WHITEBOARD_UPLOAD_RETRY_DELAYS_MS = [
 	30000,
 ] as const
 
+export const WHITEBOARD_UPLOAD_WAIT_TIMEOUT_MS = 60_000
+
 export type WhiteboardUploadState =
 	| 'pending'
 	| 'uploading'
 	| 'uploaded'
 	| 'failed'
-	| 'auth-blocked'
-	| 'permanent-failure'
 
 export type WhiteboardUploadFailureKind =
 	| 'network'
@@ -50,13 +49,6 @@ export type WhiteboardUploadErrorInfo = {
 	kind: WhiteboardUploadFailureKind
 	status?: number
 	updatedAt: number
-}
-
-/** A serializable snapshot that a later canvas layer may restore. */
-export type WhiteboardUploadElementSnapshot = {
-	elementId: string
-	element: unknown
-	elementVersion?: number
 }
 
 export type WhiteboardUploadRequest = {
@@ -75,58 +67,14 @@ export type WhiteboardUploadJob = {
 	fileId: string
 	blob: Blob
 	mimeType: string
-	/** Latest scene elements that reference this file. */
-	latestElementSnapshots: WhiteboardUploadElementSnapshot[]
-	/** Optional plain-data app/scene state for the later canvas integration. */
-	latestElementState?: unknown
-	sceneVersion: number
 	state: WhiteboardUploadState
-	/** Alias useful to UI code that calls the field status. */
-	status: WhiteboardUploadState
 	attempts: number
 	createdAt: number
 	updatedAt: number
 	lastAttemptAt?: number
 	nextAttemptAt?: number
 	uploadedAt?: number
-	sceneAcknowledgedVersion?: number
-	error?: WhiteboardUploadErrorInfo
-	/** Changes when a caller stages different bytes under the same file id. */
-	contentVersion: number
-}
-
-export type WhiteboardUploadStage = {
-	boardId: string
-	fileId: string
-	blob: Blob
-	mimeType: string
-	latestElementSnapshots?: readonly WhiteboardUploadElementSnapshot[]
-	/** Alias accepted for callers that naturally use elementSnapshots. */
-	elementSnapshots?: readonly WhiteboardUploadElementSnapshot[]
-	latestElementState?: unknown
-	/** Alias accepted for callers that naturally use sceneState. */
-	sceneState?: unknown
-	sceneVersion?: number
-}
-
-export type WhiteboardUploadStaging = {
-	boardId: string
-	fileId: string
-	latestElementSnapshots?: readonly WhiteboardUploadElementSnapshot[]
-	latestElementState?: unknown
-	sceneVersion?: number
-}
-
-export type WhiteboardUploadRecovery = {
-	boardId: string
-	fileId: string
-	mimeType: string
-	state: WhiteboardUploadState
-	status: WhiteboardUploadState
-	latestElementSnapshots: WhiteboardUploadElementSnapshot[]
-	latestElementState?: unknown
-	sceneVersion: number
-	attempts: number
+	lastError?: string
 	error?: WhiteboardUploadErrorInfo
 }
 
@@ -135,91 +83,28 @@ export type WhiteboardUploadOutboxSnapshot = {
 	jobs: WhiteboardUploadJob[]
 	pendingCount: number
 	failedCount: number
-	awaitingSceneAckCount: number
-	/** All files not yet removed after scene acknowledgement. */
 	pendingFileIds: string[]
-	/** Files currently queued or uploading (excludes failed and ack-waiting). */
 	uploadPendingFileIds: string[]
 	failedFileIds: string[]
-	pendingElementIds: string[]
-	failedElementIds: string[]
-	stagingCount: number
-	stagingFileIds: string[]
-	stagingElementIds: string[]
-	recoveryJobs: WhiteboardUploadRecovery[]
-	recoveryReady: boolean
 	ready: boolean
 	storageError: string | null
 }
 
-/** Bytes in flight only. Uploaded-waiting-for-ack does not count as Saving. */
+/** Bytes in flight only. Uploaded jobs do not count as Saving. */
 export function savingUploadCount(
 	snapshot: Pick<WhiteboardUploadOutboxSnapshot, 'pendingCount'>,
 ): number {
 	return snapshot.pendingCount
 }
 
-export type WhiteboardSceneAcknowledgement = {
-	boardId: string
-	sceneVersion: number
-	/** Pass the file ids actually present in the acknowledged scene. */
-	fileIds?: readonly string[]
-	/** File ids whose image tombstones were included in the acknowledged scene. */
-	deletedFileIds?: readonly string[]
-}
-
-export type WhiteboardServerSceneHydration = {
-	/** Scene version represented by the server scene, when available. */
-	sceneVersion?: number
-	/** Image file ids represented by deleted image tombstones in that scene. */
-	deletedFileIds?: readonly string[]
-}
-
-export type WhiteboardUploadSceneSnapshot = {
-	latestElementSnapshots?: readonly WhiteboardUploadElementSnapshot[]
-	latestElementState?: unknown
-	sceneState?: unknown
-	sceneVersion?: number
-}
-
-export type WhiteboardUploadRemoveOptions = {
-	/**
-	 * Removal is local-only. The board-scoped contract has no DELETE operation;
-	 * callers must clean up remote bytes only after independently proving that
-	 * no scene references remain.
-	 */
-	confirmNoReferences?: boolean
-}
-
-type StoredUploadJob = WhiteboardUploadJob
-type StoredUploadRecord = Omit<StoredUploadJob, 'blob'> & { blob?: Blob }
+type StoredUploadRecord = Omit<WhiteboardUploadJob, 'blob'> & { blob?: Blob }
 type StoredUploadBlob = { boardId: string; fileId: string; blob: Blob }
-type LoadedUploadJob = { job: StoredUploadJob; needsBlobMigration: boolean }
 
 const HELLO_EVENT = WHITEBOARD_HELLO_EVENT
 const AUTH_EVENT = WHITEBOARD_AUTH_EVENT
 const AUTH_READY_EVENT = WHITEBOARD_AUTH_READY_EVENT
 
-/** Last-resort waitForUpload timeout so callers cannot hang forever. */
-export const WHITEBOARD_UPLOAD_WAIT_TIMEOUT_MS = 60_000
-
 const pendingStates = new Set<WhiteboardUploadState>(['pending', 'uploading'])
-const failedStates = new Set<WhiteboardUploadState>([
-	'failed',
-	'auth-blocked',
-	'permanent-failure',
-])
-
-function isUploadState(value: unknown): value is WhiteboardUploadState {
-	return (
-		value === 'pending' ||
-		value === 'uploading' ||
-		value === 'uploaded' ||
-		value === 'failed' ||
-		value === 'auth-blocked' ||
-		value === 'permanent-failure'
-	)
-}
 
 function now(): number {
 	return Date.now()
@@ -232,22 +117,6 @@ function keyFor(boardId: string, fileId: string): string {
 function cloneJob(job: WhiteboardUploadJob): WhiteboardUploadJob {
 	return {
 		...job,
-		latestElementSnapshots: [...job.latestElementSnapshots],
-		error: job.error ? { ...job.error } : undefined,
-	}
-}
-
-function cloneRecovery(job: WhiteboardUploadJob): WhiteboardUploadRecovery {
-	return {
-		boardId: job.boardId,
-		fileId: job.fileId,
-		mimeType: job.mimeType,
-		state: job.state,
-		status: job.status,
-		latestElementSnapshots: [...job.latestElementSnapshots],
-		latestElementState: job.latestElementState,
-		sceneVersion: job.sceneVersion,
-		attempts: job.attempts,
 		error: job.error ? { ...job.error } : undefined,
 	}
 }
@@ -274,35 +143,42 @@ export function retryDelayForAttempt(attempt: number): number {
 export function isWhiteboardUploadFailedState(
 	state: WhiteboardUploadState,
 ): boolean {
-	return failedStates.has(state)
+	return state === 'failed'
 }
 
-/** Classify HTTP and network failures without relying on Excalidraw status. */
+function isTerminalFailure(job: WhiteboardUploadJob): boolean {
+	return job.state === 'failed' && job.nextAttemptAt === undefined
+}
+
+/** Classify HTTP and network failures. 401/403 stay retryable. */
 export function classifyUploadFailure(error: unknown): {
-	state: Extract<WhiteboardUploadState, 'failed' | 'auth-blocked' | 'permanent-failure'>
+	retryable: boolean
 	kind: WhiteboardUploadFailureKind
 	status?: number
 } {
 	const status = statusOf(error)
 	if (status === 401 || status === 403) {
-		return { state: 'auth-blocked', kind: 'auth', status }
+		return { retryable: true, kind: 'auth', status }
 	}
 	if (status === 413) {
-		return { state: 'permanent-failure', kind: 'size', status }
+		return { retryable: false, kind: 'size', status }
 	}
 	if (status === 415 || status === 422) {
-		return { state: 'permanent-failure', kind: 'mime', status }
+		return { retryable: false, kind: 'mime', status }
+	}
+	if (status === 400) {
+		return { retryable: false, kind: 'permanent', status }
 	}
 	if (status !== undefined && status >= 500) {
-		return { state: 'failed', kind: 'server', status }
+		return { retryable: true, kind: 'server', status }
 	}
 	if (status === 408 || status === 429 || status === undefined) {
-		return { state: 'failed', kind: 'network', status }
+		return { retryable: true, kind: 'network', status }
 	}
 	if (status >= 400 && status < 500) {
-		return { state: 'permanent-failure', kind: 'permanent', status }
+		return { retryable: false, kind: 'permanent', status }
 	}
-	return { state: 'failed', kind: 'network', status }
+	return { retryable: true, kind: 'network', status }
 }
 
 export class WhiteboardUploadOutboxStorageError extends Error {
@@ -322,7 +198,7 @@ export class WhiteboardUploadFailureError extends Error {
 	readonly state: WhiteboardUploadState
 
 	constructor(job: WhiteboardUploadJob) {
-		super(job.error?.message || 'Upload failed.')
+		super(job.error?.message || job.lastError || 'Upload failed.')
 		this.name = 'WhiteboardUploadFailureError'
 		this.job = job
 		this.status = job.error?.status
@@ -362,7 +238,7 @@ function openDatabase(): Promise<IDBDatabase> {
 			if (!database.objectStoreNames.contains(WHITEBOARD_UPLOAD_OUTBOX_STORE)) {
 				database.createObjectStore(WHITEBOARD_UPLOAD_OUTBOX_STORE, {
 					keyPath: ['boardId', 'fileId'],
-			})
+				})
 			}
 			if (!database.objectStoreNames.contains(WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE)) {
 				database.createObjectStore(WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE, {
@@ -376,7 +252,16 @@ function openDatabase(): Promise<IDBDatabase> {
 	})
 }
 
-async function readJobs(database: IDBDatabase): Promise<LoadedUploadJob[]> {
+function normalizeStoredState(state: unknown): WhiteboardUploadState {
+	if (state === 'uploading' || state === 'pending' || state === 'uploaded' || state === 'failed') {
+		return state
+	}
+	if (state === 'auth-blocked') return 'failed'
+	if (state === 'permanent-failure') return 'failed'
+	return 'pending'
+}
+
+async function readJobs(database: IDBDatabase): Promise<WhiteboardUploadJob[]> {
 	const transaction = database.transaction(
 		[WHITEBOARD_UPLOAD_OUTBOX_STORE, WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE],
 		'readonly',
@@ -394,17 +279,31 @@ async function readJobs(database: IDBDatabase): Promise<LoadedUploadJob[]> {
 	const blobByKey = new Map(
 		blobs.map((record) => [keyFor(record.boardId, record.fileId), record.blob]),
 	)
-	const loaded: LoadedUploadJob[] = []
+	const loaded: WhiteboardUploadJob[] = []
 	for (const record of records) {
-		const inlineBlob = record?.blob
-		const blob = inlineBlob ?? blobByKey.get(keyFor(record.boardId, record.fileId))
-		const candidate = { ...record, blob }
-		if (!isStoredJob(candidate)) continue
+		if (!record || typeof record.boardId !== 'string' || typeof record.fileId !== 'string') {
+			continue
+		}
+		const blob =
+			record.blob ?? blobByKey.get(keyFor(record.boardId, record.fileId))
+		const rawState = (record as { state?: unknown }).state
+		const state = normalizeStoredState(rawState)
+		if (!blob && state !== 'uploaded') continue
 		loaded.push({
-			job: candidate,
-			// Version 1 stored the Blob beside every field. Move it to the
-			// dedicated store once, then keep subsequent metadata writes small.
-			needsBlobMigration: typeof inlineBlob?.size === 'number',
+			boardId: record.boardId,
+			fileId: record.fileId,
+			blob: blob ?? new Blob(),
+			mimeType: typeof record.mimeType === 'string' ? record.mimeType : 'application/octet-stream',
+			state,
+			attempts: typeof record.attempts === 'number' ? record.attempts : 0,
+			createdAt: typeof record.createdAt === 'number' ? record.createdAt : now(),
+			updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : now(),
+			lastAttemptAt: record.lastAttemptAt,
+			nextAttemptAt:
+				rawState === 'permanent-failure' ? undefined : record.nextAttemptAt,
+			uploadedAt: record.uploadedAt,
+			lastError: record.lastError,
+			error: record.error,
 		})
 	}
 	return loaded
@@ -412,17 +311,15 @@ async function readJobs(database: IDBDatabase): Promise<LoadedUploadJob[]> {
 
 async function writeJob(
 	database: IDBDatabase,
-	job: StoredUploadJob,
-	options: { storeBlob?: boolean; inlineBlob?: boolean } = {},
+	job: WhiteboardUploadJob,
+	options: { storeBlob?: boolean } = {},
 ): Promise<void> {
 	const transaction = database.transaction(
 		[WHITEBOARD_UPLOAD_OUTBOX_STORE, WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE],
 		'readwrite',
 	)
 	const { blob, ...metadata } = job
-	transaction
-		.objectStore(WHITEBOARD_UPLOAD_OUTBOX_STORE)
-		.put(options.inlineBlob ? job : metadata)
+	transaction.objectStore(WHITEBOARD_UPLOAD_OUTBOX_STORE).put(metadata)
 	if (options.storeBlob) {
 		transaction
 			.objectStore(WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE)
@@ -431,7 +328,24 @@ async function writeJob(
 	await transactionDone(transaction)
 }
 
-async function deleteJob(database: IDBDatabase, boardId: string, fileId: string): Promise<void> {
+async function deleteBlob(
+	database: IDBDatabase,
+	boardId: string,
+	fileId: string,
+): Promise<void> {
+	const transaction = database.transaction(
+		[WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE],
+		'readwrite',
+	)
+	transaction.objectStore(WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE).delete([boardId, fileId])
+	await transactionDone(transaction)
+}
+
+async function deleteJob(
+	database: IDBDatabase,
+	boardId: string,
+	fileId: string,
+): Promise<void> {
 	const transaction = database.transaction(
 		[WHITEBOARD_UPLOAD_OUTBOX_STORE, WHITEBOARD_UPLOAD_OUTBOX_BLOB_STORE],
 		'readwrite',
@@ -441,47 +355,6 @@ async function deleteJob(database: IDBDatabase, boardId: string, fileId: string)
 	await transactionDone(transaction)
 }
 
-function isStoredJob(value: unknown): value is StoredUploadJob {
-	if (!value || typeof value !== 'object') return false
-	const job = value as Partial<StoredUploadJob>
-	return (
-		typeof job.boardId === 'string' &&
-		typeof job.fileId === 'string' &&
-		typeof job.blob?.size === 'number' &&
-		typeof job.mimeType === 'string' &&
-		Array.isArray(job.latestElementSnapshots) &&
-		typeof job.sceneVersion === 'number' &&
-		isUploadState(job.state) &&
-		isUploadState(job.status ?? job.state) &&
-		typeof job.attempts === 'number'
-	)
-}
-
-function updateState(job: WhiteboardUploadJob, state: WhiteboardUploadState): WhiteboardUploadJob {
-	return { ...job, state, status: state, updatedAt: now() }
-}
-
-function sameElementSnapshots(
-	left: readonly WhiteboardUploadElementSnapshot[],
-	right: readonly WhiteboardUploadElementSnapshot[],
-): boolean {
-	if (left.length !== right.length) return false
-	return left.every(
-		(snapshot, index) =>
-			snapshot.elementId === right[index]?.elementId &&
-			snapshot.elementVersion === right[index]?.elementVersion,
-	)
-}
-
-function sameSerializableValue(left: unknown, right: unknown): boolean {
-	if (Object.is(left, right)) return true
-	try {
-		return JSON.stringify(left) === JSON.stringify(right)
-	} catch {
-		return false
-	}
-}
-
 export class WhiteboardUploadOutbox {
 	readonly boardId: string
 	readonly ready: Promise<void>
@@ -489,13 +362,10 @@ export class WhiteboardUploadOutbox {
 	private readonly adapter: WhiteboardUploadAdapter
 	private database: IDBDatabase | null = null
 	private readonly jobs = new Map<string, WhiteboardUploadJob>()
-	/** Synchronous publication guard while DataURL conversion is in flight. */
-	private readonly staging = new Map<string, WhiteboardUploadStaging>()
 	private readonly listeners = new Set<() => void>()
 	private readonly processing = new Set<string>()
 	private readonly locks = new Map<string, Promise<unknown>>()
 	private resumeTimer: number | ReturnType<typeof setTimeout> | null = null
-	private serverSceneHydrated = false
 	private disposed = false
 	private storageError: string | null = null
 	private snapshot: WhiteboardUploadOutboxSnapshot
@@ -532,20 +402,11 @@ export class WhiteboardUploadOutbox {
 		try {
 			this.database = await openDatabase()
 			const records = await readJobs(this.database)
-			for (const loaded of records) {
-				const stored = loaded.job
+			for (const stored of records) {
 				if (stored.boardId !== this.boardId) continue
 				const job = cloneJob(stored)
-				job.status = job.state
-				if (loaded.needsBlobMigration) {
-					// Preserve the v1 inline Blob before any metadata-only repair
-					// (for example, resetting an interrupted upload).
-					await writeJob(this.database, job, { storeBlob: true })
-				}
-				// A tab killed during fetch cannot remain permanently "uploading".
 				if (job.state === 'uploading') {
 					job.state = 'pending'
-					job.status = 'pending'
 					job.nextAttemptAt = now()
 					job.updatedAt = now()
 					await writeJob(this.database, job)
@@ -570,64 +431,15 @@ export class WhiteboardUploadOutbox {
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(cloneJob)
 		const pending = jobs.filter((job) => pendingStates.has(job.state))
-		const failed = jobs.filter((job) => failedStates.has(job.state))
-		const outstanding = jobs.filter((job) => job.state !== 'uploaded' || !job.sceneAcknowledgedVersion)
-		const staging = [...this.staging.values()]
-		const pendingJobIds = new Set(pending.map((job) => job.fileId))
-		const collectElementIds = (source: WhiteboardUploadJob[]) => [
-			...new Set(
-				source.flatMap((job) =>
-					job.latestElementSnapshots
-						.filter((snapshot) => snapshot.elementId)
-						.map((snapshot) => snapshot.elementId),
-				),
-			),
-		]
-		const pendingFileIds = [
-			...new Set([
-				...outstanding.map((job) => job.fileId),
-				...staging.map((item) => item.fileId),
-			]),
-		]
-		const uploadPendingFileIds = [
-			...new Set([
-				...pending.map((job) => job.fileId),
-				...staging.map((item) => item.fileId),
-			]),
-		]
+		const failed = jobs.filter((job) => job.state === 'failed')
 		return {
 			boardId: this.boardId,
 			jobs,
-			pendingCount: pending.length + staging.filter((item) => !pendingJobIds.has(item.fileId)).length,
+			pendingCount: pending.length,
 			failedCount: failed.length,
-			awaitingSceneAckCount: jobs.filter((job) => job.state === 'uploaded').length,
-			pendingFileIds,
-			uploadPendingFileIds,
+			pendingFileIds: pending.map((job) => job.fileId),
+			uploadPendingFileIds: pending.map((job) => job.fileId),
 			failedFileIds: failed.map((job) => job.fileId),
-			pendingElementIds: [
-				...new Set([
-					...collectElementIds(outstanding),
-					...staging.flatMap((item) =>
-						(item.latestElementSnapshots ?? [])
-							.filter((snapshot) => snapshot.elementId)
-							.map((snapshot) => snapshot.elementId),
-					),
-				]),
-			],
-			failedElementIds: collectElementIds(failed),
-			stagingCount: staging.length,
-			stagingFileIds: staging.map((item) => item.fileId),
-			stagingElementIds: [
-				...new Set(
-					staging.flatMap((item) =>
-						(item.latestElementSnapshots ?? []).map((snapshot) => snapshot.elementId),
-					),
-				),
-			],
-			recoveryJobs: this.serverSceneHydrated
-				? outstanding.map(cloneRecovery)
-				: [],
-			recoveryReady: this.serverSceneHydrated,
 			ready,
 			storageError: this.storageError,
 		}
@@ -640,7 +452,7 @@ export class WhiteboardUploadOutbox {
 
 	private async persist(
 		job: WhiteboardUploadJob,
-		options: { storeBlob?: boolean; inlineBlob?: boolean } = {},
+		options: { storeBlob?: boolean } = {},
 	): Promise<void> {
 		if (!this.database) {
 			throw new WhiteboardUploadOutboxStorageError(
@@ -659,102 +471,6 @@ export class WhiteboardUploadOutbox {
 		}
 	}
 
-	/** Block scene publication synchronously before async DataURL conversion. */
-	beginStaging(input: WhiteboardUploadStaging): void {
-		if (!input.boardId || input.boardId !== this.boardId || !input.fileId) return
-		const key = keyFor(input.boardId, input.fileId)
-		const previous = this.staging.get(key)
-		const snapshots = input.latestElementSnapshots
-		const next: WhiteboardUploadStaging = {
-			boardId: input.boardId,
-			fileId: input.fileId,
-			latestElementSnapshots:
-				snapshots !== undefined
-					? [...snapshots]
-					: previous?.latestElementSnapshots ?? [],
-			latestElementState:
-				input.latestElementState !== undefined
-					? input.latestElementState
-					: previous?.latestElementState,
-			sceneVersion: Math.max(
-				previous?.sceneVersion ?? 0,
-				input.sceneVersion ?? 0,
-			),
-		}
-		if (
-			previous &&
-			sameElementSnapshots(
-				previous.latestElementSnapshots ?? [],
-				next.latestElementSnapshots ?? [],
-			) &&
-			sameSerializableValue(previous.latestElementState, next.latestElementState) &&
-			(previous.sceneVersion ?? 0) === (next.sceneVersion ?? 0)
-		) {
-			return
-		}
-		this.staging.set(key, next)
-		this.publish()
-	}
-
-	updateStaging(fileId: string, input: WhiteboardUploadSceneSnapshot): void {
-		const key = keyFor(this.boardId, fileId)
-		const previous = this.staging.get(key)
-		if (!previous) return
-		const snapshots = input.latestElementSnapshots
-		const stateProvided =
-			input.latestElementState !== undefined || input.sceneState !== undefined
-		const nextState =
-			input.latestElementState !== undefined
-				? input.latestElementState
-				: input.sceneState
-					?? previous.latestElementState
-		const next: WhiteboardUploadStaging = {
-			...previous,
-			latestElementSnapshots:
-				snapshots !== undefined ? [...snapshots] : previous.latestElementSnapshots,
-			latestElementState: stateProvided ? nextState : previous.latestElementState,
-			sceneVersion: Math.max(previous.sceneVersion ?? 0, input.sceneVersion ?? 0),
-		}
-		if (
-			sameElementSnapshots(
-				previous.latestElementSnapshots ?? [],
-				next.latestElementSnapshots ?? [],
-			) &&
-			sameSerializableValue(previous.latestElementState, next.latestElementState) &&
-			(previous.sceneVersion ?? 0) === (next.sceneVersion ?? 0)
-		) {
-			return
-		}
-		this.staging.set(key, next)
-		this.publish()
-	}
-
-	completeStaging(fileId: string): void {
-		const key = keyFor(this.boardId, fileId)
-		if (!this.staging.delete(key)) return
-		this.publish()
-	}
-
-	failStaging(fileId: string): void {
-		this.completeStaging(fileId)
-	}
-
-	getStagingFileIds(): string[] {
-		return [...this.staging.values()].map((item) => item.fileId)
-	}
-
-	getStaging(fileId: string): WhiteboardUploadStaging | null {
-		const item = this.staging.get(keyFor(this.boardId, fileId))
-		return item
-			? {
-					...item,
-					latestElementSnapshots: item.latestElementSnapshots
-						? [...item.latestElementSnapshots]
-						: undefined,
-				}
-			: null
-	}
-
 	private async withLock<T>(key: string, work: () => Promise<T>): Promise<T> {
 		const previous = this.locks.get(key) ?? Promise.resolve()
 		const current = previous.then(work, work)
@@ -766,67 +482,41 @@ export class WhiteboardUploadOutbox {
 		}
 	}
 
-	async stage(input: WhiteboardUploadStage): Promise<WhiteboardUploadJob> {
+	async enqueue(input: WhiteboardUploadRequest): Promise<WhiteboardUploadJob> {
 		if (!input.boardId || input.boardId !== this.boardId) {
 			throw new Error('Upload boardId does not match this outbox.')
 		}
 		if (!input.fileId) throw new Error('Upload fileId is required.')
 		await this.ready
 		const key = keyFor(input.boardId, input.fileId)
-		const staged = await this.withLock(key, async () => {
+		const queued = await this.withLock(key, async () => {
 			const previous = this.jobs.get(key)
-			const timestamp = now()
-			const snapshots = input.latestElementSnapshots ?? input.elementSnapshots
-			const changedBytes =
+			if (previous?.state === 'uploaded') return cloneJob(previous)
+			if (
 				previous &&
-				(previous.blob.size !== input.blob.size ||
-					previous.blob.type !== input.blob.type ||
-					previous.mimeType !== input.mimeType)
-			const state = changedBytes ? 'pending' : previous?.state ?? 'pending'
+				(previous.state === 'pending' || previous.state === 'uploading')
+			) {
+				return cloneJob(previous)
+			}
+			const timestamp = now()
 			const next: WhiteboardUploadJob = {
 				boardId: input.boardId,
 				fileId: input.fileId,
 				blob: input.blob,
 				mimeType: input.mimeType,
-				latestElementSnapshots:
-					snapshots !== undefined
-						? [...snapshots]
-						: previous?.latestElementSnapshots ?? [],
-				latestElementState:
-					input.latestElementState !== undefined
-						? input.latestElementState
-						: input.sceneState !== undefined
-							? input.sceneState
-							: previous?.latestElementState,
-				sceneVersion: Math.max(
-					previous?.sceneVersion ?? 0,
-					input.sceneVersion ?? 0,
-				),
-				state,
-				status: state,
-				attempts: changedBytes ? 0 : previous?.attempts ?? 0,
+				state: 'pending',
+				attempts: previous?.attempts ?? 0,
 				createdAt: previous?.createdAt ?? timestamp,
 				updatedAt: timestamp,
-				lastAttemptAt: changedBytes ? undefined : previous?.lastAttemptAt,
-				nextAttemptAt: changedBytes ? timestamp : previous?.nextAttemptAt ?? timestamp,
-				uploadedAt: changedBytes ? undefined : previous?.uploadedAt,
-				sceneAcknowledgedVersion:
-					previous?.sceneAcknowledgedVersion,
-				error: changedBytes ? undefined : previous?.error,
-				contentVersion: (previous?.contentVersion ?? 0) + (changedBytes ? 1 : 0),
-			}
-			if (
-				next.sceneAcknowledgedVersion !== undefined &&
-				next.sceneVersion > next.sceneAcknowledgedVersion
-			) {
-				delete next.sceneAcknowledgedVersion
+				nextAttemptAt: timestamp,
+				lastAttemptAt: previous?.lastAttemptAt,
+				error: undefined,
+				lastError: undefined,
 			}
 			this.jobs.set(key, next)
 			this.publish()
-				try {
-					await this.persist(next, {
-						storeBlob: !previous || Boolean(changedBytes),
-					})
+			try {
+				await this.persist(next, { storeBlob: true })
 			} catch (error) {
 				if (previous) this.jobs.set(key, previous)
 				else this.jobs.delete(key)
@@ -836,64 +526,48 @@ export class WhiteboardUploadOutbox {
 			return cloneJob(next)
 		})
 		void this.processKey(key)
-		return staged
+		return queued
 	}
 
-	/**
-	 * Wait until this file's outbox job leaves the in-flight states.
-	 *
-	 * Settles: `uploaded` resolves; `failed`, `auth-blocked`, `permanent-failure`,
-	 * or a missing job reject. `failed` stays retryable — callers must not treat
-	 * that reject as permanent. Canvas/files should watch `job.state === 'uploaded'`
-	 * rather than awaiting this for scene publication.
-	 */
 	async waitForUpload(
 		fileId: string,
 		timeoutMs: number = WHITEBOARD_UPLOAD_WAIT_TIMEOUT_MS,
 	): Promise<WhiteboardUploadJob> {
 		await this.ready
-		const key = keyFor(this.boardId, fileId)
 		return new Promise((resolve, reject) => {
 			let settled = false
-			let timer: ReturnType<typeof setTimeout> | null = null
-			const finish = (callback: () => void) => {
+			let unsubscribe: (() => void) | undefined
+			let timer: ReturnType<typeof setTimeout> | undefined
+			const finish = (error?: Error, job?: WhiteboardUploadJob) => {
 				if (settled) return
 				settled = true
-				if (timer !== null) clearTimeout(timer)
-				unsubscribe()
-				callback()
+				unsubscribe?.()
+				if (timer !== undefined) clearTimeout(timer)
+				if (error) reject(error)
+				else resolve(job as WhiteboardUploadJob)
 			}
 			const check = () => {
-				const job = this.jobs.get(key)
+				const job = this.jobs.get(keyFor(this.boardId, fileId))
 				if (!job) {
-					finish(() => reject(new Error('Upload job was removed.')))
+					finish(new Error('Upload job was removed.'))
 					return
 				}
 				if (job.state === 'uploaded') {
-					finish(() => resolve(cloneJob(job)))
+					finish(undefined, cloneJob(job))
 					return
 				}
-				if (
-					job.state === 'failed' ||
-					job.state === 'auth-blocked' ||
-					job.state === 'permanent-failure'
-				) {
-					finish(() => reject(new WhiteboardUploadFailureError(cloneJob(job))))
+				if (isTerminalFailure(job)) {
+					finish(new WhiteboardUploadFailureError(job))
 				}
 			}
-			const unsubscribe = this.subscribe(check)
-			if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
-				timer = setTimeout(() => {
-					finish(() =>
-						reject(
-							Object.assign(new Error('Upload wait timed out.'), {
-								status: 408,
-							}),
-						),
-					)
-				}, timeoutMs)
-			}
 			check()
+			if (settled) return
+			unsubscribe = this.subscribe(check)
+			timer = setTimeout(() => {
+				const error = new Error('Upload timed out.') as Error & { status: number }
+				error.status = 408
+				finish(error)
+			}, timeoutMs)
 		})
 	}
 
@@ -902,213 +576,41 @@ export class WhiteboardUploadOutbox {
 		return job ? cloneJob(job) : null
 	}
 
-	getPendingElementSnapshots(): WhiteboardUploadRecovery[] {
-		if (!this.serverSceneHydrated) return []
-		return [...this.jobs.values()]
-			.filter((job) => job.state !== 'uploaded' || !job.sceneAcknowledgedVersion)
-			.map(cloneRecovery)
-	}
-
-	getRecoveryData(): WhiteboardUploadRecovery[] {
-		return this.getPendingElementSnapshots()
-	}
-
-	async updateElementSnapshots(
-		fileId: string,
-		input: WhiteboardUploadSceneSnapshot,
-	): Promise<WhiteboardUploadJob | null> {
-		await this.ready
-		const key = keyFor(this.boardId, fileId)
-		return this.withLock(key, async () => {
-			const current = this.jobs.get(key)
-			if (!current) return null
-			const snapshotsChanged =
-				input.latestElementSnapshots !== undefined &&
-				!sameElementSnapshots(
-					current.latestElementSnapshots,
-					input.latestElementSnapshots,
-				)
-			const stateProvided =
-				input.latestElementState !== undefined || input.sceneState !== undefined
-			const nextState =
-				input.latestElementState !== undefined
-					? input.latestElementState
-					: input.sceneState
-						?? current.latestElementState
-			const stateChanged =
-				stateProvided &&
-				!sameSerializableValue(current.latestElementState, nextState)
-			if (!snapshotsChanged && !stateChanged) {
-				return cloneJob(current)
-			}
-			const sceneVersion = Math.max(
-				current.sceneVersion,
-				input.sceneVersion ?? 0,
-			)
-			const next: WhiteboardUploadJob = {
-				...current,
-				latestElementSnapshots:
-					input.latestElementSnapshots !== undefined
-						? [...input.latestElementSnapshots]
-						: current.latestElementSnapshots,
-				latestElementState:
-					input.latestElementState !== undefined
-						? input.latestElementState
-						: input.sceneState !== undefined
-							? input.sceneState
-							: current.latestElementState,
-				sceneVersion,
-				updatedAt: now(),
-			}
-			if (
-				next.sceneAcknowledgedVersion !== undefined &&
-				sceneVersion > next.sceneAcknowledgedVersion
-			) {
-				delete next.sceneAcknowledgedVersion
-			}
-			this.jobs.set(key, next)
-			await this.persist(next)
-			this.publish()
-			return cloneJob(next)
-		})
-	}
-
-	private async clearHydratedTombstones(
-		input: WhiteboardServerSceneHydration,
-	): Promise<string[]> {
-		const deleted = new Set(input.deletedFileIds ?? [])
-		if (deleted.size === 0) return []
-		const sceneVersion = Number.isFinite(input.sceneVersion)
-			? (input.sceneVersion as number)
-			: Number.MAX_SAFE_INTEGER
-		await this.ready
-		const removed: string[] = []
-		for (const job of [...this.jobs.values()]) {
-			if (
-				!deleted.has(job.fileId) ||
-				(job.sceneVersion > sceneVersion &&
-					job.latestElementSnapshots.length > 0)
-			) {
-				continue
-			}
-			const key = keyFor(job.boardId, job.fileId)
-			await this.withLock(key, async () => {
-				const current = this.jobs.get(key)
-				if (
-					!current ||
-					(current.sceneVersion > sceneVersion &&
-						current.latestElementSnapshots.length > 0) ||
-					!deleted.has(current.fileId) ||
-					!this.database
-				) {
-					return
-				}
-				await deleteJob(this.database, current.boardId, current.fileId)
-				this.jobs.delete(key)
-				removed.push(current.fileId)
-				this.publish()
-			})
-		}
-		return removed
-	}
-
-	/**
-	 * Recovery snapshots are hidden until the server scene has been applied. A
-	 * later canvas integration can then decide how to merge these snapshots.
-	 */
-	markServerSceneHydrated(
-		input: WhiteboardServerSceneHydration = {},
-	): Promise<string[]> {
-		if (!this.serverSceneHydrated) {
-			this.serverSceneHydrated = true
-			this.publish()
-		}
-		if (!input.deletedFileIds?.length) return Promise.resolve([])
-		return this.clearHydratedTombstones(input).catch((error) => {
-			this.storageError = asMessage(error)
-			this.publish()
-			return []
-		})
-	}
-
-	resetServerSceneHydration(): void {
-		if (!this.serverSceneHydrated) return
-		this.serverSceneHydrated = false
-		this.publish()
-	}
-
-	async markSceneAcknowledged(input: WhiteboardSceneAcknowledgement): Promise<string[]> {
-		if (input.boardId !== this.boardId || !Number.isFinite(input.sceneVersion)) {
-			return []
-		}
-		await this.ready
-		const allowed = input.fileIds ? new Set(input.fileIds) : null
-		const deleted = new Set(input.deletedFileIds ?? [])
-		const removed: string[] = []
-		for (const job of [...this.jobs.values()]) {
-			if (allowed && !allowed.has(job.fileId)) continue
-			if (job.sceneVersion > input.sceneVersion) continue
-			const key = keyFor(job.boardId, job.fileId)
-			await this.withLock(key, async () => {
-				const current = this.jobs.get(key)
-				if (!current || current.sceneVersion > input.sceneVersion) return
-				if (deleted.has(current.fileId) || current.state === 'uploaded' && allowed?.has(current.fileId)) {
-					if (!this.database) return
-					await deleteJob(this.database, current.boardId, current.fileId)
-					this.jobs.delete(key)
-					removed.push(current.fileId)
-				} else {
-					const acknowledged = Math.max(
-						current.sceneAcknowledgedVersion ?? 0,
-						input.sceneVersion,
-					)
-					const next = { ...current, sceneAcknowledgedVersion: acknowledged, updatedAt: now() }
-					this.jobs.set(key, next)
-					await this.persist(next)
-				}
-				this.publish()
-			})
-		}
-		return removed
-	}
-
 	async retry(fileId: string): Promise<WhiteboardUploadJob | null> {
 		await this.ready
 		const key = keyFor(this.boardId, fileId)
-		const result = await this.withLock(key, async () => {
+		const next = await this.withLock(key, async () => {
 			const current = this.jobs.get(key)
-			if (!current) return null
-			if (current.state === 'uploaded') return cloneJob(current)
-			const next = updateState(
-				{
-					...current,
-					attempts: 0,
-					nextAttemptAt: now(),
-					lastAttemptAt: undefined,
-					error: undefined,
-				},
-				'pending',
-			)
-			this.jobs.set(key, next)
+			if (!current || current.state === 'uploaded' || current.state === 'uploading') {
+				return current ? cloneJob(current) : null
+			}
+			const updated: WhiteboardUploadJob = {
+				...current,
+				state: 'pending',
+				nextAttemptAt: now(),
+				updatedAt: now(),
+				error: undefined,
+				lastError: undefined,
+			}
+			this.jobs.set(key, updated)
+			await this.persist(updated)
 			this.publish()
-			await this.persist(next)
-			return cloneJob(next)
+			return cloneJob(updated)
 		})
-		if (result) void this.processKey(key)
-		return result
+		if (next) void this.processKey(key)
+		return next
 	}
 
 	async retryAll(): Promise<number> {
 		await this.ready
 		const ids = [...this.jobs.values()]
-			.filter((job) => isWhiteboardUploadFailedState(job.state))
+			.filter((job) => job.state === 'failed')
 			.map((job) => job.fileId)
 		for (const fileId of ids) await this.retry(fileId)
 		return ids.length
 	}
 
-	/** Remove only local recovery state. This never issues a remote DELETE. */
-	async remove(fileId: string, _options?: WhiteboardUploadRemoveOptions): Promise<boolean> {
+	async remove(fileId: string): Promise<boolean> {
 		await this.ready
 		const key = keyFor(this.boardId, fileId)
 		return this.withLock(key, async () => {
@@ -1121,7 +623,6 @@ export class WhiteboardUploadOutbox {
 		})
 	}
 
-	/** Wake auth-blocked jobs after a valid board auth/hello is available. */
 	notifyAuthReady(): void {
 		void this.resume(true)
 	}
@@ -1131,16 +632,19 @@ export class WhiteboardUploadOutbox {
 	}
 
 	private async resume(retryAuth = false): Promise<void> {
-		if (!this.database) return
-		if (this.disposed) return
+		if (!this.database || this.disposed) return
 		const timestamp = now()
 		if (retryAuth) {
 			for (const job of this.jobs.values()) {
-				if (job.state !== 'auth-blocked') continue
-				const next = updateState(
-					{ ...job, nextAttemptAt: timestamp, error: undefined },
-					'pending',
-				)
+				if (job.state !== 'failed' || job.error?.kind !== 'auth') continue
+				const next: WhiteboardUploadJob = {
+					...job,
+					state: 'pending',
+					nextAttemptAt: timestamp,
+					updatedAt: timestamp,
+					error: undefined,
+					lastError: undefined,
+				}
 				this.jobs.set(keyFor(job.boardId, job.fileId), next)
 				try {
 					await this.persist(next)
@@ -1153,7 +657,7 @@ export class WhiteboardUploadOutbox {
 		for (const job of this.jobs.values()) {
 			if (
 				(job.state === 'pending' || job.state === 'failed') &&
-				(job.nextAttemptAt ?? 0) <= timestamp
+				(job.nextAttemptAt ?? Number.POSITIVE_INFINITY) <= timestamp
 			) {
 				void this.processKey(keyFor(job.boardId, job.fileId))
 			}
@@ -1181,94 +685,79 @@ export class WhiteboardUploadOutbox {
 
 	private async processKey(key: string): Promise<void> {
 		if (this.processing.has(key) || this.disposed) return
+		const current = this.jobs.get(key)
+		if (!current) return
+		if (current.state === 'uploaded' || current.state === 'uploading') return
+		if ((current.nextAttemptAt ?? 0) > now()) {
+			this.scheduleNext()
+			return
+		}
 		this.processing.add(key)
 		try {
-			let started: WhiteboardUploadJob | null = null
-			try {
-				started = await this.withLock(key, async () => {
-					const current = this.jobs.get(key)
-					if (
-						!current ||
-						(current.state !== 'pending' && current.state !== 'failed') ||
-						(current.nextAttemptAt !== undefined && current.nextAttemptAt > now())
-					) {
-						return null
+			await this.withLock(key, async () => {
+				const job = this.jobs.get(key)
+				if (!job || job.state === 'uploaded') return
+				if (job.state === 'failed' && job.nextAttemptAt === undefined) return
+				const uploading: WhiteboardUploadJob = {
+					...job,
+					state: 'uploading',
+					attempts: job.attempts + 1,
+					lastAttemptAt: now(),
+					updatedAt: now(),
+					nextAttemptAt: undefined,
+				}
+				this.jobs.set(key, uploading)
+				this.publish()
+				await this.persist(uploading)
+				try {
+					await this.adapter({
+						boardId: uploading.boardId,
+						fileId: uploading.fileId,
+						blob: uploading.blob,
+						mimeType: uploading.mimeType,
+					})
+					const done: WhiteboardUploadJob = {
+						...uploading,
+						state: 'uploaded',
+						uploadedAt: now(),
+						updatedAt: now(),
+						error: undefined,
+						lastError: undefined,
+						nextAttemptAt: undefined,
 					}
-					const next = updateState(
-						{
-							...current,
-							attempts: current.attempts + 1,
-							lastAttemptAt: now(),
-							nextAttemptAt: undefined,
-							error: undefined,
-						},
-						'uploading',
-					)
-					this.jobs.set(key, next)
-					this.publish()
-					await this.persist(next)
-					return cloneJob(next)
-				})
-			} catch {
-				return
-			}
-			if (!started) return
-
-			try {
-				await this.adapter({
-					boardId: started.boardId,
-					fileId: started.fileId,
-					blob: started.blob,
-					mimeType: started.mimeType,
-				})
-				await this.withLock(key, async () => {
-					const current = this.jobs.get(key)
-					if (!current || current.contentVersion !== started?.contentVersion) return
-					if (
-						current.sceneAcknowledgedVersion !== undefined &&
-						current.sceneAcknowledgedVersion >= current.sceneVersion
-					) {
-						if (!this.database) return
-						await deleteJob(this.database, current.boardId, current.fileId)
-						this.jobs.delete(key)
-						this.publish()
-						return
+					this.jobs.set(key, done)
+					await this.persist(done)
+					if (this.database) {
+						try {
+							await deleteBlob(this.database, done.boardId, done.fileId)
+						} catch {
+							// Blob cleanup is best-effort after R2 has confirmed.
+						}
 					}
-					const next = updateState(
-						{ ...current, uploadedAt: now(), nextAttemptAt: undefined, error: undefined },
-						'uploaded',
-					)
-					this.jobs.set(key, next)
-					await this.persist(next)
 					this.publish()
-				})
-			} catch (error) {
-				const classification = classifyUploadFailure(error)
-				await this.withLock(key, async () => {
-					const current = this.jobs.get(key)
-					if (!current || current.contentVersion !== started?.contentVersion) return
+				} catch (error) {
+					const classification = classifyUploadFailure(error)
 					const timestamp = now()
-					const retryable = classification.state === 'failed'
-					const next = updateState(
-						{
-							...current,
-							nextAttemptAt: retryable
-								? timestamp + retryDelayForAttempt(current.attempts)
-								: undefined,
-							error: {
-								message: asMessage(error),
-								kind: classification.kind,
-								status: classification.status,
-								updatedAt: timestamp,
-							},
+					const next: WhiteboardUploadJob = {
+						...uploading,
+						state: 'failed',
+						updatedAt: timestamp,
+						nextAttemptAt: classification.retryable
+							? timestamp + retryDelayForAttempt(uploading.attempts)
+							: undefined,
+						lastError: asMessage(error),
+						error: {
+							message: asMessage(error),
+							kind: classification.kind,
+							status: classification.status,
+							updatedAt: timestamp,
 						},
-						classification.state,
-					)
+					}
 					this.jobs.set(key, next)
 					await this.persist(next)
 					this.publish()
-				})
-			}
+				}
+			})
 		} finally {
 			this.processing.delete(key)
 			this.scheduleNext()
@@ -1307,37 +796,20 @@ async function defaultUploadAdapter(request: WhiteboardUploadRequest): Promise<v
 export type UseWhiteboardUploadOutboxResult = WhiteboardUploadOutboxSnapshot & {
 	outbox: WhiteboardUploadOutbox
 	readyPromise: Promise<void>
-	stageUpload: (input: WhiteboardUploadStage) => Promise<WhiteboardUploadJob>
+	enqueue: (input: WhiteboardUploadRequest) => Promise<WhiteboardUploadJob>
 	waitForUpload: (
 		fileId: string,
 		timeoutMs?: number,
 	) => Promise<WhiteboardUploadJob>
 	getJob: (fileId: string) => WhiteboardUploadJob | null
 	getUploadState: (fileId: string) => WhiteboardUploadState | null
-	getPendingElementSnapshots: () => WhiteboardUploadRecovery[]
-	getRecoveryData: () => WhiteboardUploadRecovery[]
-	updateElementSnapshots: (
-		fileId: string,
-		input: WhiteboardUploadSceneSnapshot,
-	) => Promise<WhiteboardUploadJob | null>
-	markServerSceneHydrated: (
-		input?: WhiteboardServerSceneHydration,
-	) => Promise<string[]>
-	resetServerSceneHydration: () => void
-	markSceneAcknowledged: (
-		input: WhiteboardSceneAcknowledgement,
-	) => Promise<string[]>
 	retryUpload: (fileId: string) => Promise<WhiteboardUploadJob | null>
 	retryAllUploads: () => Promise<number>
-	removeUpload: (
-		fileId: string,
-		options?: WhiteboardUploadRemoveOptions,
-	) => Promise<boolean>
+	removeUpload: (fileId: string) => Promise<boolean>
 	notifyAuthReady: () => void
 	notifyBoardHello: () => void
 }
 
-/** React-friendly public hook for the later WhiteboardCanvas integration. */
 export function useWhiteboardUploadOutbox(
 	boardId: string,
 	adapter?: WhiteboardUploadAdapter,
@@ -1357,16 +829,10 @@ export function useWhiteboardUploadOutbox(
 		...state,
 		outbox,
 		readyPromise: outbox.ready,
-		stageUpload: outbox.stage.bind(outbox),
+		enqueue: outbox.enqueue.bind(outbox),
 		waitForUpload: outbox.waitForUpload.bind(outbox),
 		getJob: outbox.getJob.bind(outbox),
 		getUploadState: (fileId) => outbox.getJob(fileId)?.state ?? null,
-		getPendingElementSnapshots: outbox.getPendingElementSnapshots.bind(outbox),
-		getRecoveryData: outbox.getRecoveryData.bind(outbox),
-		updateElementSnapshots: outbox.updateElementSnapshots.bind(outbox),
-		markServerSceneHydrated: outbox.markServerSceneHydrated.bind(outbox),
-		resetServerSceneHydration: outbox.resetServerSceneHydration.bind(outbox),
-		markSceneAcknowledged: outbox.markSceneAcknowledged.bind(outbox),
 		retryUpload: outbox.retry.bind(outbox),
 		retryAllUploads: outbox.retryAll.bind(outbox),
 		removeUpload: outbox.remove.bind(outbox),

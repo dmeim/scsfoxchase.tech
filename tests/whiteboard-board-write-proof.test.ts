@@ -27,12 +27,8 @@ import {
 	uploadBoardAssetBytes,
 } from '../src/lib/whiteboard-assets'
 import {
-	BOARD_WRITE_PROOF_REQUIRED_STATUS,
-	WHITEBOARD_AUTH_READY_EVENT,
-	WHITEBOARD_HELLO_EVENT,
 	hasBoardWriteProof,
 	headersHaveBoardWriteProof,
-	waitForBoardWriteProof,
 } from '../src/lib/whiteboard-board-write-proof'
 
 const BOARD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -43,12 +39,6 @@ const sessionPair = (): BoardSessionAuth => ({
 	authToken: 'live-auth-token',
 	role: 'editor',
 })
-
-function installWindowTarget(): EventTarget {
-	const target = new EventTarget()
-	vi.stubGlobal('window', target)
-	return target
-}
 
 beforeEach(() => {
 	getHostSecret.mockReturnValue(null)
@@ -101,46 +91,8 @@ describe('hasBoardWriteProof', () => {
 	})
 })
 
-describe('waitForBoardWriteProof', () => {
-	it('resolves immediately when proof already exists', async () => {
-		getHostSecret.mockReturnValue('scratch-host-secret')
-		await expect(waitForBoardWriteProof(BOARD_ID, 20)).resolves.toBeUndefined()
-	})
-
-	it('resolves when hello provides a live session pair', async () => {
-		const target = installWindowTarget()
-		const waiting = waitForBoardWriteProof(BOARD_ID, 500)
-		getBoardSessionAuth.mockReturnValue(sessionPair())
-		target.dispatchEvent(new Event(WHITEBOARD_HELLO_EVENT))
-		await expect(waiting).resolves.toBeUndefined()
-	})
-
-	it('resolves when auth-ready fires after a host secret appears', async () => {
-		const target = installWindowTarget()
-		const waiting = waitForBoardWriteProof(BOARD_ID, 500)
-		getHostSecret.mockReturnValue('scratch-host-secret')
-		target.dispatchEvent(new Event(WHITEBOARD_AUTH_READY_EVENT))
-		await expect(waiting).resolves.toBeUndefined()
-	})
-
-	it('rejects with auth-blocked 401 on timeout, not permanent-failure', async () => {
-		installWindowTarget()
-		const rejection = await waitForBoardWriteProof(BOARD_ID, 20).then(
-			() => {
-				throw new Error('waitForBoardWriteProof should have rejected')
-			},
-			(error) => error,
-		)
-		expect(rejection).toMatchObject({
-			status: BOARD_WRITE_PROOF_REQUIRED_STATUS,
-		})
-		expect(rejection.status).not.toBe(413)
-		expect(rejection.status).not.toBe(415)
-	})
-})
-
 describe('boardAssetWriteHeaders / uploadBoardAssetBytes', () => {
-	it('throws 401 and does not fetch without host or session proof', async () => {
+	it('throws 401 and does not fetch without host, session, or Clerk JWT', async () => {
 		await expect(boardAssetWriteHeaders(BOARD_ID)).rejects.toMatchObject({
 			status: 401,
 		})
@@ -155,20 +107,27 @@ describe('boardAssetWriteHeaders / uploadBoardAssetBytes', () => {
 		expect(fetch).not.toHaveBeenCalled()
 	})
 
-	it('does not fetch when only a Clerk JWT is present', async () => {
+	it('attaches a Clerk JWT and fetches when that is the only proof', async () => {
 		getAuthHeaders.mockResolvedValue({ Authorization: 'Bearer clerk-jwt' })
-		await expect(boardAssetWriteHeaders(BOARD_ID)).rejects.toMatchObject({
-			status: 401,
+		const headers = await boardAssetWriteHeaders(BOARD_ID)
+		expect(headers).toMatchObject({
+			Authorization: 'Bearer clerk-jwt',
+			'X-Board-Id': BOARD_ID,
 		})
-		await expect(
-			uploadBoardAssetBytes({
-				boardId: BOARD_ID,
-				fileId: FILE_ID,
-				bytes: new Blob(['img'], { type: 'image/png' }),
-				mimeType: 'image/png',
-			}),
-		).rejects.toMatchObject({ status: 401 })
-		expect(fetch).not.toHaveBeenCalled()
+		expect(headersHaveBoardWriteProof(headers)).toBe(false)
+
+		await uploadBoardAssetBytes({
+			boardId: BOARD_ID,
+			fileId: FILE_ID,
+			bytes: new Blob(['img'], { type: 'image/png' }),
+			mimeType: 'image/png',
+		})
+		expect(fetch).toHaveBeenCalledTimes(1)
+		const [, init] = vi.mocked(fetch).mock.calls[0]!
+		expect(init?.method).toBe('PUT')
+		expect(init?.headers).toMatchObject({
+			Authorization: 'Bearer clerk-jwt',
+		})
 	})
 
 	it('attaches Clerk plus host secret and fetches when host proof exists', async () => {

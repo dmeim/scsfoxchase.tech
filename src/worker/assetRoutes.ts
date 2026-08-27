@@ -11,17 +11,15 @@
  * through the Durable Object alarm; the legacy PUT path may run a guarded
  * best-effort sweep as maintenance.
  *
- * Account-global PUT/DELETE google:*: matching Clerk Owner only. Legacy
- * canvas PUTs with X-Board-Id accept verified live board proof only when the
- * key exactly matches that board's stored Owner. Those PUTs write only the
- * owner-key object; they do not dual-write board-scoped keys or the board
- * manifest. Viewers are read-only.
+ * Account-global PUT/DELETE google:*: matching Clerk Owner only. Viewers
+ * are read-only. Canvas writes use the board-scoped route
+ * `/api/whiteboard/boards/{boardId}/assets/{fileId}`.
  * temp:* requires a host secret or a live can-edit board session.
  * local:* PUT/DELETE are rejected. Guessing a fileId is not enough.
  * GET stays unauthenticated so connected players can load media; SVG is
  * served as an attachment with nosniff (not a navigable executable document).
  * Hub board previews PUT with X-Whiteboard-Kind: preview (short cache, not
- * immutable). Asset ids stay raw UUIDs — no /previews/ path or .jpg suffix.
+ * immutable). Board-scoped file ids are a UUID (legacy) or SHA-256 hex.
  */
 import {
 	PREVIEW_CACHE_CONTROL,
@@ -29,7 +27,11 @@ import {
 	WHITEBOARD_PREVIEW_KIND_HEADER,
 } from '../lib/whiteboard-preview-url'
 import { UNSAVED_BOARD_TTL_MS } from '../lib/whiteboard-sync'
-import { requireClerkWhiteboardAuth } from './clerkAuth'
+import {
+	requireClerkWhiteboardAuth,
+	verifyClerkWhiteboardTokenResult,
+	type ClerkWhiteboardAuth,
+} from './clerkAuth'
 import type { WhiteboardBoard } from './WhiteboardBoard'
 
 export const MAX_ASSET_BYTES = 8 * 1024 * 1024 // 8 MB — Chromebook-friendly
@@ -46,12 +48,32 @@ const ALLOWED_MIME = new Set([
 
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const CONTENT_HASH_RE = /^[0-9a-f]{64}$/
 
 /** Leftover GET: local:{uuid}; saved: google:{sub}; scratch media: temp:{boardUuid} */
 const OWNER_KEY_RE = /^(local|google|temp):[A-Za-z0-9_.:@-]{1,128}$/
 
 function isAssetUuid(value: string): boolean {
 	return UUID_RE.test(value)
+}
+
+/** Legacy UUID file ids or SHA-256 hex of the bytes. Board ids stay UUID. */
+export function isAssetFileId(value: string): boolean {
+	return isAssetUuid(value) || CONTENT_HASH_RE.test(value)
+}
+
+function isContentHashFileId(value: string): boolean {
+	return CONTENT_HASH_RE.test(value)
+}
+
+async function sha256HexOfBytes(bytes: Uint8Array): Promise<string> {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		bytes as unknown as BufferSource,
+	)
+	return Array.from(new Uint8Array(digest), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('')
 }
 
 function isOwnerKey(value: string): boolean {
@@ -99,7 +121,7 @@ export function parseBoardAssetPath(pathname: string): BoardAssetPath | null {
 	if (!match) return null
 	const boardId = decodePathPart(match[1]!)
 	const fileId = decodePathPart(match[2]!)
-	if (!boardId || !fileId || !isAssetUuid(boardId) || !isAssetUuid(fileId)) {
+	if (!boardId || !fileId || !isAssetUuid(boardId) || !isAssetFileId(fileId)) {
 		return null
 	}
 	return { boardId, fileId }
@@ -263,14 +285,12 @@ function boardIdForAssetWrite(
 	return null
 }
 
-/**
- * Compatibility-only board context for legacy canvas PUTs. Do not use this
- * parser for the board-scoped route or for account/library operations.
- */
-export function parseLegacyCanvasBoardContext(request: Request): string | null {
-	if (request.method !== 'PUT' || isPreviewKindRequest(request)) return null
-	const boardId = request.headers.get('X-Board-Id')?.trim() || ''
-	return isAssetUuid(boardId) ? boardId : null
+function extractClerkBearer(request: Request): string | null {
+	const auth = request.headers.get('Authorization')?.trim() || ''
+	if (!auth.toLowerCase().startsWith('bearer ')) return null
+	const token = auth.slice(7).trim()
+	if (!token || !token.includes('.')) return null
+	return token
 }
 
 async function verifyBoardWriteAccess(
@@ -278,6 +298,7 @@ async function verifyBoardWriteAccess(
 	boardId: string,
 	hostSecret: string | null,
 	session: { sessionId: string; authToken: string } | null,
+	clerk?: ClerkWhiteboardAuth | null,
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
 	const stub = env.WHITEBOARDS.get(
 		env.WHITEBOARDS.idFromName(boardId),
@@ -286,6 +307,14 @@ async function verifyBoardWriteAccess(
 		hostSecret,
 		sessionId: session?.sessionId ?? null,
 		authToken: session?.authToken ?? null,
+		clerk: clerk
+			? {
+					accountId: clerk.accountId,
+					ownerKey: clerk.ownerKey,
+					clerkUserId: clerk.clerkUserId,
+					profileDegraded: clerk.profileDegraded,
+				}
+			: null,
 	})
 }
 
@@ -306,11 +335,39 @@ async function assertBoardAssetWrite(
 	const hostSecret = extractHostSecret(request)
 	const session = extractSessionProof(request)
 	try {
+		if (hostSecret || session) {
+			const result = await verifyBoardWriteAccess(
+				env,
+				boardId,
+				hostSecret,
+				session,
+			)
+			if (result.ok) return null
+			return jsonError(result.status, result.error, request)
+		}
+
+		const bearer = extractClerkBearer(request)
+		if (!bearer) {
+			return jsonError(401, 'Host secret or editor session required', request)
+		}
+		const verified = await verifyClerkWhiteboardTokenResult(
+			bearer,
+			env,
+			request.headers.get('Origin'),
+		)
+		if (!verified.ok) {
+			return jsonError(
+				403,
+				"Not allowed to write this board's assets",
+				request,
+			)
+		}
 		const result = await verifyBoardWriteAccess(
 			env,
 			boardId,
-			hostSecret,
-			session,
+			null,
+			null,
+			verified.auth,
 		)
 		if (result.ok) return null
 		return jsonError(result.status, result.error, request)
@@ -321,72 +378,15 @@ async function assertBoardAssetWrite(
 
 /**
  * Account-global saved-board legacy PUT/DELETE requires the Clerk account
- * encoded by the `google:` owner key. During the compatibility window, an old
- * canvas PUT may instead use verified board proof, but only for that board's
- * stored owner key.
+ * encoded by the `google:` owner key. Canvas writes use the board-scoped
+ * route; this path no longer accepts board-context PUTs.
  */
 async function assertGoogleAssetWrite(
 	request: Request,
 	env: Env,
 	ownerKey: string,
 ): Promise<Response | null> {
-	const suppliedBoardId = request.headers.get('X-Board-Id')?.trim() || ''
-	if (
-		request.method === 'PUT' &&
-		!isPreviewKindRequest(request) &&
-		suppliedBoardId &&
-		!isAssetUuid(suppliedBoardId)
-	) {
-		return jsonError(400, 'Invalid board id', request)
-	}
-	const boardId = parseLegacyCanvasBoardContext(request)
-	if (!boardId) {
-		// Without explicit board context this remains an account-global legacy
-		// mutation and must be authorized by the matching Clerk owner.
-		return assertGoogleOwnerWrite(request, env, ownerKey)
-	}
-
-	const hostSecret = extractHostSecret(request)
-	const session = extractSessionProof(request)
-	if (!hostSecret && !session) {
-		return jsonError(
-			401,
-			'Host secret or editor session required',
-			request,
-		)
-	}
-
-	try {
-		const result = await verifyBoardWriteAccess(
-			env,
-			boardId,
-			hostSecret,
-			session,
-		)
-		if (!result.ok) return jsonError(result.status, result.error, request)
-	} catch {
-		return jsonError(503, 'Could not verify board write access', request)
-	}
-
-	let revealedOwnerKey: string | null
-	try {
-		revealedOwnerKey = await readRevealedCloudOwnerKey(
-			boardStub(env, boardId),
-			request,
-			boardId,
-			{
-				hostSecret,
-				authorization: request.headers.get('Authorization'),
-				session,
-			},
-		)
-	} catch {
-		return jsonError(503, 'Could not verify board owner', request)
-	}
-	if (revealedOwnerKey !== ownerKey) {
-		return jsonError(403, 'ownerKey does not match this board', request)
-	}
-	return null
+	return assertGoogleOwnerWrite(request, env, ownerKey)
 }
 
 async function assertTempWrite(
@@ -572,7 +572,7 @@ export async function moveTempPrefixToOwner(
 		})
 		for (const obj of listed.objects) {
 			const fileId = obj.key.slice(prefix.length)
-			if (!fileId || fileId.includes('/') || !isAssetUuid(fileId)) continue
+			if (!fileId || fileId.includes('/') || !isAssetFileId(fileId)) continue
 			const source = await env.WHITEBOARD_ASSETS.get(obj.key)
 			if (!source) continue
 			const destKey = r2ObjectKey(destOwnerKey, fileId)
@@ -957,7 +957,14 @@ async function handleBoardAssetRequest(
 		const body = boundedBody.bytes
 		if (body.byteLength === 0) return jsonError(400, 'Empty body', request)
 
-		// The manifest is written only after R2 has accepted the complete body.
+		if (isContentHashFileId(fileId)) {
+			const actual = await sha256HexOfBytes(body)
+			if (actual !== fileId) {
+				return jsonError(400, 'Body hash does not match file id', request)
+			}
+		}
+
+		// Bytes in R2 are authoritative. The DO manifest is a best-effort GC index.
 		await env.WHITEBOARD_ASSETS.put(key, body, {
 			httpMetadata: {
 				contentType,
@@ -971,23 +978,16 @@ async function handleBoardAssetRequest(
 			},
 		})
 
-		const stub = boardStub(env, boardId)
 		try {
-			await stub.registerBoardAssetManifest({
+			await boardStub(env, boardId).registerBoardAssetManifest({
 				boardId,
 				fileId,
 				r2Key: key,
 				mimeType: contentType,
 				size: body.byteLength,
 			})
-		} catch {
-			// Do not leave a newly uploaded object looking usable without a row.
-			try {
-				await env.WHITEBOARD_ASSETS.delete(key)
-			} catch {
-				// R2 cleanup is best-effort; the object has no ready manifest.
-			}
-			return jsonError(503, 'Could not register board asset', request)
+		} catch (error) {
+			console.error('whiteboard asset manifest register failed', error)
 		}
 
 		return jsonOk(
@@ -1005,22 +1005,13 @@ async function handleBoardAssetRequest(
 	}
 
 	if (request.method === 'GET' || request.method === 'HEAD') {
-		let manifest: Awaited<
-			ReturnType<WhiteboardBoard['getBoardAssetManifest']>
-		>
-		try {
-			manifest = await boardStub(env, boardId).getBoardAssetManifest({ fileId })
-		} catch {
-			return jsonError(503, 'Could not read board asset manifest', request)
-		}
-		if (!manifest || manifest.r2Key !== key) {
-			return jsonError(404, 'Asset not found', request)
-		}
-
-		const object = await env.WHITEBOARD_ASSETS.get(key, {
-			range: request.headers,
-			onlyIf: request.headers,
-		})
+		const wantsRange = request.headers.has('Range')
+		const object = await env.WHITEBOARD_ASSETS.get(
+			key,
+			wantsRange
+				? { range: request.headers, onlyIf: request.headers }
+				: { onlyIf: request.headers },
+		)
 		if (object === null) return jsonError(404, 'Asset not found', request)
 
 		const headers = new Headers()
@@ -1052,7 +1043,11 @@ async function handleBoardAssetRequest(
 		}
 
 		const range = object.range
-		if (range && ('offset' in range || 'length' in range)) {
+		if (
+			wantsRange &&
+			range &&
+			('offset' in range || 'length' in range)
+		) {
 			const offset = 'offset' in range && range.offset != null ? range.offset : 0
 			const length =
 				'length' in range && range.length != null
@@ -1235,7 +1230,7 @@ export async function handleAssetRequest(
 		const owners = assetOwnerKeysToTry(ownerKey, boardHint)
 		let servedOwnerKey = ownerKey
 		let servedKey = key
-		let object = null as Awaited<ReturnType<R2Bucket['get']>>
+		let object: R2Object | R2ObjectBody | null = null
 		for (const tryOwner of owners) {
 			const tryKey = r2ObjectKey(tryOwner, assetId)
 			const found = await env.WHITEBOARD_ASSETS.get(tryKey, {
@@ -1307,7 +1302,12 @@ export async function handleAssetRequest(
 		}
 
 		const range = object.range
-		if (range && ('offset' in range || 'length' in range)) {
+		const wantsRange = request.headers.has('Range')
+		if (
+			wantsRange &&
+			range &&
+			('offset' in range || 'length' in range)
+		) {
 			const offset = 'offset' in range && range.offset != null ? range.offset : 0
 			const length =
 				'length' in range && range.length != null

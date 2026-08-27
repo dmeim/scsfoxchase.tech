@@ -32,22 +32,18 @@ import {
 	claimTempCanvasAssets,
 	fetchBoardAssetBytes,
 	fetchBoardAssetMeta,
+	fetchOwnerAssetBytes,
 	hasBoardAsset,
-	fetchCanvasBytes,
 	ownerKeyForBoardMeta,
 	parsePlayerPath,
 	registerTempAssetPrefix,
 	tempOwnerKey,
 	type BoardAssetMeta,
 } from './whiteboard-assets'
-import { waitForBoardWriteProof } from './whiteboard-board-write-proof'
 import {
 	generateWhiteboardImageFileId,
 	hasExcalidrawImageDataURL,
-	planImageFileAction,
 	resolveWhiteboardImageMime,
-	shouldDeferImageUploadWhilePending,
-	stagingActionForPlan,
 	WHITEBOARD_IMAGE_MIME,
 } from './whiteboard-file-sync-plan'
 
@@ -55,10 +51,7 @@ export {
 	generateWhiteboardImageFileId,
 	hasExcalidrawImageDataURL,
 	isAllowedWhiteboardImageMime,
-	planImageFileAction,
 	resolveWhiteboardImageMime,
-	shouldDeferImageUploadWhilePending,
-	stagingActionForPlan,
 	WHITEBOARD_IMAGE_MIME,
 } from './whiteboard-file-sync-plan'
 import { getActiveIdentity, getAuthHeaders } from './whiteboard-identity'
@@ -66,15 +59,11 @@ import { getBoardSessionAuth } from './whiteboard-participants'
 import {
 	classifyUploadFailure,
 	useWhiteboardUploadOutbox,
-	type WhiteboardUploadElementSnapshot,
-	type WhiteboardServerSceneHydration,
 	type UseWhiteboardUploadOutboxResult,
 } from './whiteboard-upload-outbox'
 
 /** Same event `whiteboard-excalidraw-roles` publishes after `wb:hello`. */
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
-
-const BOARD_WRITE_PROOF_WAIT_MS = 2500
 
 const IMAGE_MIME = WHITEBOARD_IMAGE_MIME
 
@@ -108,33 +97,6 @@ function referencedImageFileIds(
 		}
 	}
 	return ids
-}
-
-function imageElementSnapshots(
-	elements: readonly OrderedExcalidrawElement[],
-	fileId: string,
-): WhiteboardUploadElementSnapshot[] {
-	return elements
-		.filter(
-			(element) =>
-				!element.isDeleted &&
-				element.type === 'image' &&
-				element.fileId === fileId,
-		)
-		.map((element) => ({
-			elementId: element.id,
-			element,
-			elementVersion: element.version,
-		}))
-}
-
-function sceneVersionForElements(
-	elements: readonly OrderedExcalidrawElement[],
-): number {
-	return elements.reduce(
-		(version, element) => Math.max(version, element.version),
-		0,
-	)
 }
 
 function removeLiveImageElements(
@@ -226,8 +188,8 @@ export function renderWhiteboardEmbeddable(
 	})
 }
 
-export async function generateWhiteboardFileId(_file: File): Promise<string> {
-	return crypto.randomUUID()
+export async function generateWhiteboardFileId(file: File): Promise<string> {
+	return generateWhiteboardImageFileId(file)
 }
 
 async function blobToDataURL(blob: Blob): Promise<string> {
@@ -323,6 +285,13 @@ function googleOwnerFromElements(
 	return null
 }
 
+const CONTENT_HASH_FILE_ID = /^[0-9a-f]{64}$/
+
+/** Content-addressed ids are SHA-256 hex; anything else is a legacy UUID id. */
+function isContentHashFileId(fileId: string): boolean {
+	return CONTENT_HASH_FILE_ID.test(fileId)
+}
+
 function ownerKeysToTry(
 	boardId: string,
 	meta: BoardAssetMeta,
@@ -347,12 +316,6 @@ function ownerKeysToTry(
 	return [...new Set([google, temp, baked].filter(Boolean) as string[])]
 }
 
-export type WhiteboardFileSyncOptions = {
-	sceneVersion?: number
-	sceneState?: unknown
-	pendingImageElementId?: string | null
-}
-
 export type WhiteboardExcalidrawFilesApi = {
 	generateIdForFile: (file: File) => Promise<string>
 	validateEmbeddable: (link: string) => boolean | undefined
@@ -367,18 +330,10 @@ export type WhiteboardExcalidrawFilesApi = {
 	syncFiles: (
 		elements: readonly OrderedExcalidrawElement[],
 		files: BinaryFiles,
-		options?: WhiteboardFileSyncOptions,
 	) => void
 	/** Durable upload state and controls for WhiteboardCanvas/UI integration. */
 	uploadOutbox: UseWhiteboardUploadOutboxResult
-	markServerSceneHydrated: (
-		input?: WhiteboardServerSceneHydration,
-	) => Promise<string[]>
-	resetServerSceneHydration: () => void
-	getRecoveryData: UseWhiteboardUploadOutboxResult['getRecoveryData']
-	updatePendingElementSnapshots: UseWhiteboardUploadOutboxResult['updateElementSnapshots']
 	getUploadState: UseWhiteboardUploadOutboxResult['getUploadState']
-	markSceneAcknowledged: UseWhiteboardUploadOutboxResult['markSceneAcknowledged']
 	retryUpload: UseWhiteboardUploadOutboxResult['retryUpload']
 	retryAllUploads: UseWhiteboardUploadOutboxResult['retryAllUploads']
 	removeUpload: UseWhiteboardUploadOutboxResult['removeUpload']
@@ -428,11 +383,6 @@ export function useWhiteboardExcalidrawFiles(
 		let ownerKey = resolveCanvasOwnerKey()
 		if (isGoogleOwnerKey(ownerKey)) return ownerKey
 		if (!metaRef.current.savedToLibrary) return ownerKey
-		try {
-			await waitForBoardWriteProof(boardId, BOARD_WRITE_PROOF_WAIT_MS)
-		} catch {
-			// GET meta does not require write proof; continue without it.
-		}
 		const meta = await fetchBoardAssetMetaForCanvas(boardId)
 		metaRef.current = meta
 		rememberGoogleOwner(meta.cloudOwnerKey)
@@ -512,74 +462,37 @@ export function useWhiteboardExcalidrawFiles(
 	}, [apiRef, boardId])
 
 	const putImageFile = useCallback(
-		async (
-			fileId: string,
-			file: BinaryFileData,
-			elementSnapshots: readonly WhiteboardUploadElementSnapshot[],
-			options: WhiteboardFileSyncOptions,
-		) => {
-			let durablyStaged = Boolean(uploadOutbox.outbox.getJob(fileId)?.blob)
+		async (fileId: string, file: BinaryFileData) => {
+			const existingJob = uploadOutbox.outbox.getJob(fileId)
+			if (existingJob?.state === 'uploaded') {
+				r2ReadyFileIds.current.add(fileId)
+				return
+			}
+			if (
+				existingJob &&
+				(existingJob.state === 'pending' || existingJob.state === 'uploading')
+			) {
+				return
+			}
+			if (!file.dataURL) return
+			const mime = resolveWhiteboardImageMime({
+				mimeType: file.mimeType || existingJob?.mimeType,
+			})
+			if (!mime) return
+			const blob =
+				existingJob?.blob && file.dataURL
+					? existingJob.blob
+					: dataURLToBlob(file.dataURL)
 			try {
-				const existingJob = uploadOutbox.outbox.getJob(fileId)
-				if (existingJob?.state === 'uploaded') {
-					r2ReadyFileIds.current.add(fileId)
-					uploadOutbox.outbox.completeStaging(fileId)
-					return
-				}
-				if (
-					existingJob &&
-					(existingJob.state === 'pending' || existingJob.state === 'uploading')
-				) {
-					uploadOutbox.outbox.completeStaging(fileId)
-					return
-				}
-				if (!file.dataURL) {
-					uploadOutbox.outbox.completeStaging(fileId)
-					return
-				}
-				const mime = resolveWhiteboardImageMime({
-					mimeType: file.mimeType || existingJob?.mimeType,
-				})
-				if (!mime) {
-					uploadOutbox.outbox.completeStaging(fileId)
-					return
-				}
-				const blob =
-					existingJob?.blob && file.dataURL
-						? existingJob.blob
-						: dataURLToBlob(file.dataURL)
-				const latestStaging = uploadOutbox.outbox.getStaging(fileId)
-				// The element may have been deleted while conversion was in flight.
-				if (latestStaging && latestStaging.latestElementSnapshots?.length === 0) {
-					uploadOutbox.outbox.completeStaging(fileId)
-					return
-				}
-				try {
-					await waitForBoardWriteProof(boardId, BOARD_WRITE_PROOF_WAIT_MS)
-				} catch {
-					// Timeout is 401/auth-blocked, not permanent. Stage anyway so
-					// the outbox can PUT after hello/session proof arrives.
-				}
-				await uploadOutbox.outbox.stage({
+				await uploadOutbox.outbox.enqueue({
 					boardId,
 					fileId,
 					blob,
 					mimeType: mime,
-					latestElementSnapshots:
-						latestStaging?.latestElementSnapshots ?? elementSnapshots,
-					latestElementState:
-						latestStaging?.latestElementState ?? options.sceneState,
-					sceneVersion:
-						latestStaging?.sceneVersion ?? options.sceneVersion,
 				})
-				durablyStaged = true
-				uploadOutbox.outbox.completeStaging(fileId)
 			} catch (error) {
-				if (!durablyStaged) {
-					uploadOutbox.outbox.failStaging(fileId)
-					const api = apiRef.current
-					if (api) removeLiveImageElements(api, fileId)
-				}
+				const api = apiRef.current
+				if (api) removeLiveImageElements(api, fileId)
 				throw error
 			}
 		},
@@ -588,47 +501,51 @@ export function useWhiteboardExcalidrawFiles(
 
 	const failedAtRef = useRef(new Map<string, number>())
 
-	const hydrateImage = useCallback(
+	/**
+	 * Boards created before board-scoped keys reference `assets/{ownerKey}/{fileId}`.
+	 * Only legacy UUID ids probe: a content-hash id never existed under an owner
+	 * key, so this keeps a freshly inserted image that is still uploading from
+	 * firing owner-key HEADs on every retry.
+	 */
+	const hydrateLegacyOwnerImage = useCallback(
 		async (fileId: string) => {
-			const api = apiRef.current
-			if (!api) return false
-			const boardFound = await fetchBoardAssetBytes(boardId, fileId)
-			if (boardFound && IMAGE_MIME.has(boardFound.mimeType)) {
-				const dataURL = await blobToDataURL(boardFound.blob)
-				api.addFiles([
-					{
-						id: asFileId(fileId),
-						mimeType: asImageMime(boardFound.mimeType),
-						dataURL: asDataURL(dataURL),
-						created: Date.now(),
-					},
-				])
-				return true
-			}
+			if (isContentHashFileId(fileId)) return null
 			if (
 				metaRef.current.savedToLibrary &&
 				!isGoogleOwnerKey(metaRef.current.cloudOwnerKey)
 			) {
 				await loadCanvasOwnerKey()
 			}
-			const found = await fetchCanvasBytes(
+			const owner = await probeCanvasOwner(
 				ownerKeysToTry(boardId, metaRef.current, googleOwnerRef.current),
 				fileId,
 			)
-			if (!found || !IMAGE_MIME.has(found.mimeType)) return false
-			rememberGoogleOwner(found.ownerKey)
-			const dataURL = await blobToDataURL(found.blob)
+			if (!owner) return null
+			return fetchOwnerAssetBytes(owner, fileId)
+		},
+		[boardId, loadCanvasOwnerKey],
+	)
+
+	const hydrateImage = useCallback(
+		async (fileId: string) => {
+			const api = apiRef.current
+			if (!api) return false
+			const boardFound =
+				(await fetchBoardAssetBytes(boardId, fileId)) ??
+				(await hydrateLegacyOwnerImage(fileId))
+			if (!boardFound || !IMAGE_MIME.has(boardFound.mimeType)) return false
+			const dataURL = await blobToDataURL(boardFound.blob)
 			api.addFiles([
 				{
 					id: asFileId(fileId),
-					mimeType: asImageMime(found.mimeType),
+					mimeType: asImageMime(boardFound.mimeType),
 					dataURL: asDataURL(dataURL),
 					created: Date.now(),
 				},
 			])
 			return true
 		},
-		[apiRef, boardId, loadCanvasOwnerKey],
+		[apiRef, boardId, hydrateLegacyOwnerImage],
 	)
 
 	const hydrateVideo = useCallback(
@@ -671,24 +588,12 @@ export function useWhiteboardExcalidrawFiles(
 		(
 			elements: readonly OrderedExcalidrawElement[],
 			files: BinaryFiles,
-			options: WhiteboardFileSyncOptions = {},
 		) => {
 			if (!boardId) return
 			rememberGoogleOwner(googleOwnerFromElements(elements))
 			const referenced = referencedImageFileIds(elements)
-			const sceneVersion =
-				options.sceneVersion ?? sceneVersionForElements(elements)
 			const now = Date.now()
 			for (const fileId of referenced) {
-				const elementSnapshots = imageElementSnapshots(elements, fileId)
-				void uploadOutbox.outbox
-					.updateElementSnapshots(fileId, {
-						latestElementSnapshots: elementSnapshots,
-						latestElementState: options.sceneState,
-						sceneVersion: options.sceneVersion,
-					})
-					.catch(() => undefined)
-
 				const existing = files[fileId]
 				const job = uploadOutbox.outbox.getJob(fileId)
 				const hasDataURL = hasExcalidrawImageDataURL(existing)
@@ -700,65 +605,26 @@ export function useWhiteboardExcalidrawFiles(
 					job?.state === 'uploading'
 				const hydrateInflight = hydrateInflightRef.current.has(fileId)
 				const failedAt = failedAtRef.current.get(fileId) ?? 0
-				if (
-					shouldDeferImageUploadWhilePending({
-						fileId,
-						pendingImageElementId: options.pendingImageElementId,
-						elements,
-					})
-				) {
-					continue
-				}
-				const action = planImageFileAction({
-					fileId,
-					hasDataURL,
-					r2Ready,
-					uploadInflight,
-					hydrateInflight,
-				})
-				if (stagingActionForPlan(action) === 'complete') {
-					uploadOutbox.outbox.completeStaging(fileId)
-				}
-				if (action === 'skip') continue
 				if (now - failedAt < 1000) continue
-				if (
-					action === 'upload' &&
-					existing &&
-					!resolveWhiteboardImageMime({
-						mimeType: existing.mimeType || job?.mimeType,
-					})
-				) {
-					uploadOutbox.outbox.completeStaging(fileId)
-					continue
-				}
-				if (action === 'upload') {
-					if (stagingActionForPlan(action) === 'begin') {
-						uploadOutbox.outbox.beginStaging({
-							boardId,
-							fileId,
-							latestElementSnapshots: elementSnapshots,
-							latestElementState: options.sceneState,
-							sceneVersion,
+
+				if (hasDataURL && !r2Ready && !uploadInflight) {
+					if (
+						existing &&
+						!resolveWhiteboardImageMime({
+							mimeType: existing.mimeType || job?.mimeType,
 						})
+					) {
+						continue
 					}
 					uploadInflightRef.current.add(fileId)
 					void (async () => {
 						try {
-							if (existing?.dataURL) {
-								await putImageFile(fileId, existing, elementSnapshots, {
-									...options,
-									sceneVersion,
-								})
-							} else {
-								uploadOutbox.outbox.completeStaging(fileId)
-							}
+							if (existing?.dataURL) await putImageFile(fileId, existing)
 							failedAtRef.current.delete(fileId)
 						} catch (error) {
 							failedAtRef.current.set(fileId, Date.now())
-							// 401/503 stay retryable in the outbox overlay. Do not
-							// toast them as a permanent "Image upload failed".
 							if (
-								classifyUploadFailure(error).state === 'permanent-failure' &&
+								!classifyUploadFailure(error).retryable &&
 								!toastedUploadRef.current.has(fileId)
 							) {
 								toastedUploadRef.current.add(fileId)
@@ -774,6 +640,8 @@ export function useWhiteboardExcalidrawFiles(
 					continue
 				}
 
+				if (hasDataURL) continue
+				if (hydrateInflight) continue
 				hydrateInflightRef.current.add(fileId)
 				void (async () => {
 					try {
@@ -787,16 +655,6 @@ export function useWhiteboardExcalidrawFiles(
 						hydrateInflightRef.current.delete(fileId)
 					}
 				})()
-			}
-
-			// A deletion can occur while staging is still pending.
-			for (const fileId of uploadOutbox.outbox.getStagingFileIds()) {
-				if (referenced.includes(fileId)) continue
-				uploadOutbox.outbox.updateStaging(fileId, {
-					latestElementSnapshots: [],
-					latestElementState: options.sceneState,
-					sceneVersion,
-				})
 			}
 
 			for (const parsed of referencedPlayerFiles(elements)) {
@@ -841,7 +699,6 @@ export function useWhiteboardExcalidrawFiles(
 			for (const [index, file] of videoFiles.entries()) {
 				const fileId = crypto.randomUUID()
 				try {
-					await waitForBoardWriteProof(boardId, BOARD_WRITE_PROOF_WAIT_MS)
 					await uploadBoardAssetBytes({
 						boardId,
 						fileId,
@@ -939,8 +796,8 @@ export function useWhiteboardExcalidrawFiles(
 		[boardId, videoEpoch],
 	)
 
-	const generateIdForFile = useCallback(async (_file: File) => {
-		return generateWhiteboardImageFileId()
+	const generateIdForFile = useCallback(async (file: File) => {
+		return generateWhiteboardImageFileId(file)
 	}, [])
 
 	useEffect(() => {
@@ -965,12 +822,7 @@ export function useWhiteboardExcalidrawFiles(
 		onPaste,
 		syncFiles,
 		uploadOutbox,
-		markServerSceneHydrated: uploadOutbox.markServerSceneHydrated,
-		resetServerSceneHydration: uploadOutbox.resetServerSceneHydration,
-		getRecoveryData: uploadOutbox.getRecoveryData,
-		updatePendingElementSnapshots: uploadOutbox.updateElementSnapshots,
 		getUploadState: uploadOutbox.getUploadState,
-		markSceneAcknowledged: uploadOutbox.markSceneAcknowledged,
 		retryUpload: uploadOutbox.retryUpload,
 		retryAllUploads: uploadOutbox.retryAllUploads,
 		removeUpload: uploadOutbox.removeUpload,

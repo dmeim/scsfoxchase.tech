@@ -15,18 +15,25 @@ For system layout and whiteboard APIs, see [architecture.md](./architecture.md) 
 | Entry | `./src/worker.ts` |
 | Assets directory | `./dist/client` |
 | Node | `>=22` (`package.json` `engines`, `.nvmrc`) |
+| Live version | `GET /api/whiteboard/version` → `{ sha, builtAt }` |
+
+**GitHub Workers Builds on `main` is the single production deployer.** Manual `npx wrangler deploy` from a laptop is **discouraged**: Builds overwrites that version ~70 seconds later, silently replacing the Worker you just tested.
+
+Before trusting any production observation, confirm `GET /api/whiteboard/version` matches the expected commit (`Cache-Control: no-store` — do not trust a cached copy).
 
 ## Local build and deploy
 
 Prerequisites: Node 22+, Cloudflare account for the `scsfoxchase.tech` zone, and Wrangler auth (`npx wrangler login` or `CLOUDFLARE_API_TOKEN`).
 
+Build locally as usual. To test a change **before merge**, upload a preview version (it does not take production traffic):
+
 ```bash
 npm install
 npm run build                 # astro build → dist/client/
-npx wrangler deploy           # Worker + assets
-# or in one step:
-npm run deploy                # astro build && wrangler deploy
+npx wrangler versions upload  # preview URL; does not take production traffic
 ```
+
+Do **not** run `npx wrangler deploy` (or `npm run deploy`) from a laptop: Workers Builds on `main` overwrites that version shortly afterward.
 
 Useful checks:
 
@@ -34,6 +41,7 @@ Useful checks:
 npx wrangler deploy --dry-run
 npx wrangler whoami
 npx wrangler tail
+curl -sS https://scsfoxchase.tech/api/whiteboard/version
 ```
 
 `@astrojs/cloudflare` emits client assets under **`dist/client/`**. `wrangler.jsonc` must keep:
@@ -46,6 +54,8 @@ Do not point assets at repo root `/` or a flat `./dist`.
 
 ## Workers Builds (Git → Cloudflare)
 
+**This is the single production deployer.** Every push to `main` builds and deploys the Worker.
+
 Dashboard: [Workers & Pages](https://dash.cloudflare.com) → Worker **`scsfoxchase-tech`**.
 
 | Setting | Value |
@@ -57,9 +67,7 @@ Dashboard: [Workers & Pages](https://dash.cloudflare.com) → Worker **`scsfoxch
 | Worker name | `scsfoxchase-tech` |
 | Node version | **22+** — set `NODE_VERSION=22` in Workers Builds vars (or rely on `.nvmrc` / `engines`) |
 
-Every push to `main` builds and deploys the Worker.
-
-Use Deploy command `npx wrangler deploy` for this asset-heavy static site. Prefer Node **22**; Node below **20.17** can fail to upload nested dirs like `/_astro/`, leaving HTML unstyled.
+Keep the Builds Deploy command `npx wrangler deploy` for this asset-heavy static site. Prefer Node **22**; Node below **20.17** can fail to upload nested dirs like `/_astro/`, leaving HTML unstyled. From a laptop, use `npx wrangler versions upload` for pre-merge preview URLs — not as a production deploy.
 
 **Build / runtime variables and secrets** (details in [environment.md](./environment.md)):
 
@@ -115,6 +123,7 @@ CSP allows Clerk custom domains (`clerk.scsfoxchase.tech`, `accounts.scsfoxchase
 
 After deploy (custom domain or workers.dev preview):
 
+- [ ] `GET /api/whiteboard/version` — `{ sha, builtAt }` matches the expected commit
 - [ ] `/` homepage loads with styles (`/_astro/*` present)
 - [ ] `/games` catalog
 - [ ] `/offline` offline fallback

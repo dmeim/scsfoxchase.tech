@@ -21,7 +21,6 @@ import {
 	META_BOARD_ID_KEY,
 	META_CREATED_AT_KEY,
 	META_UNSAVED_EXPIRES_AT_KEY,
-	SCENE_ASSET_NOT_READY_CODE,
 	sceneBroadcastPlan,
 	shouldApplySocketReauth,
 	shouldSkipIdleFullFlush,
@@ -316,30 +315,26 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		expect(storage.setAlarm).toHaveBeenCalledWith(Date.parse(expiresAt))
 	})
 
-	it('fails closed on asset_not_ready and does not persist', async () => {
+	it('persists a scene that references an image not yet in R2', async () => {
 		const { board, sqlExec } = await createBoard()
 		priv(board).persistScene({ elements: [], appState: {} })
 		const inserts = sceneInsertCount(sqlExec)
 
-		await expect(
-			priv(board).applySceneUpdate(
-				'writer-session',
-				[
-					{
-						id: 'img-1',
-						type: 'image',
-						version: 1,
-						versionNonce: 1,
-						fileId: FILE_ID,
-					},
-				],
-				undefined,
-				false,
-			),
-		).rejects.toMatchObject({
-			code: SCENE_ASSET_NOT_READY_CODE,
-		})
-		expect(sceneInsertCount(sqlExec)).toBe(inserts)
+		await priv(board).applySceneUpdate(
+			'writer-session',
+			[
+				{
+					id: 'img-1',
+					type: 'image',
+					version: 1,
+					versionNonce: 1,
+					fileId: FILE_ID,
+				},
+			],
+			undefined,
+			false,
+		)
+		expect(sceneInsertCount(sqlExec)).toBe(inserts + 1)
 	})
 })
 

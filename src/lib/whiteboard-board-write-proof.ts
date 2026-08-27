@@ -1,10 +1,10 @@
 /**
  * Board-scoped write proof for canvas asset PUTs.
  *
- * Clerk `Authorization` is never enough. The Worker requires `X-Board-Host`
- * (scratch Owner secret) or a live `X-Board-Session` + `X-Board-Auth` pair
- * from hello. Missing proof must fail closed as auth-blocked (401), not hang
- * and not look like a permanent upload failure.
+ * Clerk `Authorization` is never enough on its own for host/session proof
+ * helpers. The Worker accepts `X-Board-Host`, a live `X-Board-Session` +
+ * `X-Board-Auth` pair, or a Clerk JWT that the server authorizes. Missing
+ * every proof fails closed as 401.
  */
 import { getHostSecret } from '../scripts/whiteboard-library'
 import { getBoardSessionAuth } from './whiteboard-participants'
@@ -49,55 +49,4 @@ export function headersHaveBoardWriteProof(
 	return Boolean(
 		nonEmpty(headers['X-Board-Session']) && nonEmpty(headers['X-Board-Auth']),
 	)
-}
-
-function getBrowserWindow(): EventTarget | undefined {
-	if (typeof window !== 'undefined') return window
-	const nested = (globalThis as { window?: EventTarget }).window
-	if (nested && typeof nested.addEventListener === 'function') return nested
-	return undefined
-}
-
-/**
- * Resolves once host secret or live session pair exists for `boardId`.
- * Listens for hello / auth / auth-ready (the same events that resume the
- * upload outbox). Timeout rejects with 401 so callers classify as
- * auth-blocked, never permanent-failure.
- */
-export function waitForBoardWriteProof(
-	boardId: string,
-	timeoutMs: number,
-): Promise<void> {
-	if (hasBoardWriteProof(boardId)) return Promise.resolve()
-	const target = getBrowserWindow()
-	if (!target || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-		return Promise.reject(boardWriteProofRequiredError())
-	}
-	return new Promise((resolve, reject) => {
-		let settled = false
-		let timer: ReturnType<typeof setTimeout> | undefined
-		const finish = (error?: Error) => {
-			if (settled) return
-			settled = true
-			if (timer !== undefined) globalThis.clearTimeout(timer)
-			target.removeEventListener(WHITEBOARD_HELLO_EVENT, onEvent)
-			target.removeEventListener(WHITEBOARD_AUTH_EVENT, onEvent)
-			target.removeEventListener(WHITEBOARD_AUTH_READY_EVENT, onEvent)
-			if (error) reject(error)
-			else resolve()
-		}
-		const onEvent = () => {
-			if (hasBoardWriteProof(boardId)) finish()
-		}
-		target.addEventListener(WHITEBOARD_HELLO_EVENT, onEvent)
-		target.addEventListener(WHITEBOARD_AUTH_EVENT, onEvent)
-		target.addEventListener(WHITEBOARD_AUTH_READY_EVENT, onEvent)
-		if (hasBoardWriteProof(boardId)) {
-			finish()
-			return
-		}
-		timer = globalThis.setTimeout(() => {
-			finish(boardWriteProofRequiredError())
-		}, timeoutMs)
-	})
 }

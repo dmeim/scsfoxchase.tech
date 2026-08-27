@@ -1,12 +1,9 @@
 /**
- * Pure upload-vs-hydrate planner for canvas images.
+ * Canvas image MIME helpers and content-addressed file ids.
  * Keep this module free of `@excalidraw/excalidraw` so tests can import it.
  *
- * `generateIdForFile` is UUID-only — no staging, no PUT. Upload starts only
- * after Excalidraw has a BinaryFiles dataURL and the image is placed
- * (not `pendingImageElementId`). An outbox blob is not local paint bytes.
- * An upload already in flight always skips. Uploaded / r2-ready without a
- * dataURL still hydrates so GET can restore pixels.
+ * `generateIdForFile` is SHA-256 of the bytes — no staging, no PUT, no
+ * IndexedDB. Upload starts only after Excalidraw has a BinaryFiles dataURL.
  */
 
 /** Image MIME types accepted by the Worker ALLOWED_MIME set. */
@@ -18,7 +15,7 @@ export const WHITEBOARD_IMAGE_MIME = new Set([
 	'image/svg+xml',
 ])
 
-/** Types the Worker 415s. Never stage or PUT these. */
+/** Types the Worker 415s. Never PUT these. */
 export const REJECTED_WHITEBOARD_IMAGE_MIME = new Set([
 	'image/bmp',
 	'image/x-ms-bmp',
@@ -46,83 +43,22 @@ const IMAGE_EXTENSION_MIME: Record<string, string> = {
 	jfif: 'image/jfif',
 }
 
-export type PlanImageFileAction = 'upload' | 'hydrate' | 'skip'
-
-export type PlanImageFileActionInput = {
-	fileId: string
-	/** True only when Excalidraw BinaryFiles has a dataURL. Not an outbox blob. */
-	hasDataURL: boolean
-	r2Ready: boolean
-	uploadInflight: boolean
-	hydrateInflight: boolean
+export async function sha256HexOfBytes(bytes: BufferSource): Promise<string> {
+	const digest = await crypto.subtle.digest('SHA-256', bytes)
+	return Array.from(new Uint8Array(digest), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('')
 }
 
 /** Assign the image fileId. Callers must not stage or PUT from this function. */
-export function generateWhiteboardImageFileId(_file?: File): string {
-	return crypto.randomUUID()
+export async function generateWhiteboardImageFileId(file: File): Promise<string> {
+	return sha256HexOfBytes(await file.arrayBuffer())
 }
 
 export function hasExcalidrawImageDataURL(
 	file?: { dataURL?: string | null } | null,
 ): boolean {
 	return Boolean(file?.dataURL)
-}
-
-export type PendingImageGateElement = {
-	id: string
-	type?: string
-	fileId?: string | null
-}
-
-/** Skip PUT while Excalidraw still has this image as pendingImageElementId. */
-export function shouldDeferImageUploadWhilePending(input: {
-	fileId: string
-	pendingImageElementId?: string | null
-	elements: readonly PendingImageGateElement[]
-}): boolean {
-	const pendingId = input.pendingImageElementId
-	if (!pendingId) return false
-	const pending = input.elements.find((element) => element.id === pendingId)
-	if (!pending || pending.type !== 'image') return false
-	return pending.fileId === input.fileId
-}
-
-export type PlanStagingAction = 'begin' | 'complete' | 'none'
-
-export function stagingActionForPlan(
-	action: PlanImageFileAction,
-): PlanStagingAction {
-	if (action === 'upload') return 'begin'
-	if (action === 'skip') return 'complete'
-	return 'none'
-}
-
-/** Recover once after the first server scene; never on every jobs publish. */
-export const RECOVER_PENDING_UPLOADS_ON_JOBS_PUBLISH = false
-/** Never enqueue flushNow(true) from hydrate/recover/jobs publish. */
-export const FORCE_FULL_FLUSH_ON_SERVER_SCENE = false
-
-export function shouldHydrateServerSceneOnce(
-	socketSceneHydrated: boolean,
-): boolean {
-	return !socketSceneHydrated
-}
-
-export function shouldForceSendReadyUploadsOnTransition(
-	previous: string | undefined,
-	next: string,
-): boolean {
-	return (
-		next === 'uploaded' &&
-		(previous === 'pending' || previous === 'uploading')
-	)
-}
-
-export function isRenderedImageOverlayTarget(
-	width: number,
-	height: number,
-): boolean {
-	return width !== 0 && height !== 0
 }
 
 export function normalizeWhiteboardImageMime(
@@ -144,7 +80,7 @@ function extensionOfFileName(fileName: string | undefined): string {
 }
 
 /**
- * MIME for canvas image staging. Empty Chromebook/iPad `file.type` infers
+ * MIME for canvas image uploads. Empty Chromebook/iPad `file.type` infers
  * from the filename or defaults to `image/png`. Known-bad types return null.
  */
 export function resolveWhiteboardImageMime(input: {
@@ -162,40 +98,4 @@ export function resolveWhiteboardImageMime(input: {
 		return null
 	}
 	return 'image/png'
-}
-
-export function planImageFileAction(
-	input: PlanImageFileActionInput,
-): PlanImageFileAction {
-	if (input.uploadInflight) return 'skip'
-	if (input.hasDataURL) {
-		if (input.r2Ready) return 'skip'
-		return 'upload'
-	}
-	if (input.hydrateInflight) return 'skip'
-	return 'hydrate'
-}
-
-/**
- * Recovery may `updateScene` an outbox image snapshot only after
- * `addFiles` left a real BinaryFiles `dataURL`. Missing blobs and failed
- * conversions leave the job and do not restore, so hydrate GET can still run.
- */
-export function shouldRestoreRecoveredImage(input: {
-	hasLocalDataURL: boolean
-	hasBlob: boolean
-	conversionOk: boolean
-}): boolean {
-	return input.hasLocalDataURL
-}
-
-export function shouldRestoreRecoveredImageElement(input: {
-	snapshotIsDeleted: boolean
-	liveIsDeleted: boolean
-	liveHasSameFileId: boolean
-	hasLocalDataURL: boolean
-}): boolean {
-	if (input.snapshotIsDeleted || input.liveIsDeleted) return false
-	if (input.liveHasSameFileId) return false
-	return input.hasLocalDataURL
 }

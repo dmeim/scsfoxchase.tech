@@ -8,8 +8,10 @@ import { getHostSecret } from '../scripts/whiteboard-library'
 import {
 	isAssignableRole,
 	isWhiteboardRole,
+	isWbAuthReason,
 	roleCanEdit,
 	type AssignableRole,
+	type WbAuthReason,
 	type WhiteboardRole,
 } from './whiteboard-sync'
 
@@ -35,6 +37,15 @@ export type RolePayload = {
 	type: 'wb:role'
 	role: WhiteboardRole
 	canEdit: boolean
+	roleResolved?: boolean
+}
+
+export type AuthResultPayload = {
+	type: 'wb:authResult'
+	accepted: boolean
+	roleResolved: boolean
+	role: WhiteboardRole
+	reason?: WbAuthReason
 }
 
 export type ForceFollowPayload = {
@@ -121,6 +132,18 @@ export function isRolePayload(data: unknown): data is RolePayload {
 	if (!data || typeof data !== 'object') return false
 	const d = data as Record<string, unknown>
 	return d.type === 'wb:role' && isWhiteboardRole(d.role)
+}
+
+export function isAuthResultPayload(data: unknown): data is AuthResultPayload {
+	if (!data || typeof data !== 'object') return false
+	const d = data as Record<string, unknown>
+	return (
+		d.type === 'wb:authResult' &&
+		typeof d.accepted === 'boolean' &&
+		typeof d.roleResolved === 'boolean' &&
+		isWhiteboardRole(d.role) &&
+		(d.reason === undefined || isWbAuthReason(d.reason))
+	)
 }
 
 export function isForceFollowPayload(data: unknown): data is ForceFollowPayload {

@@ -22,6 +22,9 @@ import { handleParticipantRequest } from './worker/participantRoutes'
 import { handleAdminRequest } from './worker/adminRoutes'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
 
+declare const __BUILD_SHA__: string
+declare const __BUILD_TIME__: string
+
 export { WhiteboardBoard }
 
 const UUID_RE =
@@ -58,6 +61,19 @@ export default {
 		ctx: ExecutionContext,
 	): Promise<Response> {
 		const url = new URL(request.url)
+
+		// Disambiguates laptop wrangler deploy vs GitHub Workers Builds (which commit is live).
+		if (url.pathname === '/api/whiteboard/version') {
+			return new Response(
+				JSON.stringify({ sha: __BUILD_SHA__, builtAt: __BUILD_TIME__ }),
+				{
+					headers: {
+						'Content-Type': 'application/json',
+						'Cache-Control': 'no-store',
+					},
+				},
+			)
+		}
 
 		// Authenticated one-shot: wipe listed Durable Object SQLite (tldraw leftovers)
 		if (url.pathname.startsWith('/api/whiteboard/admin/')) {

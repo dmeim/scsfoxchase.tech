@@ -54,9 +54,13 @@ function AuthBridge() {
 	const clerk = useClerk()
 
 	useEffect(() => {
-		setSessionTokenGetter(async () => {
+		setSessionTokenGetter(async (options) => {
 			try {
-				return (await getToken()) ?? null
+				return (
+					(await getToken(
+						options?.skipCache ? { skipCache: true } : undefined,
+					)) ?? null
+				)
 			} catch {
 				return null
 			}

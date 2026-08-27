@@ -5,14 +5,24 @@ St. Cecilia Technology is an **Astro** site deployed as a **Cloudflare Worker** 
 - **Worker name:** `scsfoxchase-tech` (must match `wrangler.jsonc` `name`)
 - **Domain:** `scsfoxchase.tech` — live on Worker `scsfoxchase-tech`
 - **Build command:** `npm run build`
-- **Deploy command:** `npx wrangler deploy`
+- **Production deploy:** GitHub Workers Builds on `main` (the **single** deployer)
 - **Assets directory:** `./dist/client` (Astro adapter emits client assets here — not repo root `/`, not flat `./dist`)
+
+**GitHub Workers Builds on `main` is the only path that should take production traffic.** Manual `npx wrangler deploy` from a laptop is **discouraged**: Builds overwrites that version ~70 seconds later, silently replacing the Worker you just tested.
+
+Before trusting any production observation, confirm the live commit:
+
+```bash
+curl -sS https://scsfoxchase.tech/api/whiteboard/version
+```
+
+`GET /api/whiteboard/version` returns `{ "sha", "builtAt" }` (`Cache-Control: no-store`). The `sha` must match the commit you expect.
 
 ## Prerequisites
 
 - Node.js 22+ (or current LTS that Astro 7 supports)
 - Cloudflare account with the zone for `scsfoxchase.tech`
-- GitHub repo connected for Workers Builds (production) **or** Wrangler CLI auth for manual deploy
+- GitHub repo connected for Workers Builds (production). Wrangler CLI auth is for pre-merge preview (`versions upload`), not for shipping live traffic.
 
 ```bash
 npm install
@@ -21,14 +31,18 @@ npx wrangler login   # once, interactive — or set CLOUDFLARE_API_TOKEN
 
 ## Local build + deploy
 
+Build locally as usual. To test a change **before merge**, upload a preview version (it does not take production traffic):
+
 ```bash
 npm run build
-npx wrangler deploy
-# or: npm run deploy   # runs astro build && wrangler deploy
+npx wrangler versions upload
 ```
 
-Confirm after deploy (workers.dev preview or custom domain):
+Do **not** run `npx wrangler deploy` (or `npm run deploy`) from a laptop: Workers Builds on `main` overwrites that version shortly afterward.
 
+Confirm after a production deploy (Workers Builds) or a preview URL:
+
+- [ ] `GET /api/whiteboard/version` — `{ sha, builtAt }` matches the expected commit
 - [ ] `/` homepage
 - [ ] `/games` catalog
 - [ ] `/offline` offline fallback
@@ -48,6 +62,8 @@ Do **not** use an empty Pages build command or publish directory `/`.
 
 ## Workers Builds (Git → Cloudflare)
 
+**This is the single production deployer.** Every push to `main` builds and deploys the Worker.
+
 In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → create/connect Worker **`scsfoxchase-tech`**:
 
 | Setting | Value |
@@ -62,9 +78,7 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 | Build / runtime env | `PUBLIC_CLERK_ALLOWED_DOMAINS` — optional allowlist, e.g. `stceciliafc.com` or `stceciliafc.com,you@gmail.com` |
 | Worker secret | `CLERK_SECRET_KEY` — `npx wrangler secret put CLERK_SECRET_KEY` (never commit) |
 
-**Important:** Workers Builds must use Node **≥ 20.17** (prefer **22**). Older Node can fail to upload nested static dirs like `/_astro/`, which leaves HTML unstyled (header logo at full 1000×1000). Prefer **Deploy command** `npx wrangler deploy` over relying only on `versions upload` for asset-heavy static sites.
-
-Every push to `main` should build and deploy the Worker.
+**Important:** Workers Builds must use Node **≥ 20.17** (prefer **22**). Older Node can fail to upload nested static dirs like `/_astro/`, which leaves HTML unstyled (header logo at full 1000×1000). Keep the Builds **Deploy command** as `npx wrangler deploy` for this asset-heavy static site. From a laptop, use `npx wrangler versions upload` for pre-merge preview URLs — not as a production deploy.
 
 ## Domain
 
@@ -75,8 +89,9 @@ Every push to `main` should build and deploy the Worker.
 ```bash
 npm run dev              # Astro local dev
 npm run build            # production build → dist/client/
+npx wrangler versions upload   # preview URL; does not take production traffic
 npx wrangler deploy --dry-run
-npx wrangler deploy      # deploy Worker + assets
+# npx wrangler deploy    # discouraged from a laptop — Builds overwrites it shortly after
 npx wrangler whoami      # auth check
 npx wrangler tail        # live logs
 ```

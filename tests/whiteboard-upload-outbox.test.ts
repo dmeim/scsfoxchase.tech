@@ -9,7 +9,6 @@ import {
 	savingUploadCount,
 	WhiteboardUploadOutbox,
 	type WhiteboardUploadAdapter,
-	type WhiteboardUploadElementSnapshot,
 	type WhiteboardUploadJob,
 } from '../src/lib/whiteboard-upload-outbox'
 
@@ -35,8 +34,7 @@ function createOutbox(
 function deferred<T>(): {
 	promise: Promise<T>
 	resolve: (value: T) => void
-	}
-{
+} {
 	let resolve!: (value: T) => void
 	const promise = new Promise<T>((settle) => {
 		resolve = settle
@@ -111,44 +109,26 @@ async function waitForJob(
 	)
 }
 
-function snapshot(
-	elementId: string,
-	elementVersion: number,
-): WhiteboardUploadElementSnapshot {
-	return {
-		elementId,
-		elementVersion,
-		element: {
-			id: elementId,
-			version: elementVersion,
-			type: 'image',
-		},
-	}
-}
-
 afterEach(() => {
 	for (const outbox of activeOutboxes) outbox.dispose()
 	activeOutboxes.clear()
 })
 
 describe('WhiteboardUploadOutbox', () => {
-	it('persists a staged upload before invoking the injected adapter', async () => {
+	it('persists a queued upload before invoking the injected adapter', async () => {
 		const boardId = nextBoardId()
-		const fileId = 'image-staged-first'
+		const fileId = 'image-queued-first'
 		const observed = deferred<PersistedJob | undefined>()
 		const adapter = vi.fn(async () => {
 			observed.resolve(await readPersistedJob(boardId, fileId))
 		})
 		const outbox = createOutbox(boardId, adapter)
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['image bytes'], { type: 'image/png' }),
 			mimeType: 'image/png',
-			latestElementSnapshots: [snapshot('element-1', 4)],
-			latestElementState: { viewBackgroundColor: '#fff' },
-			sceneVersion: 4,
 		})
 
 		const persisted = await observed.promise
@@ -160,122 +140,66 @@ describe('WhiteboardUploadOutbox', () => {
 			fileId,
 			mimeType: 'image/png',
 			state: 'uploading',
-			status: 'uploading',
-			sceneVersion: 4,
-			contentVersion: 0,
 		})
 		expect(persisted?.blob).toBeInstanceOf(Blob)
-		expect(persisted?.latestElementSnapshots).toEqual([
-			snapshot('element-1', 4),
-		])
 	})
 
-	it('clears leftover staging on completeStaging without counting uploaded as Saving', async () => {
+	it('counts only pending and uploading jobs as Saving', async () => {
 		const boardId = nextBoardId()
-		const fileId = 'image-complete-staging'
-		const outbox = createOutbox(boardId, vi.fn(async () => undefined))
-
-		outbox.beginStaging({
-			boardId,
-			fileId,
-			latestElementSnapshots: [snapshot('element-stage', 1)],
-			sceneVersion: 1,
-		})
-		expect(outbox.getSnapshot()).toMatchObject({
-			stagingCount: 1,
-			pendingCount: 1,
-		})
-		expect(savingUploadCount(outbox.getSnapshot())).toBe(1)
-
-		outbox.completeStaging(fileId)
-		expect(outbox.getSnapshot()).toMatchObject({
-			stagingCount: 0,
-			pendingCount: 0,
-		})
-		expect(savingUploadCount(outbox.getSnapshot())).toBe(0)
-	})
-
-	it('keeps a successful upload until the referencing scene is acknowledged', async () => {
-		const boardId = nextBoardId()
-		const fileId = 'image-awaiting-ack'
+		const fileId = 'image-saving-count'
 		const upload = deferred<void>()
-		const adapter = vi.fn(() => upload.promise)
-		const outbox = createOutbox(boardId, adapter)
+		const outbox = createOutbox(boardId, vi.fn(() => upload.promise))
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['image bytes'], { type: 'image/png' }),
 			mimeType: 'image/png',
-			latestElementSnapshots: [snapshot('element-ack', 1)],
-			sceneVersion: 9,
 		})
 		await waitForJob(outbox, fileId, (job) => job?.state === 'uploading')
+		expect(savingUploadCount(outbox.getSnapshot())).toBe(1)
 
 		upload.resolve()
 		await waitForJob(outbox, fileId, (job) => job?.state === 'uploaded')
-
-		expect(outbox.getSnapshot()).toMatchObject({
-			awaitingSceneAckCount: 1,
-			pendingCount: 0,
-			pendingFileIds: [fileId],
-		})
 		expect(savingUploadCount(outbox.getSnapshot())).toBe(0)
-		expect(await readPersistedJob(boardId, fileId)).toMatchObject({
-			state: 'uploaded',
-			sceneAcknowledgedVersion: undefined,
-		})
-
-		const removed = await outbox.markSceneAcknowledged({
-			boardId,
-			sceneVersion: 9,
-			fileIds: [fileId],
-		})
-
-		expect(removed).toEqual([fileId])
-		expect(outbox.getJob(fileId)).toBeNull()
-		expect(await readPersistedJob(boardId, fileId)).toBeUndefined()
-		expect(outbox.getSnapshot()).toMatchObject({
-			awaitingSceneAckCount: 0,
-			pendingFileIds: [],
-		})
+		expect(outbox.getSnapshot().pendingCount).toBe(0)
 	})
 
 	it.each([
 		{
 			name: 'network errors',
 			error: new Error('offline'),
-			expected: { state: 'failed', kind: 'network' },
+			expected: { retryable: true, kind: 'network' },
 		},
 		{
 			name: 'HTTP 503 errors',
 			error: httpError(503),
-			expected: { state: 'failed', kind: 'server', status: 503 },
+			expected: { retryable: true, kind: 'server', status: 503 },
 		},
 		{
 			name: 'HTTP 401 errors',
 			error: httpError(401),
-			expected: { state: 'auth-blocked', kind: 'auth', status: 401 },
+			expected: { retryable: true, kind: 'auth', status: 401 },
 		},
 		{
 			name: 'HTTP 403 errors',
 			error: httpError(403),
-			expected: { state: 'auth-blocked', kind: 'auth', status: 403 },
+			expected: { retryable: true, kind: 'auth', status: 403 },
 		},
 		{
 			name: 'HTTP 413 errors',
 			error: httpError(413),
-			expected: { state: 'permanent-failure', kind: 'size', status: 413 },
+			expected: { retryable: false, kind: 'size', status: 413 },
 		},
 		{
 			name: 'HTTP 415 errors',
 			error: httpError(415),
-			expected: { state: 'permanent-failure', kind: 'mime', status: 415 },
+			expected: { retryable: false, kind: 'mime', status: 415 },
 		},
 		{
-			name: 'other HTTP 4xx errors',
-			error: httpError(404),
-			expected: { state: 'permanent-failure', kind: 'permanent', status: 404 },
+			name: 'hash mismatch 400',
+			error: httpError(400),
+			expected: { retryable: false, kind: 'permanent', status: 400 },
 		},
 	] as const)('classifies $name for the upload state machine', ({ error, expected }) => {
 		expect(classifyUploadFailure(error)).toEqual(expected)
@@ -291,12 +215,11 @@ describe('WhiteboardUploadOutbox', () => {
 		})
 		const outbox = createOutbox(boardId, adapter)
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['retry me'], { type: 'image/webp' }),
 			mimeType: 'image/webp',
-			sceneVersion: 2,
 		})
 		const failed = await waitForJob(
 			outbox,
@@ -327,7 +250,7 @@ describe('WhiteboardUploadOutbox', () => {
 		})
 		const outbox = createOutbox(boardId, adapter)
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['auth retry'], { type: 'image/png' }),
@@ -336,7 +259,7 @@ describe('WhiteboardUploadOutbox', () => {
 		const blocked = await waitForJob(
 			outbox,
 			fileId,
-			(job) => job?.state === 'auth-blocked',
+			(job) => job?.state === 'failed' && job.error?.kind === 'auth',
 		)
 		expect(blocked.error).toMatchObject({ kind: 'auth', status: 401 })
 
@@ -346,7 +269,7 @@ describe('WhiteboardUploadOutbox', () => {
 		expect(adapter).toHaveBeenCalledTimes(2)
 	})
 
-	it('does not schedule an automatic retry for permanent failures', async () => {
+	it('does not schedule an automatic retry for terminal failures', async () => {
 		const boardId = nextBoardId()
 		const fileId = 'image-permanent-failure'
 		const adapter = vi.fn(async () => {
@@ -354,7 +277,7 @@ describe('WhiteboardUploadOutbox', () => {
 		})
 		const outbox = createOutbox(boardId, adapter)
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['too large'], { type: 'image/png' }),
@@ -363,132 +286,12 @@ describe('WhiteboardUploadOutbox', () => {
 		const failed = await waitForJob(
 			outbox,
 			fileId,
-			(job) => job?.state === 'permanent-failure',
+			(job) => job?.state === 'failed' && job.nextAttemptAt === undefined,
 		)
 
 		expect(failed.nextAttemptAt).toBeUndefined()
 		expect(outbox.getSnapshot().failedFileIds).toEqual([fileId])
 		await new Promise((resolve) => setTimeout(resolve, 20))
-		expect(adapter).toHaveBeenCalledTimes(1)
-	})
-
-	it('hides recovery jobs until the server scene has hydrated', async () => {
-		const boardId = nextBoardId()
-		const fileId = 'image-hidden-recovery'
-		const adapter = vi.fn(async () => undefined)
-		const outbox = createOutbox(boardId, adapter)
-
-		await outbox.stage({
-			boardId,
-			fileId,
-			blob: new Blob(['recover me'], { type: 'image/gif' }),
-			mimeType: 'image/gif',
-			latestElementSnapshots: [snapshot('recover-element', 3)],
-			sceneVersion: 3,
-		})
-		await waitForJob(outbox, fileId, (job) => job?.state === 'uploaded')
-
-		expect(outbox.getSnapshot()).toMatchObject({
-			recoveryReady: false,
-			recoveryJobs: [],
-		})
-		expect(outbox.getRecoveryData()).toEqual([])
-
-		outbox.markServerSceneHydrated()
-
-		expect(outbox.getSnapshot()).toMatchObject({
-			recoveryReady: true,
-			recoveryJobs: [
-				{
-					fileId,
-					latestElementSnapshots: [snapshot('recover-element', 3)],
-				},
-			],
-		})
-		expect(outbox.getRecoveryData()).toHaveLength(1)
-
-		outbox.resetServerSceneHydration()
-		expect(outbox.getRecoveryData()).toEqual([])
-	})
-
-	it('clears a deleted upload only after server hydration applies its tombstone', async () => {
-		const boardId = nextBoardId()
-		const fileId = 'image-hydrated-tombstone'
-		const outbox = createOutbox(boardId, vi.fn(async () => undefined))
-
-		await outbox.stage({
-			boardId,
-			fileId,
-			blob: new Blob(['delete after hydration'], { type: 'image/png' }),
-			mimeType: 'image/png',
-			latestElementSnapshots: [snapshot('tombstone-element', 4)],
-			sceneVersion: 4,
-		})
-		await waitForJob(outbox, fileId, (job) => job?.state === 'uploaded')
-
-		expect(outbox.getJob(fileId)).not.toBeNull()
-		expect(
-			await outbox.markServerSceneHydrated({
-				sceneVersion: 4,
-				deletedFileIds: [fileId],
-			}),
-		).toEqual([fileId])
-		expect(outbox.getJob(fileId)).toBeNull()
-		expect(await readPersistedJob(boardId, fileId)).toBeUndefined()
-	})
-
-	it('persists snapshot updates and deletion across reload, then supports local removal', async () => {
-		const boardId = nextBoardId()
-		const fileId = 'image-snapshot-reload'
-		const adapter = vi.fn(async () => undefined)
-		const first = createOutbox(boardId, adapter)
-
-		await first.stage({
-			boardId,
-			fileId,
-			blob: new Blob(['snapshot bytes'], { type: 'image/jpeg' }),
-			mimeType: 'image/jpeg',
-			latestElementSnapshots: [snapshot('old-element', 1)],
-			latestElementState: { viewBackgroundColor: '#fff' },
-			sceneVersion: 1,
-		})
-		await waitForJob(first, fileId, (job) => job?.state === 'uploaded')
-
-		await first.updateElementSnapshots(fileId, {
-			latestElementSnapshots: [snapshot('new-element', 2)],
-			latestElementState: { viewBackgroundColor: '#000' },
-			sceneVersion: 2,
-		})
-		await first.updateElementSnapshots(fileId, {
-			latestElementSnapshots: [],
-			sceneState: { deleted: true },
-			sceneVersion: 3,
-		})
-
-		expect(first.getSnapshot()).toMatchObject({
-			pendingFileIds: [fileId],
-			pendingElementIds: [],
-		})
-		expect(first.getJob(fileId)).toMatchObject({
-			latestElementSnapshots: [],
-			latestElementState: { deleted: true },
-			sceneVersion: 3,
-		})
-
-		first.dispose()
-		const reloaded = createOutbox(boardId, vi.fn(async () => undefined))
-		await reloaded.ready
-
-		expect(reloaded.getJob(fileId)).toMatchObject({
-			state: 'uploaded',
-			latestElementSnapshots: [],
-			latestElementState: { deleted: true },
-			sceneVersion: 3,
-		})
-
-		expect(await reloaded.remove(fileId)).toBe(true)
-		expect(reloaded.getJob(fileId)).toBeNull()
-		expect(await readPersistedJob(boardId, fileId)).toBeUndefined()
 		expect(adapter).toHaveBeenCalledTimes(1)
 	})
 
@@ -500,7 +303,7 @@ describe('WhiteboardUploadOutbox', () => {
 			vi.fn(() => new Promise<void>(() => undefined)),
 		)
 
-		await first.stage({
+		await first.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['interrupted bytes'], { type: 'image/webp' }),
@@ -519,57 +322,12 @@ describe('WhiteboardUploadOutbox', () => {
 		await second.remove(fileId)
 	})
 
-	it('scopes acknowledgements to their mutation file ids and protects newer scene versions', async () => {
-		const boardId = nextBoardId()
-		const adapter = vi.fn(async () => undefined)
-		const outbox = createOutbox(boardId, adapter)
-
-		await outbox.stage({
-			boardId,
-			fileId: 'image-newer-scene',
-			blob: new Blob(['newer'], { type: 'image/png' }),
-			mimeType: 'image/png',
-			sceneVersion: 1,
-		})
-		await outbox.stage({
-			boardId,
-			fileId: 'image-other-mutation',
-			blob: new Blob(['other'], { type: 'image/png' }),
-			mimeType: 'image/png',
-			sceneVersion: 1,
-		})
-		await waitForJob(outbox, 'image-newer-scene', (job) => job?.state === 'uploaded')
-		await waitForJob(outbox, 'image-other-mutation', (job) => job?.state === 'uploaded')
-
-		await outbox.updateElementSnapshots('image-newer-scene', {
-			sceneVersion: 3,
-			latestElementSnapshots: [snapshot('newer-element', 3)],
-		})
-
-		const oldAcknowledgement = await outbox.markSceneAcknowledged({
-			boardId,
-			sceneVersion: 1,
-			fileIds: ['image-newer-scene', 'image-other-mutation'],
-		})
-		expect(oldAcknowledgement).toEqual(['image-other-mutation'])
-		expect(outbox.getJob('image-newer-scene')).not.toBeNull()
-		expect(outbox.getJob('image-other-mutation')).toBeNull()
-
-		const currentAcknowledgement = await outbox.markSceneAcknowledged({
-			boardId,
-			sceneVersion: 3,
-			fileIds: ['image-newer-scene'],
-		})
-		expect(currentAcknowledgement).toEqual(['image-newer-scene'])
-		expect(outbox.getJob('image-newer-scene')).toBeNull()
-	})
-
 	it('resolves waitForUpload once the job is uploaded', async () => {
 		const boardId = nextBoardId()
 		const fileId = 'image-wait-uploaded'
 		const outbox = createOutbox(boardId, vi.fn(async () => undefined))
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['ok'], { type: 'image/png' }),
@@ -581,73 +339,7 @@ describe('WhiteboardUploadOutbox', () => {
 		expect(job.fileId).toBe(fileId)
 	})
 
-	it('rejects waitForUpload on auth-blocked 401 without hanging', async () => {
-		const boardId = nextBoardId()
-		const fileId = 'image-wait-401'
-		const outbox = createOutbox(
-			boardId,
-			vi.fn(async () => {
-				throw httpError(401)
-			}),
-		)
-
-		await outbox.stage({
-			boardId,
-			fileId,
-			blob: new Blob(['auth'], { type: 'image/png' }),
-			mimeType: 'image/png',
-		})
-		const rejection = await outbox.waitForUpload(fileId).then(
-			() => {
-				throw new Error('waitForUpload should have rejected')
-			},
-			(error) => error,
-		)
-
-		expect(rejection).toBeInstanceOf(WhiteboardUploadFailureError)
-		expect(rejection).toMatchObject({
-			state: 'auth-blocked',
-			kind: 'auth',
-			status: 401,
-		})
-		expect(outbox.getJob(fileId)?.state).toBe('auth-blocked')
-	})
-
-	it('rejects waitForUpload on failed 503 while leaving the job retryable', async () => {
-		const boardId = nextBoardId()
-		const fileId = 'image-wait-503'
-		const outbox = createOutbox(
-			boardId,
-			vi.fn(async () => {
-				throw httpError(503)
-			}),
-		)
-
-		await outbox.stage({
-			boardId,
-			fileId,
-			blob: new Blob(['retry later'], { type: 'image/png' }),
-			mimeType: 'image/png',
-		})
-		const rejection = await outbox.waitForUpload(fileId).then(
-			() => {
-				throw new Error('waitForUpload should have rejected')
-			},
-			(error) => error,
-		)
-
-		expect(rejection).toBeInstanceOf(WhiteboardUploadFailureError)
-		expect(rejection).toMatchObject({
-			state: 'failed',
-			kind: 'server',
-			status: 503,
-		})
-		const job = outbox.getJob(fileId)
-		expect(job?.state).toBe('failed')
-		expect(job?.nextAttemptAt).toBeGreaterThan(job?.updatedAt ?? 0)
-	})
-
-	it('rejects waitForUpload on permanent-failure', async () => {
+	it('rejects waitForUpload on terminal 413', async () => {
 		const boardId = nextBoardId()
 		const fileId = 'image-wait-413'
 		const outbox = createOutbox(
@@ -657,17 +349,15 @@ describe('WhiteboardUploadOutbox', () => {
 			}),
 		)
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['too large'], { type: 'image/png' }),
 			mimeType: 'image/png',
 		})
-		await expect(outbox.waitForUpload(fileId)).rejects.toMatchObject({
-			state: 'permanent-failure',
-			kind: 'size',
-			status: 413,
-		})
+		await expect(outbox.waitForUpload(fileId)).rejects.toBeInstanceOf(
+			WhiteboardUploadFailureError,
+		)
 		expect(outbox.getJob(fileId)?.nextAttemptAt).toBeUndefined()
 	})
 
@@ -689,7 +379,7 @@ describe('WhiteboardUploadOutbox', () => {
 			vi.fn(() => new Promise<void>(() => undefined)),
 		)
 
-		await outbox.stage({
+		await outbox.enqueue({
 			boardId,
 			fileId,
 			blob: new Blob(['hang'], { type: 'image/png' }),

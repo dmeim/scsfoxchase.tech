@@ -394,8 +394,9 @@ async function assetWriteHeaders(
 
 /**
  * Auth/proof headers for the board-scoped PUT contract.
- * Clerk `Authorization` may be attached when present; it is not sufficient
- * alone. Throws 401 without `X-Board-Host` or a live session pair.
+ * Clerk `Authorization` is attached when present, alongside host/session
+ * proof. JWT-only is allowed through so the server can decide; missing every
+ * proof still fails closed as 401.
  */
 export async function boardAssetWriteHeaders(
 	boardId: string,
@@ -411,7 +412,7 @@ export async function boardAssetWriteHeaders(
 		headers['X-Board-Session'] = sessionAuth.sessionId
 		headers['X-Board-Auth'] = sessionAuth.authToken
 	}
-	if (!headersHaveBoardWriteProof(headers)) {
+	if (!headersHaveBoardWriteProof(headers) && !headers.Authorization) {
 		throw boardWriteProofRequiredError()
 	}
 	return headers
@@ -515,6 +516,31 @@ export async function fetchBoardAssetBytes(
 ): Promise<{ blob: Blob; mimeType: string } | null> {
 	try {
 		const res = await fetch(boardAssetResolveUrl(boardId, fileId))
+		if (!res.ok) return null
+		const mimeType = (
+			res.headers.get('Content-Type') || 'application/octet-stream'
+		)
+			.split(';')[0]
+			.trim()
+			.toLowerCase()
+		return { blob: await res.blob(), mimeType }
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Read bytes from the legacy `assets/{ownerKey}/{assetId}` route. Boards created
+ * before board-scoped keys still reference these objects, so image hydrate falls
+ * back to this when the board-scoped GET 404s. Write support is gone; this is
+ * read-only and must stay that way.
+ */
+export async function fetchOwnerAssetBytes(
+	ownerKey: string,
+	fileId: string,
+): Promise<{ blob: Blob; mimeType: string } | null> {
+	try {
+		const res = await fetch(assetResolveUrl(ownerKey, fileId))
 		if (!res.ok) return null
 		const mimeType = (
 			res.headers.get('Content-Type') || 'application/octet-stream'

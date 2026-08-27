@@ -58,18 +58,14 @@ export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
 export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
 export const SCENE_PERSIST_FAILED_CODE = 'persist_failed' as const
-export const SCENE_ASSET_NOT_READY_CODE = 'asset_not_ready' as const
 export const SCENE_TOO_LARGE_MESSAGE =
 	'This board is too large to save. The last change was not stored.'
 export const SCENE_PERSIST_FAILED_MESSAGE =
 	'Could not save this board. The last change was not stored.'
-export const SCENE_ASSET_NOT_READY_MESSAGE =
-	'This image is still uploading. The change was not stored.'
 
 export type SceneErrorCode =
 	| typeof SCENE_TOO_LARGE_CODE
 	| typeof SCENE_PERSIST_FAILED_CODE
-	| typeof SCENE_ASSET_NOT_READY_CODE
 
 export type SceneErrorMessage = {
 	type: 'wb:error'
@@ -90,13 +86,6 @@ export class ScenePersistError extends Error {
 
 export function sceneTooLargeError(): ScenePersistError {
 	return new ScenePersistError(SCENE_TOO_LARGE_CODE, SCENE_TOO_LARGE_MESSAGE)
-}
-
-export function sceneAssetNotReadyError(): ScenePersistError {
-	return new ScenePersistError(
-		SCENE_ASSET_NOT_READY_CODE,
-		SCENE_ASSET_NOT_READY_MESSAGE,
-	)
 }
 
 export function asScenePersistError(err: unknown): ScenePersistError {
@@ -207,6 +196,116 @@ export function shouldApplySocketReauth(
 	)
 }
 
+export const ROLE_RESOLVE_DEADLINE_MS = 15_000
+
+export type WbAuthReason =
+	| 'awaiting_token'
+	| 'token_invalid'
+	| 'clerk_unreachable'
+	| 'account_not_allowed'
+	| 'host_mismatch'
+
+export const WB_AUTH_REASONS: readonly WbAuthReason[] = [
+	'awaiting_token',
+	'token_invalid',
+	'clerk_unreachable',
+	'account_not_allowed',
+	'host_mismatch',
+]
+
+export function isWbAuthReason(value: unknown): value is WbAuthReason {
+	return (
+		value === 'awaiting_token' ||
+		value === 'token_invalid' ||
+		value === 'clerk_unreachable' ||
+		value === 'account_not_allowed' ||
+		value === 'host_mismatch'
+	)
+}
+
+export type ClerkVerifyFailureReason =
+	| 'no_token'
+	| 'token_invalid'
+	| 'clerk_unreachable'
+	| 'account_not_allowed'
+
+export type WbAuthOutcome = {
+	roleResolved: boolean
+	reason?: WbAuthReason
+}
+
+/**
+ * Maps a Clerk token check onto whether this socket's role is authoritative.
+ * Empty-email / allowlist is handled before this; `no_token` falls through to
+ * the signed-in-without-JWT path so a missing JWT is never a hard denial.
+ */
+export function resolveWbAuthOutcome(input: {
+	signedIn: boolean
+	roleCanEdit: boolean
+	tokenResult?:
+		| { ok: true; profileDegraded: boolean }
+		| { ok: false; reason: ClerkVerifyFailureReason }
+	hostSecretPresented?: boolean
+	hostAccepted?: boolean
+}): WbAuthOutcome {
+	const tokenResult = input.tokenResult
+	if (tokenResult && !(tokenResult.ok === false && tokenResult.reason === 'no_token')) {
+		if (!tokenResult.ok) {
+			if (tokenResult.reason === 'token_invalid') {
+				if (input.roleCanEdit) return { roleResolved: true }
+				return { roleResolved: true, reason: 'token_invalid' }
+			}
+			if (tokenResult.reason === 'account_not_allowed') {
+				if (input.roleCanEdit) return { roleResolved: true }
+				return { roleResolved: true, reason: 'account_not_allowed' }
+			}
+			if (input.roleCanEdit) return { roleResolved: true }
+			return { roleResolved: false, reason: 'clerk_unreachable' }
+		}
+		if (tokenResult.profileDegraded && !input.roleCanEdit) {
+			return { roleResolved: false, reason: 'clerk_unreachable' }
+		}
+		return { roleResolved: true }
+	}
+
+	if (input.signedIn && !input.roleCanEdit) {
+		return { roleResolved: false, reason: 'awaiting_token' }
+	}
+
+	if (input.hostSecretPresented && !input.hostAccepted && !input.signedIn) {
+		return { roleResolved: true, reason: 'host_mismatch' }
+	}
+
+	return { roleResolved: true }
+}
+
+export function shouldForceRoleResolved(input: {
+	roleResolved: boolean
+	connectedAt: number
+	now: number
+	deadlineMs?: number
+}): boolean {
+	if (input.roleResolved) return false
+	const deadline = input.deadlineMs ?? ROLE_RESOLVE_DEADLINE_MS
+	return input.now - input.connectedAt > deadline
+}
+
+/** Retry while the role is unresolved, even if a JWT was already sent. */
+export function shouldRetryWhiteboardAuth(input: {
+	roleResolved: boolean
+	tokenAlreadySent: boolean
+}): boolean {
+	return !input.roleResolved
+}
+
+export type AuthResultMessage = {
+	type: 'wb:authResult'
+	accepted: boolean
+	roleResolved: boolean
+	role: WhiteboardRole
+	reason?: WbAuthReason
+}
+
 /** Live canvas writes: Owner/Manager always; Editor only while Group Edit is on. */
 export function sessionCanEdit(
 	role: WhiteboardRole,
@@ -255,6 +354,8 @@ export type HelloMessage = {
 	// PHASE 3.3
 	role: WhiteboardRole
 	authToken: string
+	/** False until Clerk/host proof settles; omitted by older servers. */
+	roleResolved?: boolean
 }
 
 export type BoardPublicMeta = {
@@ -398,36 +499,6 @@ export function mergeSceneElements(
 		}
 	}
 	return { next: [...map.values()], accepted }
-}
-
-export function newImageFileIds(
-	existing: readonly SceneElement[],
-	accepted: readonly SceneElement[],
-): Set<string> {
-	const existingById = new Map(
-		existing.map((element) => [element.id, element]),
-	)
-	const fileIds = new Set<string>()
-	for (const element of accepted) {
-		if (
-			element.isDeleted ||
-			element.type !== 'image' ||
-			typeof element.fileId !== 'string' ||
-			!element.fileId
-		) {
-			continue
-		}
-		const previous = existingById.get(element.id)
-		const previousFileId =
-			previous &&
-			!previous.isDeleted &&
-			previous.type === 'image' &&
-			typeof previous.fileId === 'string'
-				? previous.fileId
-				: null
-		if (previousFileId !== element.fileId) fileIds.add(element.fileId)
-	}
-	return fileIds
 }
 
 export function elementsWithIncreasedVersion(

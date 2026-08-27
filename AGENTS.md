@@ -9,7 +9,8 @@ St. Cecilia Technology — a PWA dashboard and educational games catalog for a g
 
 - **Dev server**: `npm run dev` (Astro)
 - **Production build**: `npm run build` → output under `dist/client/`
-- **Deploy**: `npx wrangler deploy` (Worker name `scsfoxchase-tech`)
+- **Deploy**: GitHub **Workers Builds** on `main` is the only production deployer (Worker name `scsfoxchase-tech`). Do not deploy from a laptop — Workers Builds rebuilds the same commit and replaces it. Pre-merge check: `npx wrangler versions upload`.
+- **Which commit is live**: `GET /api/whiteboard/version` → `{ sha, builtAt }`. Check it before trusting a production observation.
 - **Domain**: scsfoxchase.tech
 
 See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
@@ -49,6 +50,7 @@ See `DEPLOYMENT.md` for Workers Builds settings and deploy notes.
 | `/api/whiteboard/connect/:uuid` | `src/worker.ts` → DO | WebSocket upgrade for Excalidraw collab |
 | `/api/whiteboard/join/:code` | `src/worker.ts` → KV | Resolve share code → board UUID |
 | `/api/whiteboard/boards/:uuid/code` | `src/worker.ts` → DO + KV | GET/POST share code (mint once); DELETE internal revoke |
+| `/api/whiteboard/boards/:uuid/assets/:fileId` | `src/worker.ts` → R2 | Board-scoped canvas media (UUID or SHA-256 file id) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | `src/worker.ts` → R2 | PUT/GET/DELETE whiteboard media |
 | `/api/whiteboard/admin/wipe-storage` | `src/worker.ts` → DO RPC | Bearer `WHITEBOARD_ADMIN_SECRET`; `deleteAll` on listed DO hex IDs |
 | `/api/whiteboard/library/boards` | `src/worker.ts` → R2 JSON | Signed-in cloud board index (Clerk) |
