@@ -50,6 +50,10 @@ type BoardPrivate = {
 		databaseJson: string | undefined,
 		full: boolean,
 	) => Promise<void>
+	loadScene: () => Promise<{
+		elements: SceneElement[]
+		appState: Record<string, unknown>
+	}>
 }
 
 function priv(board: WhiteboardBoard): BoardPrivate {
@@ -60,7 +64,17 @@ function isSceneInsert(query: string): boolean {
 	return /INSERT INTO excalidraw_scene\b/i.test(query)
 }
 
-function createHarness(options?: { expiresAt?: string; alarm?: number | null }) {
+function isSceneTableCreate(query: string): boolean {
+	return /CREATE TABLE IF NOT EXISTS excalidraw_scene\b/i.test(query)
+}
+
+function createHarness(options?: {
+	expiresAt?: string
+	alarm?: number | null
+	sceneTable?: 'current' | 'legacy-v2' | 'v2' | 'missing'
+	sceneJson?: string
+	legacyLiveJson?: string
+}) {
 	const meta = new Map<string, unknown>()
 	if (options?.expiresAt) {
 		meta.set(META_BOARD_ID_KEY, BOARD_ID)
@@ -70,27 +84,71 @@ function createHarness(options?: { expiresAt?: string; alarm?: number | null }) 
 
 	let alarm: number | null =
 		options?.alarm === undefined ? null : options.alarm
-	let sceneJson: string | null = null
+	const sceneTable = options?.sceneTable ?? 'current'
+	let sceneJson: string | null = options?.sceneJson ?? null
 	const kv = new Map<string, string>()
 	let initPromise = Promise.resolve()
 
 	const sqlExec = vi.fn((query: string, ...binds: unknown[]) => {
 		const q = String(query)
 		if (/sqlite_master/i.test(q)) {
-			return { toArray: () => [] }
+			const names =
+				sceneTable === 'legacy-v2'
+					? ['excalidraw_scene', 'excalidraw_scene_v2']
+					: sceneTable === 'current'
+						? ['excalidraw_scene']
+						: sceneTable === 'v2'
+							? ['excalidraw_scene_v2']
+							: []
+			return { toArray: () => names.map((name) => ({ name })) }
 		}
 		if (/PRAGMA table_info\(excalidraw_scene\)/i.test(q)) {
 			return {
-				toArray: () => [
-					{ name: 'id' },
-					{ name: 'scene_json' },
-					{ name: 'updated_at' },
-				],
+				toArray: () =>
+					sceneTable === 'current'
+						? [
+								{ name: 'id' },
+								{ name: 'scene_json' },
+								{ name: 'updated_at' },
+							]
+						: sceneTable === 'legacy-v2'
+							? [
+									{ name: 'id' },
+									{ name: 'live_json' },
+									{ name: 'database_json' },
+									{ name: 'updated_at' },
+								]
+						: [],
 			}
 		}
-		if (/SELECT scene_json FROM excalidraw_scene/i.test(q)) {
+		if (/PRAGMA table_info\(excalidraw_scene_v2\)/i.test(q)) {
+			return {
+				toArray: () =>
+					sceneTable === 'v2' || sceneTable === 'legacy-v2'
+						? [
+								{ name: 'id' },
+								{ name: 'scene_json' },
+								{ name: 'updated_at' },
+							]
+						: [],
+			}
+		}
+		if (/SELECT scene_json FROM excalidraw_scene(?:_v2)?/i.test(q)) {
 			return {
 				toArray: () => (sceneJson ? [{ scene_json: sceneJson }] : []),
+			}
+		}
+		if (/SELECT live_json, database_json FROM excalidraw_scene/i.test(q)) {
+			return {
+				toArray: () =>
+					options?.legacyLiveJson
+						? [
+								{
+									live_json: options.legacyLiveJson,
+									database_json: '',
+								},
+							]
+						: [],
 			}
 		}
 		if (isSceneInsert(q)) {
@@ -150,6 +208,9 @@ function createHarness(options?: { expiresAt?: string; alarm?: number | null }) 
 async function createBoard(options?: {
 	expiresAt?: string
 	alarm?: number | null
+	sceneTable?: 'current' | 'legacy-v2' | 'v2' | 'missing'
+	sceneJson?: string
+	legacyLiveJson?: string
 }) {
 	const harness = createHarness(options)
 	const board = new WhiteboardBoard(
@@ -202,6 +263,99 @@ describe('shouldApplySocketRoleUpgrade', () => {
 })
 
 describe('WhiteboardBoard share-code and persist lifetime', () => {
+	it('does not inspect or mutate storage in the constructor', async () => {
+		const harness = createHarness()
+		new WhiteboardBoard(
+			harness.ctx as unknown as DurableObjectState,
+			harness.env,
+		)
+		await harness.getInit()
+
+		expect(harness.sqlExec).not.toHaveBeenCalled()
+		expect(harness.storage.get).not.toHaveBeenCalled()
+		expect(harness.storage.put).not.toHaveBeenCalled()
+	})
+
+	it('initializes scene storage once on the first board lifetime request', async () => {
+		const { board, sqlExec } = await createBoard()
+		const request = () =>
+			new Request(
+				`https://scsfoxchase.tech/api/whiteboard/boards/${BOARD_ID}/meta`,
+			)
+
+		expect(sqlExec).not.toHaveBeenCalled()
+		expect((await board.fetch(request())).status).toBe(200)
+		expect(
+			sqlExec.mock.calls.filter((call) => isSceneTableCreate(String(call[0]))),
+		).toHaveLength(1)
+
+		expect((await board.fetch(request())).status).toBe(200)
+		expect(
+			sqlExec.mock.calls.filter((call) => isSceneTableCreate(String(call[0]))),
+		).toHaveLength(1)
+	})
+
+	it('reads an interrupted v2 scene without schema writes', async () => {
+		const sceneJson = JSON.stringify({
+			elements: [
+				{
+					id: 'v2-rectangle',
+					type: 'rectangle',
+					version: 1,
+					versionNonce: 7,
+				},
+			],
+			appState: { viewBackgroundColor: '#ffffff' },
+		})
+		const { board, sqlExec } = await createBoard({
+			sceneTable: 'v2',
+			sceneJson,
+		})
+
+		const scene = await priv(board).loadScene()
+
+		expect(scene.elements.map((element) => element.id)).toEqual([
+			'v2-rectangle',
+		])
+		expect(scene.appState).toEqual({ viewBackgroundColor: '#ffffff' })
+		expect(
+			sqlExec.mock.calls.some((call) =>
+				/\b(?:CREATE|ALTER|DROP|INSERT|DELETE)\b/i.test(String(call[0])),
+			),
+		).toBe(false)
+	})
+
+	it('prefers an authoritative legacy scene over a partial v2 table', async () => {
+		const legacyLiveJson = JSON.stringify({
+			elements: [
+				{
+					id: 'legacy-authoritative',
+					type: 'rectangle',
+					version: 4,
+					versionNonce: 9,
+				},
+			],
+			appState: {},
+		})
+		const partialV2Json = JSON.stringify({ elements: [], appState: {} })
+		const { board, sqlExec } = await createBoard({
+			sceneTable: 'legacy-v2',
+			sceneJson: partialV2Json,
+			legacyLiveJson,
+		})
+
+		const scene = await priv(board).loadScene()
+
+		expect(scene.elements.map((element) => element.id)).toEqual([
+			'legacy-authoritative',
+		])
+		expect(
+			sqlExec.mock.calls.some((call) =>
+				/PRAGMA table_info\(excalidraw_scene_v2\)/i.test(String(call[0])),
+			),
+		).toBe(false)
+	})
+
 	it('ensureShareCode with an existing code does not KV put', async () => {
 		const { board, codes, storage, meta } = await createBoard()
 		meta.set('meta:activeCode', SHARE_CODE)
@@ -244,6 +398,9 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 
 		priv(board).persistScene(empty)
 		expect(sceneInsertCount(sqlExec)).toBe(1)
+		expect(
+			sqlExec.mock.calls.some((call) => isSceneTableCreate(String(call[0]))),
+		).toBe(false)
 
 		priv(board).persistScene(empty)
 		expect(sceneInsertCount(sqlExec)).toBe(1)

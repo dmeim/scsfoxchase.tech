@@ -140,14 +140,20 @@ function hasTldrawSqlTables(names: string[]): boolean {
 }
 
 function listSceneTableColumns(storage: DurableObjectStorage): string[] {
-	try {
-		return storage.sql
-			.exec<{ name: string }>('PRAGMA table_info(excalidraw_scene)')
-			.toArray()
-			.map((row) => row.name)
-	} catch {
-		return []
-	}
+	// PRAGMA returns an empty list when the table does not exist. Other errors
+	// (notably quota/storage failures) must propagate: treating them as a new
+	// empty board could let a later edit overwrite a scene we failed to read.
+	return storage.sql
+		.exec<{ name: string }>('PRAGMA table_info(excalidraw_scene)')
+		.toArray()
+		.map((row) => row.name)
+}
+
+function listSceneV2TableColumns(storage: DurableObjectStorage): string[] {
+	return storage.sql
+		.exec<{ name: string }>('PRAGMA table_info(excalidraw_scene_v2)')
+		.toArray()
+		.map((row) => row.name)
 }
 
 function liveOrDatabaseToSceneJson(row: {
@@ -175,13 +181,16 @@ function liveOrDatabaseToSceneJson(row: {
  * together, which can exceed SQLite's per-row limit even when each value
  * is under MAX_SCENE_JSON_BYTES.
  */
-function migrateExcalidrawSceneTable(storage: DurableObjectStorage): void {
-	const tables = new Set(listUserSqlTables(storage))
+function migrateExcalidrawSceneTable(
+	storage: DurableObjectStorage,
+	knownTables?: Iterable<string>,
+): boolean {
+	const tables = new Set(knownTables ?? listUserSqlTables(storage))
 	if (tables.has('excalidraw_scene_v2') && !tables.has('excalidraw_scene')) {
 		storage.sql.exec(
 			'ALTER TABLE excalidraw_scene_v2 RENAME TO excalidraw_scene',
 		)
-		return
+		return true
 	}
 
 	storage.sql.exec(SCENE_TABLE_SQL)
@@ -194,9 +203,9 @@ function migrateExcalidrawSceneTable(storage: DurableObjectStorage): void {
 		if (tables.has('excalidraw_scene_v2')) {
 			storage.sql.exec('DROP TABLE IF EXISTS excalidraw_scene_v2')
 		}
-		return
+		return true
 	}
-	if (!columns.has('live_json') && !columns.has('database_json')) return
+	if (!columns.has('live_json') && !columns.has('database_json')) return true
 
 	const row = storage.sql
 		.exec<{
@@ -220,12 +229,13 @@ function migrateExcalidrawSceneTable(storage: DurableObjectStorage): void {
 		}
 	} catch {
 		storage.sql.exec('DROP TABLE IF EXISTS excalidraw_scene_v2')
-		return
+		return false
 	}
 	storage.sql.exec('DROP TABLE excalidraw_scene')
 	storage.sql.exec(
 		'ALTER TABLE excalidraw_scene_v2 RENAME TO excalidraw_scene',
 	)
+	return true
 }
 
 /** Max mint/rotate attempts per board in a rolling window. */
@@ -479,6 +489,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private forceFollowNeedsRebroadcast = false
 	private sceneCache: LiveScene | null = null
 	private sceneLoaded = false
+	/** Canonical scene table is ready for writes in this object lifetime. */
+	private sceneTableReady = false
+	/** Coalesces concurrent /meta + WebSocket lifetime checks after a wake. */
+	private lifetimeInitialization: Promise<void> | null = null
 	/** Last scene_json blob written or loaded; identical writes are no-ops. */
 	private lastPersistedJson: string | null = null
 	private updatesSinceFullSync = 0
@@ -489,13 +503,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.ctx.setWebSocketAutoResponse(
 			new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'),
 		)
-		this.ctx.blockConcurrencyWhile(async () => {
-			const tables = listUserSqlTables(this.ctx.storage)
-			if (hasTldrawSqlTables(tables)) {
-				await this.clearAllStorage()
-			}
-			migrateExcalidrawSceneTable(this.ctx.storage)
-		})
 	}
 
 	private resetLiveState(): void {
@@ -504,6 +511,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.forceFollowNeedsRebroadcast = false
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
+		this.sceneTableReady = false
 		this.lastPersistedJson = null
 		this.updatesSinceFullSync = 0
 	}
@@ -542,7 +550,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			this.sessionIdToWs.clear()
 			await this.clearActiveCodeKeys()
 			await this.clearAllStorage()
+			this.lifetimeInitialization = null
 			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
+			this.sceneTableReady = true
 			return {
 				objectId: this.ctx.id.toString(),
 				tablesBefore,
@@ -1406,12 +1416,23 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	 * First connect starts the 24h unsaved clock. Later connects / Chromebook
 	 * refreshes must not reset it or delete the scene.
 	 */
-	private async ensureBoardLifetime(
-		boardId: string,
-		opts: { mintShareCode?: boolean } = {},
-	): Promise<void> {
+	private async initializeBoardLifetime(boardId: string): Promise<void> {
 		const existingId = await this.ctx.storage.get<string>(META_BOARD_ID_KEY)
 		if (!existingId) {
+			// Schema setup belongs to first board initialization, not every cold
+			// Durable Object wake. Re-running sqlite_master scans and DDL on every
+			// reconnect wastes rows and can make an exhausted write quota block an
+			// otherwise read-only existing board before its WebSocket upgrade.
+			const tables = listUserSqlTables(this.ctx.storage)
+			if (hasTldrawSqlTables(tables)) {
+				await this.clearAllStorage()
+				this.sceneTableReady = migrateExcalidrawSceneTable(this.ctx.storage)
+			} else {
+				this.sceneTableReady = migrateExcalidrawSceneTable(
+					this.ctx.storage,
+					tables,
+				)
+			}
 			await this.ctx.storage.put(META_BOARD_ID_KEY, boardId)
 		}
 
@@ -1427,6 +1448,23 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 		}
 
+		await this.scheduleNextAlarm()
+	}
+
+	private async ensureBoardLifetime(
+		boardId: string,
+		opts: { mintShareCode?: boolean } = {},
+	): Promise<void> {
+		if (!this.lifetimeInitialization) {
+			this.lifetimeInitialization = this.initializeBoardLifetime(boardId)
+		}
+		try {
+			await this.lifetimeInitialization
+		} catch (error) {
+			this.lifetimeInitialization = null
+			throw error
+		}
+
 		if (opts.mintShareCode !== false) {
 			try {
 				await this.ensureShareCode(boardId)
@@ -1434,7 +1472,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				// UUID access still works if mint fails (rate limit / KV collision).
 			}
 		}
-		await this.scheduleNextAlarm()
 	}
 
 	private parseLiveSceneJson(raw: string): LiveScene | null {
@@ -1476,6 +1513,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.sceneLoaded = true
 		const columns = new Set(listSceneTableColumns(this.ctx.storage))
 		if (columns.has('scene_json')) {
+			this.sceneTableReady = true
 			const row = this.ctx.storage.sql
 				.exec<{ scene_json: string }>(
 					'SELECT scene_json FROM excalidraw_scene WHERE id = 1',
@@ -1489,6 +1527,30 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				: { elements: [], appState: {} }
 			// Keep the exact stored representation so a reconnect followed by an
 			// unchanged full resync can take the identical-write fast path.
+			this.lastPersistedJson = row ? row.scene_json : null
+			return this.sceneCache
+		}
+
+		// Some boards can be left in the temporary v2 table when a prior
+		// migration was interrupted. Reading must remain write-free so a cold
+		// wake can still recover the scene while Durable Object writes are capped.
+		const hasLegacySceneColumns =
+			columns.has('live_json') || columns.has('database_json')
+		const v2Columns = hasLegacySceneColumns
+			? new Set<string>()
+			: new Set(listSceneV2TableColumns(this.ctx.storage))
+		if (v2Columns.has('scene_json')) {
+			const row = this.ctx.storage.sql
+				.exec<{ scene_json: string }>(
+					'SELECT scene_json FROM excalidraw_scene_v2 WHERE id = 1',
+				)
+				.toArray()[0]
+			this.sceneCache = row
+				? this.parseLiveSceneJson(row.scene_json) ?? {
+						elements: [],
+						appState: {},
+					}
+				: { elements: [], appState: {} }
 			this.lastPersistedJson = row ? row.scene_json : null
 			return this.sceneCache
 		}
@@ -1523,6 +1585,24 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return this.sceneCache
 	}
 
+	/**
+	 * Existing canonical boards never execute DDL. New boards and legacy
+	 * dual-column boards migrate only when a scene write is actually needed.
+	 */
+	private ensureSceneTableForWrite(): void {
+		if (this.sceneTableReady) return
+		const columns = new Set(listSceneTableColumns(this.ctx.storage))
+		if (
+			columns.has('scene_json') &&
+			!columns.has('live_json') &&
+			!columns.has('database_json')
+		) {
+			this.sceneTableReady = true
+			return
+		}
+		this.sceneTableReady = migrateExcalidrawSceneTable(this.ctx.storage)
+	}
+
 	private persistScene(scene: LiveScene, opts: { force?: boolean } = {}): void {
 		if (scene.elements.length > MAX_SCENE_ELEMENTS) {
 			throw sceneTooLargeError()
@@ -1548,6 +1628,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return
 		}
 		try {
+			this.ensureSceneTableForWrite()
 			this.ctx.storage.sql.exec(
 				`INSERT INTO excalidraw_scene (id, scene_json, updated_at)
 				 VALUES (1, ?, ?)
