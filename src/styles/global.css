@@ -2472,7 +2472,6 @@ footer {
         --home-icon: calc(var(--home-tile) * 0.48);
         --home-gap: clamp(5px, 0.7vw, 14px);
         --home-row-gap: clamp(12px, 2vw, 42px);
-        --home-search-width: clamp(360px, 30vw, 460px);
         --home-search-font: clamp(0.86rem, min(1vw, 2.5vh), 1rem);
         min-height: 100dvh;
         overflow-x: hidden;
@@ -2504,11 +2503,6 @@ footer {
 
     .home-page .google-search-bars-row2 {
         margin-top: clamp(4px, 0.8vh, 8px);
-    }
-
-    .home-page .google-search-bar {
-        max-width: var(--home-search-width);
-        min-width: 0;
     }
 
     .home-page .google-search-icon {
