@@ -152,6 +152,13 @@ export type WhiteboardUploadOutboxSnapshot = {
 	storageError: string | null
 }
 
+/** Bytes in flight only. Uploaded-waiting-for-ack does not count as Saving. */
+export function savingUploadCount(
+	snapshot: Pick<WhiteboardUploadOutboxSnapshot, 'pendingCount'>,
+): number {
+	return snapshot.pendingCount
+}
+
 export type WhiteboardSceneAcknowledgement = {
 	boardId: string
 	sceneVersion: number

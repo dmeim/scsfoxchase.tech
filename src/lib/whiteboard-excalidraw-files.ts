@@ -42,15 +42,23 @@ import {
 } from './whiteboard-assets'
 import { waitForBoardWriteProof } from './whiteboard-board-write-proof'
 import {
+	generateWhiteboardImageFileId,
+	hasExcalidrawImageDataURL,
 	planImageFileAction,
 	resolveWhiteboardImageMime,
+	shouldDeferImageUploadWhilePending,
+	stagingActionForPlan,
 	WHITEBOARD_IMAGE_MIME,
 } from './whiteboard-file-sync-plan'
 
 export {
+	generateWhiteboardImageFileId,
+	hasExcalidrawImageDataURL,
 	isAllowedWhiteboardImageMime,
 	planImageFileAction,
 	resolveWhiteboardImageMime,
+	shouldDeferImageUploadWhilePending,
+	stagingActionForPlan,
 	WHITEBOARD_IMAGE_MIME,
 } from './whiteboard-file-sync-plan'
 import { getActiveIdentity, getAuthHeaders } from './whiteboard-identity'
@@ -251,27 +259,6 @@ function dataURLToBlob(dataURL: string): Blob {
 	return new Blob([decodeURIComponent(payload)], { type: mime })
 }
 
-function setLiveImageFileStatus(
-	api: ExcalidrawImperativeAPI,
-	fileId: string,
-	status: 'saved' | 'error',
-): void {
-	const elements = api.getSceneElementsIncludingDeleted()
-	const next = elements.map((element) =>
-		element.type === 'image' &&
-		element.fileId === fileId &&
-		!element.isDeleted
-			? newElementWith(element, { status })
-			: element,
-	)
-	if (next.some((element, index) => element !== elements[index])) {
-		api.updateScene({
-			elements: next,
-			captureUpdate: CaptureUpdateAction.NEVER,
-		})
-	}
-}
-
 function viewportCenter(
 	appState: AppState,
 	width: number,
@@ -363,6 +350,7 @@ function ownerKeysToTry(
 export type WhiteboardFileSyncOptions = {
 	sceneVersion?: number
 	sceneState?: unknown
+	pendingImageElementId?: string | null
 }
 
 export type WhiteboardExcalidrawFilesApi = {
@@ -410,8 +398,6 @@ export function useWhiteboardExcalidrawFiles(
 	const r2ReadyFileIds = useRef(new Set<string>())
 	const uploadInflightRef = useRef(new Set<string>())
 	const hydrateInflightRef = useRef(new Set<string>())
-	const stagedFilesRef = useRef(new Map<string, File>())
-	const appliedImageStatusRef = useRef(new Map<string, 'saved' | 'error'>())
 	const prefixRegisteredRef = useRef(false)
 	const claimedOwnerRef = useRef<string | null>(null)
 	const toastedUploadRef = useRef(new Set<string>())
@@ -535,23 +521,33 @@ export function useWhiteboardExcalidrawFiles(
 			let durablyStaged = Boolean(uploadOutbox.outbox.getJob(fileId)?.blob)
 			try {
 				const existingJob = uploadOutbox.outbox.getJob(fileId)
-				if (existingJob?.blob) {
-					if (existingJob.state === 'uploaded') {
-						r2ReadyFileIds.current.add(fileId)
-					}
+				if (existingJob?.state === 'uploaded') {
+					r2ReadyFileIds.current.add(fileId)
 					uploadOutbox.outbox.completeStaging(fileId)
 					return
 				}
-				const original = stagedFilesRef.current.get(fileId)
+				if (
+					existingJob &&
+					(existingJob.state === 'pending' || existingJob.state === 'uploading')
+				) {
+					uploadOutbox.outbox.completeStaging(fileId)
+					return
+				}
+				if (!file.dataURL) {
+					uploadOutbox.outbox.completeStaging(fileId)
+					return
+				}
 				const mime = resolveWhiteboardImageMime({
-					mimeType: file.mimeType || original?.type,
-					fileName: original?.name,
+					mimeType: file.mimeType || existingJob?.mimeType,
 				})
 				if (!mime) {
 					uploadOutbox.outbox.completeStaging(fileId)
 					return
 				}
-				const blob = original ?? dataURLToBlob(file.dataURL)
+				const blob =
+					existingJob?.blob && file.dataURL
+						? existingJob.blob
+						: dataURLToBlob(file.dataURL)
 				const latestStaging = uploadOutbox.outbox.getStaging(fileId)
 				// The element may have been deleted while conversion was in flight.
 				if (latestStaging && latestStaging.latestElementSnapshots?.length === 0) {
@@ -581,7 +577,6 @@ export function useWhiteboardExcalidrawFiles(
 			} catch (error) {
 				if (!durablyStaged) {
 					uploadOutbox.outbox.failStaging(fileId)
-					stagedFilesRef.current.delete(fileId)
 					const api = apiRef.current
 					if (api) removeLiveImageElements(api, fileId)
 				}
@@ -696,35 +691,23 @@ export function useWhiteboardExcalidrawFiles(
 
 				const existing = files[fileId]
 				const job = uploadOutbox.outbox.getJob(fileId)
-				const hasDataURL = Boolean(existing?.dataURL) || Boolean(job?.blob)
+				const hasDataURL = hasExcalidrawImageDataURL(existing)
 				const r2Ready =
 					r2ReadyFileIds.current.has(fileId) || job?.state === 'uploaded'
-				// r2Ready does not skip hydrate by itself: the planner still
-				// GETs when BinaryFiles / outbox have no local bytes.
-				if (r2Ready) {
-					const api = apiRef.current
-					if (
-						api &&
-						appliedImageStatusRef.current.get(fileId) !== 'saved'
-					) {
-						appliedImageStatusRef.current.set(fileId, 'saved')
-						setLiveImageFileStatus(api, fileId, 'saved')
-					}
-				}
 				const uploadInflight =
 					uploadInflightRef.current.has(fileId) ||
 					job?.state === 'pending' ||
 					job?.state === 'uploading'
 				const hydrateInflight = hydrateInflightRef.current.has(fileId)
 				const failedAt = failedAtRef.current.get(fileId) ?? 0
-				if (hasDataURL && !r2Ready) {
-					uploadOutbox.outbox.beginStaging({
-						boardId,
+				if (
+					shouldDeferImageUploadWhilePending({
 						fileId,
-						latestElementSnapshots: elementSnapshots,
-						latestElementState: options.sceneState,
-						sceneVersion,
+						pendingImageElementId: options.pendingImageElementId,
+						elements,
 					})
+				) {
+					continue
 				}
 				const action = planImageFileAction({
 					fileId,
@@ -733,6 +716,9 @@ export function useWhiteboardExcalidrawFiles(
 					uploadInflight,
 					hydrateInflight,
 				})
+				if (stagingActionForPlan(action) === 'complete') {
+					uploadOutbox.outbox.completeStaging(fileId)
+				}
 				if (action === 'skip') continue
 				if (now - failedAt < 1000) continue
 				if (
@@ -740,13 +726,21 @@ export function useWhiteboardExcalidrawFiles(
 					existing &&
 					!resolveWhiteboardImageMime({
 						mimeType: existing.mimeType || job?.mimeType,
-						fileName: stagedFilesRef.current.get(fileId)?.name,
-					}) &&
-					!job?.blob
+					})
 				) {
+					uploadOutbox.outbox.completeStaging(fileId)
 					continue
 				}
 				if (action === 'upload') {
+					if (stagingActionForPlan(action) === 'begin') {
+						uploadOutbox.outbox.beginStaging({
+							boardId,
+							fileId,
+							latestElementSnapshots: elementSnapshots,
+							latestElementState: options.sceneState,
+							sceneVersion,
+						})
+					}
 					uploadInflightRef.current.add(fileId)
 					void (async () => {
 						try {
@@ -755,6 +749,8 @@ export function useWhiteboardExcalidrawFiles(
 									...options,
 									sceneVersion,
 								})
+							} else {
+								uploadOutbox.outbox.completeStaging(fileId)
 							}
 							failedAtRef.current.delete(fileId)
 						} catch (error) {
@@ -943,60 +939,17 @@ export function useWhiteboardExcalidrawFiles(
 		[boardId, videoEpoch],
 	)
 
-	const generateIdForFile = useCallback(
-		async (file: File) => {
-			const fileId = crypto.randomUUID()
-			const mime = resolveWhiteboardImageMime({
-				mimeType: file.type,
-				fileName: file.name,
-			})
-			if (!mime) return fileId
-			stagedFilesRef.current.set(fileId, file)
-			uploadInflightRef.current.add(fileId)
-			uploadOutbox.outbox.beginStaging({ boardId, fileId })
-			void uploadOutbox.outbox
-				.stage({
-					boardId,
-					fileId,
-					blob: file,
-					mimeType: mime,
-				})
-				.then(() => {
-					uploadOutbox.outbox.completeStaging(fileId)
-				})
-				.catch(() => {
-					uploadOutbox.outbox.failStaging(fileId)
-					stagedFilesRef.current.delete(fileId)
-					const api = apiRef.current
-					if (api) removeLiveImageElements(api, fileId)
-				})
-				.finally(() => {
-					uploadInflightRef.current.delete(fileId)
-				})
-			return fileId
-		},
-		[apiRef, boardId, uploadOutbox.outbox],
-	)
+	const generateIdForFile = useCallback(async (_file: File) => {
+		return generateWhiteboardImageFileId()
+	}, [])
 
 	useEffect(() => {
-		const api = apiRef.current
 		for (const job of uploadOutbox.jobs) {
 			if (job.state === 'uploaded') {
 				r2ReadyFileIds.current.add(job.fileId)
-				if (appliedImageStatusRef.current.get(job.fileId) !== 'saved') {
-					if (!api) continue
-					appliedImageStatusRef.current.set(job.fileId, 'saved')
-					setLiveImageFileStatus(api, job.fileId, 'saved')
-				}
-			} else if (job.state === 'permanent-failure') {
-				if (appliedImageStatusRef.current.get(job.fileId) !== 'error') {
-					if (!api) continue
-					appliedImageStatusRef.current.set(job.fileId, 'error')
-					setLiveImageFileStatus(api, job.fileId, 'error')
-				}
 			}
 		}
-	}, [apiRef, uploadOutbox.jobs])
+	}, [uploadOutbox.jobs])
 
 	const isR2ReadyFileId = useCallback(
 		(fileId: string) =>

@@ -13,6 +13,28 @@ export const UNSAVED_BOARD_TTL_MS = 24 * 60 * 60 * 1000
 export const SCENE_FLUSH_MS = 1000
 export const CLIENT_PING_MS = 25_000
 export const FULL_RESYNC_EVERY = 20
+
+export type SceneBroadcastPlan = {
+	type: 'scene:sync' | 'scene:update'
+	exceptSessionId: string
+}
+
+/**
+ * Full scene:sync (explicit full or FULL_RESYNC_EVERY) and incremental
+ * scene:update both exclude the writer so the originating tab is not echoed.
+ */
+export function sceneBroadcastPlan(input: {
+	full: boolean
+	updatesSinceFullSync: number
+	fromSessionId: string
+	fullResyncEvery?: number
+}): SceneBroadcastPlan {
+	const every = input.fullResyncEvery ?? FULL_RESYNC_EVERY
+	if (input.full || input.updatesSinceFullSync >= every) {
+		return { type: 'scene:sync', exceptSessionId: input.fromSessionId }
+	}
+	return { type: 'scene:update', exceptSessionId: input.fromSessionId }
+}
 export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
 export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const

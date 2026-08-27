@@ -13,7 +13,9 @@
  *
  * Account-global PUT/DELETE google:*: matching Clerk Owner only. Legacy
  * canvas PUTs with X-Board-Id accept verified live board proof only when the
- * key exactly matches that board's stored Owner. Viewers are read-only.
+ * key exactly matches that board's stored Owner. Those PUTs write only the
+ * owner-key object; they do not dual-write board-scoped keys or the board
+ * manifest. Viewers are read-only.
  * temp:* requires a host secret or a live can-edit board session.
  * local:* PUT/DELETE are rejected. Guessing a fileId is not enough.
  * GET stays unauthenticated so connected players can load media; SVG is
@@ -474,35 +476,6 @@ function jsonOk(
 type BoundedBody =
 	| { bytes: Uint8Array; tooLarge: false }
 	| { bytes: Uint8Array; tooLarge: true }
-
-async function r2ObjectExisted(
-	bucket: R2Bucket,
-	key: string,
-): Promise<boolean | null> {
-	try {
-		return (await bucket.head(key)) !== null
-	} catch {
-		// Do not delete an object during cleanup when its prior state is unknown.
-		return null
-	}
-}
-
-async function cleanupLegacyCanvasUpload(
-	bucket: R2Bucket,
-	objects: Array<{ key: string; existedBefore: boolean | null }>,
-): Promise<void> {
-	await Promise.all(
-		objects
-			.filter((object) => object.existedBefore === false)
-			.map(async ({ key }) => {
-				try {
-					await bucket.delete(key)
-				} catch {
-					// Cleanup is best-effort; the request still reports the original failure.
-				}
-			}),
-	)
-}
 
 /** Read at most `limit + 1` bytes so oversized requests never buffer fully. */
 async function readBodyWithLimit(
@@ -1222,12 +1195,7 @@ export async function handleAssetRequest(
 			: isTempOwnerKey(ownerKey)
 				? 'temp'
 				: 'persistent'
-		const legacyBoardId = parseLegacyCanvasBoardContext(request)
-		const canonicalKey = legacyBoardId
-			? boardAssetR2Key(legacyBoardId, assetId)
-			: null
-		const createdAt = new Date().toISOString()
-		const legacyPutOptions: R2PutOptions = {
+		await env.WHITEBOARD_ASSETS.put(key, body, {
 			httpMetadata: {
 				contentType,
 				cacheControl: assetCacheControl(kind),
@@ -1236,51 +1204,9 @@ export async function handleAssetRequest(
 				ownerKey,
 				assetId,
 				kind,
-				createdAt,
+				createdAt: new Date().toISOString(),
 			},
-		}
-
-		if (legacyBoardId && canonicalKey) {
-			const [legacyExistedBefore, canonicalExistedBefore] = await Promise.all([
-				r2ObjectExisted(env.WHITEBOARD_ASSETS, key),
-				r2ObjectExisted(env.WHITEBOARD_ASSETS, canonicalKey),
-			])
-			const cleanupObjects = [
-				{ key, existedBefore: legacyExistedBefore },
-				{ key: canonicalKey, existedBefore: canonicalExistedBefore },
-			]
-
-			try {
-				await env.WHITEBOARD_ASSETS.put(key, body, legacyPutOptions)
-				await env.WHITEBOARD_ASSETS.put(canonicalKey, body, {
-					httpMetadata: {
-						contentType,
-						cacheControl: 'public, max-age=31536000, immutable',
-					},
-					customMetadata: {
-						boardId: legacyBoardId,
-						assetId,
-						kind: 'board',
-						createdAt,
-					},
-				})
-				await boardStub(env, legacyBoardId).registerBoardAssetManifest({
-					boardId: legacyBoardId,
-					fileId: assetId,
-					r2Key: canonicalKey,
-					mimeType: contentType,
-					size: body.byteLength,
-				})
-			} catch {
-				await cleanupLegacyCanvasUpload(
-					env.WHITEBOARD_ASSETS,
-					cleanupObjects,
-				)
-				return jsonError(503, 'Could not store board asset', request)
-			}
-		} else {
-			await env.WHITEBOARD_ASSETS.put(key, body, legacyPutOptions)
-		}
+		})
 
 		if (kind === 'temp' && ctx) {
 			ctx.waitUntil(expireTempR2Objects(env).then(() => undefined))

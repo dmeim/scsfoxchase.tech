@@ -39,10 +39,20 @@ import {
   collectAcknowledgedImageFileIds,
   filterFlushableSceneElements,
 } from '../lib/whiteboard-scene-publication'
-import { shouldRestoreRecoveredImage } from '../lib/whiteboard-file-sync-plan'
-import type {
-  WhiteboardUploadElementSnapshot,
-  WhiteboardUploadJob,
+import {
+  FORCE_FULL_FLUSH_ON_SERVER_SCENE,
+  isRenderedImageOverlayTarget,
+  RECOVER_PENDING_UPLOADS_ON_JOBS_PUBLISH,
+  shouldForceSendReadyUploadsOnTransition,
+  shouldHydrateServerSceneOnce,
+  shouldRestoreRecoveredImage,
+  shouldRestoreRecoveredImageElement,
+} from '../lib/whiteboard-file-sync-plan'
+import {
+  savingUploadCount,
+  type WhiteboardUploadElementSnapshot,
+  type WhiteboardUploadJob,
+  type WhiteboardUploadState,
 } from '../lib/whiteboard-upload-outbox'
 import {
   getHostSecret,
@@ -285,6 +295,9 @@ export default function WhiteboardCanvas({
   const uploadSavedTimerRef = useRef<number | null>(null)
   const recoveredFileIdsRef = useRef(new Set<string>())
   const recoveryInFlightRef = useRef(false)
+  const prevUploadStateRef = useRef(new Map<string, WhiteboardUploadState>())
+  const readyPromiseRef = useRef(media.uploadOutbox.readyPromise)
+  readyPromiseRef.current = media.uploadOutbox.readyPromise
   const acknowledgedImageFileIdsRef = useRef(new Set<string>())
   const acknowledgedBoardIdRef = useRef(boardId)
 
@@ -502,20 +515,30 @@ export default function WhiteboardCanvas({
       const recoveryFileIds = new Set<string>()
 
       for (const item of recovery) {
+        const liveHasFileId = current.some(
+          (element) =>
+            !element.isDeleted &&
+            element.type === 'image' &&
+            element.fileId === item.fileId,
+        )
         for (const snapshot of item.latestElementSnapshots) {
           if (!isSceneElementSnapshot(snapshot.element)) continue
           const element = snapshot.element
+          if (element.type !== 'image' || element.fileId !== item.fileId) {
+            continue
+          }
+          recoveryFileIds.add(item.fileId)
+          const existing = byId.get(element.id)
           if (
-            element.isDeleted ||
-            element.type !== 'image' ||
-            element.fileId !== item.fileId
+            !shouldRestoreRecoveredImageElement({
+              snapshotIsDeleted: Boolean(element.isDeleted),
+              liveIsDeleted: Boolean(existing?.isDeleted),
+              liveHasSameFileId: liveHasFileId,
+              hasLocalDataURL: true,
+            })
           ) {
             continue
           }
-          const existing = byId.get(element.id)
-          // A local/server deletion is authoritative for this recovery pass;
-          // an old outbox snapshot must never resurrect it.
-          if (existing?.isDeleted) continue
           const previous = liveRecovery.get(element.id) ?? existing
           if (
             !previous ||
@@ -526,7 +549,6 @@ export default function WhiteboardCanvas({
           ) {
             liveRecovery.set(element.id, element)
           }
-          recoveryFileIds.add(item.fileId)
         }
       }
 
@@ -569,11 +591,24 @@ export default function WhiteboardCanvas({
           (candidate) => candidate.fileId === fileId,
         )
         const file = filesNow[fileId]
+        const existing = byId.get(elementId)
+        const liveHasFileId = current.some(
+          (candidate) =>
+            !candidate.isDeleted &&
+            candidate.type === 'image' &&
+            candidate.fileId === fileId,
+        )
         if (
           !shouldRestoreRecoveredImage({
             hasLocalDataURL: Boolean(file?.dataURL),
             hasBlob: Boolean(job?.blob),
             conversionOk: Boolean(file?.dataURL),
+          }) ||
+          !shouldRestoreRecoveredImageElement({
+            snapshotIsDeleted: Boolean(element.isDeleted),
+            liveIsDeleted: Boolean(existing?.isDeleted),
+            liveHasSameFileId: liveHasFileId,
+            hasLocalDataURL: Boolean(filesNow[fileId]?.dataURL),
           })
         ) {
           continue
@@ -581,13 +616,20 @@ export default function WhiteboardCanvas({
         restored.set(elementId, element)
       }
       if (restored.size > 0) {
-        for (const [elementId, element] of restored) {
-          byId.set(elementId, element)
+        applyingRemoteRef.current = true
+        try {
+          for (const [elementId, element] of restored) {
+            byId.set(elementId, element)
+          }
+          api.updateScene({
+            elements: [...byId.values()],
+            captureUpdate: CaptureUpdateAction.NEVER,
+          })
+        } finally {
+          queueMicrotask(() => {
+            applyingRemoteRef.current = false
+          })
         }
-        api.updateScene({
-          elements: [...byId.values()],
-          captureUpdate: CaptureUpdateAction.NEVER,
-        })
       }
       setUploadOverlayRevision((revision) => revision + 1)
     } finally {
@@ -916,6 +958,7 @@ export default function WhiteboardCanvas({
 
   const markServerSceneApplied = useCallback(() => {
     if (!apiRef.current || !sceneHydratedRef.current) return
+    if (!shouldHydrateServerSceneOnce(socketSceneHydratedRef.current)) return
     socketSceneHydratedRef.current = true
     setSocketSceneReady(true)
     const serverElements = apiRef.current.getSceneElementsIncludingDeleted()
@@ -924,9 +967,14 @@ export default function WhiteboardCanvas({
       deletedFileIds: sceneImageTombstoneFileIds(serverElements),
     })
     void hydration
-      .then(() => recoverPendingUploads())
-      .finally(() => {
-        flushNowRef.current(true)
+      .then(async () => {
+        await readyPromiseRef.current
+        await recoverPendingUploads()
+      })
+      .then(() => {
+        if (FORCE_FULL_FLUSH_ON_SERVER_SCENE) {
+          flushNowRef.current(true)
+        }
         forceSendReadyUploads()
       })
   }, [forceSendReadyUploads, recoverPendingUploads])
@@ -1015,6 +1063,7 @@ export default function WhiteboardCanvas({
       media.syncFiles(elements, files, {
         sceneVersion,
         sceneState: uploadSceneState(appState),
+        pendingImageElementId: appState.pendingImageElementId,
       })
       // syncFiles stages local bytes independently of this flush. Default-deny
       // publication still omits images until they are uploaded or acknowledged.
@@ -1310,7 +1359,13 @@ export default function WhiteboardCanvas({
           const isServerScene = data.type === 'scene:sync'
           const hasCanvas = Boolean(apiRef.current)
           applyRemoteElements(elements, appState, isServerScene)
-          if (isServerScene && hasCanvas) markServerSceneApplied()
+          if (
+            isServerScene &&
+            hasCanvas &&
+            shouldHydrateServerSceneOnce(socketSceneHydratedRef.current)
+          ) {
+            markServerSceneApplied()
+          }
           return
         }
       })
@@ -1438,10 +1493,29 @@ export default function WhiteboardCanvas({
     }
     if (changed) setUploadOverlayRevision((revision) => revision + 1)
 
-    if (sceneHydratedRef.current && media.uploadOutbox.recoveryReady) {
+    let shouldForceSend = false
+    const seenFileIds = new Set<string>()
+    for (const job of media.uploadOutbox.jobs) {
+      seenFileIds.add(job.fileId)
+      const previous = prevUploadStateRef.current.get(job.fileId)
+      if (shouldForceSendReadyUploadsOnTransition(previous, job.state)) {
+        shouldForceSend = true
+      }
+      prevUploadStateRef.current.set(job.fileId, job.state)
+    }
+    for (const fileId of [...prevUploadStateRef.current.keys()]) {
+      if (!seenFileIds.has(fileId)) prevUploadStateRef.current.delete(fileId)
+    }
+    if (
+      RECOVER_PENDING_UPLOADS_ON_JOBS_PUBLISH &&
+      sceneHydratedRef.current &&
+      media.uploadOutbox.recoveryReady
+    ) {
       void recoverPendingUploads().finally(() => {
-        forceSendReadyUploads()
+        if (shouldForceSend) forceSendReadyUploads()
       })
+    } else if (shouldForceSend) {
+      forceSendReadyUploads()
     }
   }, [
     forceSendReadyUploads,
@@ -1604,6 +1678,12 @@ export default function WhiteboardCanvas({
         ) {
           continue
         }
+        if (
+          success &&
+          !isRenderedImageOverlayTarget(element.width, element.height)
+        ) {
+          continue
+        }
         const zoom = appState.zoom.value
         const position = sceneCoordsToViewportCoords(
           { sceneX: element.x, sceneY: element.y },
@@ -1628,8 +1708,8 @@ export default function WhiteboardCanvas({
   }
 
   const uploadSnapshot = media.uploadOutbox
-  const hasUploadWork =
-    uploadSnapshot.pendingCount > 0 || uploadSnapshot.awaitingSceneAckCount > 0
+  const savingCount = savingUploadCount(uploadSnapshot)
+  const hasUploadWork = savingCount > 0
   const uploadStatus = uploadSnapshot.storageError
     ? {
         kind: 'blocking',
@@ -1648,7 +1728,7 @@ export default function WhiteboardCanvas({
           : hasUploadWork
             ? {
                 kind: 'saving',
-                message: `Saving ${uploadSnapshot.pendingCount + uploadSnapshot.awaitingSceneAckCount} file${uploadSnapshot.pendingCount + uploadSnapshot.awaitingSceneAckCount === 1 ? '' : 's'}…`,
+                message: `Saving ${savingCount} file${savingCount === 1 ? '' : 's'}…`,
               }
             : null
 

@@ -6,6 +6,7 @@ import {
 	WHITEBOARD_UPLOAD_OUTBOX_STORE,
 	WHITEBOARD_UPLOAD_OUTBOX_VERSION,
 	WhiteboardUploadFailureError,
+	savingUploadCount,
 	WhiteboardUploadOutbox,
 	type WhiteboardUploadAdapter,
 	type WhiteboardUploadElementSnapshot,
@@ -169,6 +170,31 @@ describe('WhiteboardUploadOutbox', () => {
 		])
 	})
 
+	it('clears leftover staging on completeStaging without counting uploaded as Saving', async () => {
+		const boardId = nextBoardId()
+		const fileId = 'image-complete-staging'
+		const outbox = createOutbox(boardId, vi.fn(async () => undefined))
+
+		outbox.beginStaging({
+			boardId,
+			fileId,
+			latestElementSnapshots: [snapshot('element-stage', 1)],
+			sceneVersion: 1,
+		})
+		expect(outbox.getSnapshot()).toMatchObject({
+			stagingCount: 1,
+			pendingCount: 1,
+		})
+		expect(savingUploadCount(outbox.getSnapshot())).toBe(1)
+
+		outbox.completeStaging(fileId)
+		expect(outbox.getSnapshot()).toMatchObject({
+			stagingCount: 0,
+			pendingCount: 0,
+		})
+		expect(savingUploadCount(outbox.getSnapshot())).toBe(0)
+	})
+
 	it('keeps a successful upload until the referencing scene is acknowledged', async () => {
 		const boardId = nextBoardId()
 		const fileId = 'image-awaiting-ack'
@@ -191,8 +217,10 @@ describe('WhiteboardUploadOutbox', () => {
 
 		expect(outbox.getSnapshot()).toMatchObject({
 			awaitingSceneAckCount: 1,
+			pendingCount: 0,
 			pendingFileIds: [fileId],
 		})
+		expect(savingUploadCount(outbox.getSnapshot())).toBe(0)
 		expect(await readPersistedJob(boardId, fileId)).toMatchObject({
 			state: 'uploaded',
 			sceneAcknowledgedVersion: undefined,

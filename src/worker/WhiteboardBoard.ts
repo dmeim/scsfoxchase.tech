@@ -10,7 +10,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import { generateGuestDisplayName } from '../lib/whiteboard-display-name'
 import {
-	FULL_RESYNC_EVERY,
 	MAX_SCENE_ELEMENTS,
 	MAX_SCENE_JSON_BYTES,
 	META_BOARD_ID_KEY,
@@ -28,6 +27,7 @@ import {
 	isGuestConnectUserId,
 	mergeSceneElements,
 	newImageFileIds,
+	sceneBroadcastPlan,
 	parseDatabaseScene,
 	parseSceneElements,
 	parseStoredSceneElements,
@@ -1789,7 +1789,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.persistScene(nextScene)
 
 		this.updatesSinceFullSync += 1
-		if (full || this.updatesSinceFullSync >= FULL_RESYNC_EVERY) {
+		const plan = sceneBroadcastPlan({
+			full,
+			updatesSinceFullSync: this.updatesSinceFullSync,
+			fromSessionId,
+		})
+		if (plan.type === 'scene:sync') {
 			this.updatesSinceFullSync = 0
 			this.broadcastScene(
 				{
@@ -1797,14 +1802,14 @@ export class WhiteboardBoard extends DurableObject<Env> {
 					elements: nextScene.elements,
 					appState: nextScene.appState,
 				},
-				null,
+				plan.exceptSessionId,
 			)
 			return
 		}
 
 		this.broadcastScene(
 			{ type: 'scene:update', elements: accepted, full: false },
-			fromSessionId,
+			plan.exceptSessionId,
 		)
 	}
 
