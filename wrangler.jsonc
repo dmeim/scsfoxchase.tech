@@ -22,6 +22,8 @@
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
+    // API routes and the framed media player require the custom Worker entry.
+    "run_worker_first": ["/api/*", "/whiteboard-player"],
     // Missing assets must 404 — never SPA-fallback HTML onto CSS (breaks under nosniff)
     "not_found_handling": "404-page",
     "html_handling": "drop-trailing-slash"
