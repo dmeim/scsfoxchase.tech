@@ -3,21 +3,22 @@ import {
   iconCircleCheck,
   iconCircleX,
   iconInfo,
+  iconLoaderCircle,
   iconLogIn,
   iconSquarePlus,
   iconTimes,
   iconTriangleAlert,
 } from './icons';
 import {
-  isNotificationIcon,
-  isNotificationKind,
-  type NotificationIcon,
+  isToastIcon,
+  isToastKind,
+  type ToastIcon,
   type ToastInput,
 } from '../lib/notifications';
 
 const DEFAULT_DURATION_MS = 10_000;
 
-const iconMarkup: Record<NotificationIcon, string> = {
+const iconMarkup: Record<ToastIcon, string> = {
   bell: iconBell,
   'circle-check': iconCircleCheck,
   'triangle-alert': iconTriangleAlert,
@@ -25,9 +26,10 @@ const iconMarkup: Record<NotificationIcon, string> = {
   'circle-x': iconCircleX,
   'log-in': iconLogIn,
   'square-plus': iconSquarePlus,
+  loader: iconLoaderCircle,
 };
 
-export function notificationIconMarkup(icon: NotificationIcon): string {
+export function notificationIconMarkup(icon: ToastIcon): string {
   return iconMarkup[icon] ?? iconBell;
 }
 
@@ -45,8 +47,8 @@ export function dismissToast(id: string): void {
 export function showToast(input: ToastInput): string | null {
   if (
     typeof document === 'undefined' ||
-    !isNotificationKind(input.kind) ||
-    !isNotificationIcon(input.icon) ||
+    !isToastKind(input.kind) ||
+    !isToastIcon(input.icon) ||
     typeof input.title !== 'string' ||
     !input.title.trim()
   ) {

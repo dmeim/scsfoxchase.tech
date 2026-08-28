@@ -19,6 +19,12 @@ export const NOTIFICATION_ICONS = [
 
 export type NotificationIcon = (typeof NOTIFICATION_ICONS)[number];
 
+export const TOAST_KINDS = [...NOTIFICATION_KINDS, 'loading'] as const;
+export type ToastKind = (typeof TOAST_KINDS)[number];
+
+export const TOAST_ICONS = [...NOTIFICATION_ICONS, 'loader'] as const;
+export type ToastIcon = (typeof TOAST_ICONS)[number];
+
 export type NotificationInput = {
   id?: string;
   kind: NotificationKind;
@@ -44,12 +50,19 @@ export type NotificationRecord = Required<
   readAt?: string;
 };
 
-export type ToastInput = Omit<NotificationInput, 'id' | 'dedupeKey' | 'expiresAt'> & {
+export type ToastInput = Omit<
+  NotificationInput,
+  'id' | 'dedupeKey' | 'expiresAt' | 'kind' | 'icon'
+> & {
+  kind: ToastKind;
+  icon: ToastIcon;
   duration?: number;
 };
 
 const kindSet = new Set<string>(NOTIFICATION_KINDS);
 const iconSet = new Set<string>(NOTIFICATION_ICONS);
+const toastKindSet = new Set<string>(TOAST_KINDS);
+const toastIconSet = new Set<string>(TOAST_ICONS);
 
 export function isNotificationKind(value: unknown): value is NotificationKind {
   return typeof value === 'string' && kindSet.has(value);
@@ -57,4 +70,12 @@ export function isNotificationKind(value: unknown): value is NotificationKind {
 
 export function isNotificationIcon(value: unknown): value is NotificationIcon {
   return typeof value === 'string' && iconSet.has(value);
+}
+
+export function isToastKind(value: unknown): value is ToastKind {
+  return typeof value === 'string' && toastKindSet.has(value);
+}
+
+export function isToastIcon(value: unknown): value is ToastIcon {
+  return typeof value === 'string' && toastIconSet.has(value);
 }
