@@ -358,7 +358,8 @@ body.temp-notification-page {
 
 .temp-notification-trigger:hover,
 .temp-notification-center.is-open .temp-notification-trigger {
-  color: var(--primary-color);
+  color: #2f343a;
+  border-color: var(--secondary-color);
   background: var(--secondary-color);
 }
 

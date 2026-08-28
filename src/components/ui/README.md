@@ -50,4 +50,6 @@ Interactive components dispatch bubbling custom events for page-specific behavio
 
 Client-rendered collections should import `uiClassNames` from `./dom` so their generated cards, buttons, chips, badges, and feedback use the same class contract without copying component styles.
 
+Use `<Card transparent>` (or `uiClassNames.card(extra, { transparent: true })` for client-rendered collections) when content needs the card layout contract without a surface fill.
+
 The event value is available at `event.detail.value`.

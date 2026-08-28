@@ -59,7 +59,8 @@
 
 .notification-trigger:hover,
 .notification-center.is-open .notification-trigger {
-  color: var(--primary-color);
+  color: #2f343a;
+  border-color: var(--secondary-color);
   background: var(--secondary-color);
 }
 

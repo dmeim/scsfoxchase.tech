@@ -35,16 +35,6 @@ interface Props {
 const { boardChrome = false } = Astro.props;
 const pathname = Astro.url.pathname;
 const notificationDemo = pathname === '/temp';
-const homeActive = pathname === '/' || pathname === '';
-const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
-const helpActive =
-  pathname === '/help' ||
-  pathname === '/forms' ||
-  pathname.startsWith('/forms/') ||
-  pathname === '/guides' ||
-  pathname.startsWith('/guides/') ||
-  pathname.startsWith('/form/') ||
-  pathname.startsWith('/guide/');
 ---
 <header>
   <div class="container">
@@ -329,13 +319,13 @@ const helpActive =
       <nav aria-label="Primary">
         <ul>
           <li>
-            <Button href="/" variant="ghost" size="small" class={homeActive ? 'active' : undefined} icon={iconHouse}>Home</Button>
+            <Button href="/" variant="ghost" size="small" icon={iconHouse}>Home</Button>
           </li>
           <li>
-            <Button href="/games" variant="ghost" size="small" class={gamesActive ? 'active' : undefined} icon={iconGamepad2}>Games</Button>
+            <Button href="/games" variant="ghost" size="small" icon={iconGamepad2}>Games</Button>
           </li>
           <li>
-            <Button href="/help" variant="ghost" size="small" class={helpActive ? 'active' : undefined} icon={iconMessageCircleQuestion}>Help</Button>
+            <Button href="/help" variant="ghost" size="small" icon={iconMessageCircleQuestion}>Help</Button>
           </li>
           <li>
             {notificationDemo ? <TempNotificationMenu /> : <NotificationCenter />}

@@ -119,6 +119,7 @@
   backdrop-filter: blur(16px);
   transition: border-color 0.16s ease, transform 0.16s ease;
 }
+.ui-card--transparent { background: transparent; backdrop-filter: none; }
 .ui-card--tile:hover,
 .ui-card--media:hover,
 .ui-card--interactive:hover { border-color: var(--primary-color); transform: translateY(-2px); color: var(--text-color); }
@@ -153,7 +154,7 @@
 .ui-chip--filter.is-selected { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
 .ui-chip--filter:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.ui-badge { min-height: 24px; display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; border: 1px solid transparent; border-radius: 999px; font-size: 0.7rem; font-weight: 800; line-height: 1; white-space: nowrap; }
+.ui-badge { min-height: 24px; display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; border: 1px solid transparent; border-radius: 999px; font-size: 0.7rem; font-weight: 800; line-height: 1.15; white-space: nowrap; }
 .ui-badge--normal { border-color: rgba(18, 95, 49, 0.22); color: #fff7e6; background: #125f31; }
 .ui-badge--warning { border-color: #dcc01c; color: #2f343a; background: #f6d724; }
 .ui-badge--info { border-color: #4298ce; color: #2f343a; background: #5dade2; }

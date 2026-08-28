@@ -90,16 +90,7 @@ body.help-page main .container.form-shell {
 
 .help-view-all {
   flex-shrink: 0;
-  color: var(--primary-color);
-  font-size: 0.9rem;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
   white-space: nowrap;
-}
-
-.help-view-all:hover {
-  color: var(--secondary-color);
 }
 
 .help-empty {

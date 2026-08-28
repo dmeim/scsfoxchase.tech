@@ -288,10 +288,15 @@
     padding: 0;
 }
 
-.smart-search-submit {
+.home-unified-search-row .smart-search-submit {
     width: 68px;
+    height: auto;
+    min-height: 0;
+    align-self: stretch;
+    margin: 0;
     padding-left: 10px;
     padding-right: 16px;
+    border-radius: 0 999px 999px 0;
 }
 
 .smart-search-menu {
@@ -431,7 +436,7 @@
         display: none;
     }
 
-    .smart-search-submit {
+    .home-unified-search-row .smart-search-submit {
         width: 55px;
         padding-left: 8px;
         padding-right: 13px;

@@ -297,8 +297,9 @@ header h1 {
 }
 
 .header-auth-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.9);
-    color: var(--secondary-color);
+    border-color: var(--secondary-color);
+    background: var(--secondary-color);
+    color: #2f343a;
 }
 
 .header-auth-btn:disabled {
@@ -321,8 +322,9 @@ header h1 {
 }
 
 [data-theme="dark"] .header-auth-btn:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.78);
-    color: var(--primary-color);
+    border-color: var(--secondary-color);
+    background: var(--secondary-color);
+    color: #2f343a;
 }
 
 [data-theme="dark"] .header-auth-btn:disabled {
@@ -365,14 +367,16 @@ a.whiteboard-toggle:hover {
 
 .whiteboard-toggle:hover,
 .header-center.is-open .whiteboard-toggle {
-    background: rgba(255, 255, 255, 0.9);
-    color: var(--secondary-color);
+    border-color: var(--secondary-color);
+    background: var(--secondary-color);
+    color: #2f343a;
 }
 
 [data-theme="dark"] .whiteboard-toggle:hover,
 [data-theme="dark"] .header-center.is-open .whiteboard-toggle {
-    background: rgba(0, 0, 0, 0.78);
-    color: var(--primary-color);
+    border-color: var(--secondary-color);
+    background: var(--secondary-color);
+    color: #2f343a;
 }
 
 .whiteboard-toggle:focus-visible {
@@ -1400,31 +1404,41 @@ nav ul li a,
 
 .header-brand:hover,
 nav ul li a:hover,
-nav ul li a.active,
 .header-fullscreen-btn:hover {
-    background: rgba(255, 255, 255, 0.9);
+    border-color: var(--secondary-color);
+    background: var(--secondary-color);
 }
 
 [data-theme="dark"] .header-brand:hover,
 [data-theme="dark"] nav ul li a:hover,
-[data-theme="dark"] nav ul li a.active,
 [data-theme="dark"] .header-fullscreen-btn:hover {
-    background: rgba(0, 0, 0, 0.78);
+    border-color: var(--secondary-color);
+    background: var(--secondary-color);
 }
 
-/* Text hover: yellow in light, green in dark — logo image is unaffected */
+/* One hover treatment for header navigation and actions. */
 .header-brand:hover,
 .header-brand:hover h1,
 nav ul li a:hover,
 .header-fullscreen-btn:hover {
-    color: var(--secondary-color);
+    color: #2f343a;
 }
 
 [data-theme="dark"] .header-brand:hover,
 [data-theme="dark"] .header-brand:hover h1,
 [data-theme="dark"] nav ul li a:hover,
 [data-theme="dark"] .header-fullscreen-btn:hover {
-    color: var(--primary-color);
+    color: #2f343a;
+}
+
+header .ui-button:hover {
+    transform: none;
+}
+
+header .header-right nav .ui-button:hover {
+    border-color: var(--secondary-color);
+    background: var(--secondary-color);
+    color: #2f343a;
 }
 
 /* Theme switch: Light · System · Dark */
@@ -1954,10 +1968,12 @@ nav ul li a:hover,
     transition: var(--transition);
     flex-shrink: 0;
     align-self: stretch;
+    color: #fff;
 }
 
 .google-search-btn:hover {
     background-color: var(--secondary-color);
+    color: #2f343a;
 }
 
 .google-search-btn img {
@@ -1965,6 +1981,11 @@ nav ul li a:hover,
     height: clamp(18px, 1.8vw, 28px);
     object-fit: contain;
     filter: brightness(0) invert(1);
+}
+
+.google-search-btn svg {
+    width: clamp(18px, 1.4vw, 24px);
+    height: clamp(18px, 1.4vw, 24px);
 }
 
 .google-search-btn:hover img {

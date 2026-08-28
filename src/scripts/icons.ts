@@ -143,7 +143,7 @@ export const iconMoon = svg(
 );
 
 export const iconSunMoon = svg(
-  '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M2 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M20 12h2"/><path d="M16 12a4 4 0 0 1-4 4V8a4 4 0 0 1 4 4"/>'
+  '<path d="M12 2v2"/><path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715"/><path d="M16 12a4 4 0 0 0-4-4"/><path d="m19 5-1.256 1.256"/><path d="M20 12h2"/>'
 );
 
 /** Lucide WifiOff — offline page title */

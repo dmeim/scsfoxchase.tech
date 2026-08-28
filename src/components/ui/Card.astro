@@ -5,6 +5,7 @@ interface Props {
   as?: 'article' | 'section' | 'div' | 'li';
   href?: string;
   interactive?: boolean;
+  transparent?: boolean;
   class?: string;
   [key: string]: any;
 }
@@ -13,6 +14,7 @@ const {
   as = 'div',
   href,
   interactive = Boolean(href),
+  transparent = false,
   class: className,
   ...rest
 } = Astro.props;
@@ -20,7 +22,12 @@ const Tag = href ? 'a' : as;
 ---
 
 <Tag
-  class:list={['ui-card', interactive && 'ui-card--interactive', className]}
+  class:list={[
+    'ui-card',
+    interactive && 'ui-card--interactive',
+    transparent && 'ui-card--transparent',
+    className,
+  ]}
   href={href}
   {...rest}
 >

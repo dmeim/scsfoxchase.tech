@@ -8,7 +8,8 @@ export const uiClassNames = {
     join('ui-button', `ui-button--${variant}`, size !== 'default' && `ui-button--${size}`, extra),
   iconButton: (size: ComponentSize = 'default', extra?: string) =>
     join('ui-icon-button', size !== 'default' && `ui-icon-button--${size}`, extra),
-  card: (extra?: string) => join('ui-card', extra),
+  card: (extra?: string, options?: { transparent?: boolean }) =>
+    join('ui-card', options?.transparent && 'ui-card--transparent', extra),
   badge: (tone: BadgeTone = 'normal', extra?: string) => join('ui-badge', `ui-badge--${tone}`, extra),
   chip: (selected = false, extra?: string) => join('ui-chip', 'ui-chip--filter', selected && 'is-selected', extra),
   fieldControl: (extra?: string) => join('ui-field-control', extra),

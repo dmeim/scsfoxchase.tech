@@ -1,5 +1,13 @@
 /* Games catalog layout (/games). Legacy catalog styles live with /oldgames. */
 
+.games-section.newgames-layout {
+    background: #fff;
+}
+
+[data-theme="dark"] .games-section.newgames-layout {
+    background: #000;
+}
+
 .newgames-layout .container {
     max-width: 1600px;
 }
@@ -22,11 +30,11 @@
     padding: 16px;
     border: 1px solid var(--border-color);
     border-radius: 2px;
-    background-color: var(--light-bg);
+    background-color: #fff;
 }
 
 [data-theme="dark"] .newgames-sidebar {
-    background-color: var(--dark-bg);
+    background-color: #000;
 }
 
 .newgames-sidebar .filter-container {
@@ -59,11 +67,25 @@
     width: 100%;
     min-width: 0;
     max-width: none;
+    background: #fff;
 }
 
-.newgames-sidebar .search-bar input {
+.newgames-sidebar .ui-search-field.search-bar .ui-search-field-input {
     font-size: 0.9rem;
-    padding: 9px 12px 9px 36px;
+    padding: 9px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.newgames-sidebar .ui-search-field.search-bar .ui-search-field-input:focus {
+    border: 0;
+    box-shadow: none;
+}
+
+[data-theme="dark"] .newgames-sidebar .search-bar {
+    background: #000;
 }
 
 .newgames-sidebar .search-bar .search-icon {
@@ -364,10 +386,13 @@
 .game-detail-modal {
     position: fixed;
     inset: auto;
+    top: 50%;
+    left: 50%;
     z-index: 600;
     display: flex;
-    margin: auto;
+    margin: 0;
     padding: 18px;
+    transform: translate(-50%, -50%);
 }
 
 .game-detail-modal::backdrop {
@@ -377,7 +402,7 @@
 }
 
 .game-detail-dialog {
-    position: relative;
+    position: fixed;
     /* ~same image width as prior left column (~1.5× first modal) */
     width: min(780px, 100%);
     max-height: 88vh;
@@ -533,6 +558,14 @@
 
 .game-detail-chip-column .chip {
     font-size: 0.65rem;
+}
+
+.game-detail-chip-column .ui-badge.chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 10px 3px;
+    line-height: 1;
 }
 
 .game-detail-chips .chip-grade {

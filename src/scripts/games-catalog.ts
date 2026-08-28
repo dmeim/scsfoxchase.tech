@@ -261,7 +261,7 @@ class GamesManager {
   /** Candidate #10 Max media — minimal chrome, 16:9 image, one-line ellipsis title */
   createMaxMediaCard(game: Game): HTMLElement {
     const card = document.createElement('div');
-    card.className = uiClassNames.card('game-card game-card--max');
+    card.className = uiClassNames.card('game-card game-card--max', { transparent: true });
 
     const cardImage = document.createElement('a');
     cardImage.classList.add('game-card-image');
