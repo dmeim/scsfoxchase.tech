@@ -15,6 +15,15 @@ dist/
 .dev.vars.*
 !.dev.vars.example
 
+# Private keys and certificate bundles must never enter source control.
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Operator manifests/checkpoints/exports contain private owner metadata.
+/ops/
+
 .wrangler/
 
 # Self-hosted Excalidraw fonts (copied from node_modules on predev/prebuild)

@@ -60,12 +60,30 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response && response.status === 200) {
+        const contentType = response?.headers.get('content-type') || '';
+        const isHtml = contentType.toLowerCase().startsWith('text/html');
+        if (response && response.status === 200 && !isHtml) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          // Keep the response fast, but make the cache write part of this
+          // fetch event's lifetime so it cannot be abandoned on teardown.
+          event.waitUntil(
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.put(event.request, clone))
+              .catch(() => undefined)
+          );
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        const contentType = cached?.headers.get('content-type') || '';
+        // Never substitute a cached document here. Navigations have their
+        // dedicated /offline fallback above; this branch is for static assets.
+        if (contentType.toLowerCase().startsWith('text/html')) {
+          return Response.error();
+        }
+        return cached;
+      })
   );
 });

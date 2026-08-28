@@ -39,6 +39,10 @@ The site deploys to **Cloudflare Workers** (Worker name `scsfoxchase-tech`). Ass
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for Workers Builds settings and deploy details. Agent-oriented project notes live in [AGENTS.md](AGENTS.md).
 
+## Whiteboard storage boundary
+
+Whiteboard scenes remain in each board's SQLite-backed Durable Object. D1 stores only signed-in Recents / Library / Assets metadata. R2 stores previews and serves existing legacy media; historical `library/{ownerKey}/boards.json` and `assets.json` indexes remain retained as read-only migration sources. New image/video insertion is intentionally disabled. See the [whiteboard documentation](docs/whiteboard/README.md) and [operator runbook](docs/whiteboard/d1-library-operations.md) for the current cutover and rollback procedure.
+
 | File | Purpose |
 |------|---------|
 | `wrangler.jsonc` | Worker name + assets directory |

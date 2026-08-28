@@ -137,7 +137,7 @@ Help/catalog pages use `bodyClass="help-page"`; individual forms use `forms-page
 | Owner (signed-in saved) | `google:{accountId}` |
 | Scratch canvas media | `temp:{boardId}` (24h TTL) |
 | Media key | `assets/{ownerKey}/{assetId}` |
-| Cloud indexes | `library/{ownerKey}/boards.json`, `library/{ownerKey}/assets.json` |
+| Cloud metadata | D1 `WHITEBOARD_LIBRARY` tables; historical R2 `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json` source indexes are read-only |
 | Share code KV | `code:{1A2B3C4D}` (permanent; leftover `1A2B` still joins) |
 | Guest / device id | `localStorage` `scsfoxchase.whiteboard.deviceInstallId` (names + Follow id; not a board library) |
 

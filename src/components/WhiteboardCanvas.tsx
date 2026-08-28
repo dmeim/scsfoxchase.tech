@@ -26,12 +26,28 @@ import {
   CLIENT_PING_MS,
   elementsWithIncreasedVersion,
   getOrCreateSessionId,
+  isMutationId,
   mergeSceneElements,
+  preflightSceneMutationFrame,
   reconnectDelayMs,
   rememberElementVersions,
+  sceneOutboxAcknowledge,
+  sceneOutboxClearPending,
+  sceneOutboxQueue,
+  sceneOutboxReplay,
+  sceneOutboxRetry,
+  sceneOutboxStart,
+  sceneOutboxTerminalFailure,
+  SCENE_MALFORMED_CODE,
+  SCENE_MALFORMED_MESSAGE,
+  SCENE_PERSIST_FAILED_CODE,
+  SCENE_TOO_LARGE_CODE,
+  SCENE_TOO_LARGE_MESSAGE,
   SCENE_FLUSH_MS,
   type SceneAppState,
   type SceneElement,
+  type SceneMutationFrame,
+  type SceneOutboxState,
 } from '../lib/whiteboard-sync'
 import { getHostSecret } from '../scripts/whiteboard-library'
 // PHASE 3.2
@@ -43,11 +59,11 @@ import {
   useWhiteboardExcalidrawRoles,
 } from '../lib/whiteboard-excalidraw-roles'
 import {
+	bindPreviewLifecycle,
+  createPreviewCoordinator,
   exportBoardPreview,
-  PREVIEW_IDLE_MS,
-  PREVIEW_KEEPALIVE_MAX_BYTES,
-  previewExportBlockReason,
   uploadBoardPreview,
+  type PreviewCoordinator,
 } from '../lib/whiteboard-preview'
 
 declare global {
@@ -81,10 +97,26 @@ function ensureExcalidrawAssetPath() {
   window.EXCALIDRAW_ASSET_PATH = '/excalidraw/'
 }
 
+function immutableSceneElements(
+	elements: readonly SceneElement[],
+): readonly SceneElement[] {
+	return Object.freeze(
+		elements.map((element) => Object.freeze({ ...element })),
+	)
+}
+
 ensureExcalidrawAssetPath()
 
 type WhiteboardCanvasProps = {
   boardId?: string
+}
+
+type OutboxMutation = Omit<SceneMutationFrame, 'type'>
+type PendingSceneMutation = {
+  elements: readonly OrderedExcalidrawElement[]
+  appState: AppState
+  /** Revision observed when this coalesced snapshot was captured. */
+  baseRevision: number
 }
 
 /**
@@ -100,16 +132,23 @@ export default function WhiteboardCanvas({
   const wsRef = useRef<WebSocket | null>(null)
   const applyingRemoteRef = useRef(false)
   const lastSceneVersionRef = useRef(0)
-  const lastElementVersionsRef = useRef(new Map<string, number>())
+  /** Observed scene versions are only a local dirty detector. */
+  const observedElementVersionsRef = useRef(new Map<string, number>())
+  /** Versions are retired only after an ack for their exact mutation. */
+  const ackedElementVersionsRef = useRef(new Map<string, number>())
+  /** Server's durable scene order; mutation frames carry this as their base. */
+  const sceneRevisionRef = useRef(0)
+  const forceFullNextRef = useRef(false)
+  const outboxRef = useRef<
+    SceneOutboxState<OutboxMutation, PendingSceneMutation>
+  >({ inFlight: null, pending: null })
+  const mutationSocketRef = useRef<WebSocket | null>(null)
   const flushTimerRef = useRef<number | null>(null)
-  const pendingFlushRef = useRef<{
-    elements: readonly OrderedExcalidrawElement[]
-    appState: AppState
-  } | null>(null)
   const fullSyncCounterRef = useRef(0)
   const pendingRemoteRef = useRef<{
     elements: SceneElement[]
     appState: SceneAppState | null
+    revision?: number
   } | null>(null)
   /**
    * True once this Excalidraw instance has applied a server scene. Outgoing
@@ -130,12 +169,8 @@ export default function WhiteboardCanvas({
    */
   const helloOnSocketRef = useRef(false)
   const persistErrorToastAtRef = useRef(0)
-  const previewTimerRef = useRef<number | null>(null)
-  const lastPreviewBlobRef = useRef<Blob | null>(null)
-  const lastPreviewVersionRef = useRef(0)
-  const lastUploadedPreviewVersionRef = useRef(0)
   const previewSkipOwnerRef = useRef(false)
-  const previewUploadingRef = useRef(false)
+  const previewCoordinatorRef = useRef<PreviewCoordinator | null>(null)
   // PHASE 3.2
   const media = useWhiteboardExcalidrawFiles(boardId, apiRef)
 
@@ -201,7 +236,25 @@ export default function WhiteboardCanvas({
   }, [])
 
   const applyRemoteElements = useCallback(
-    (remoteElements: SceneElement[], remoteAppState: SceneAppState | null) => {
+    (
+      remoteElements: SceneElement[],
+      remoteAppState: SceneAppState | null,
+      revision?: number,
+    ) => {
+      // This is the server baseline, not the reconciled local scene. In
+      // particular, do not mark local-only elements as acknowledged merely
+      // because reconcileElements returned them in the rendered scene.
+      rememberElementVersions(
+        remoteElements,
+        ackedElementVersionsRef.current,
+      )
+      if (
+        typeof revision === 'number' &&
+        Number.isSafeInteger(revision) &&
+        revision >= sceneRevisionRef.current
+      ) {
+        sceneRevisionRef.current = revision
+      }
       const api = apiRef.current
       if (!api) {
         const pending = pendingRemoteRef.current
@@ -209,11 +262,16 @@ export default function WhiteboardCanvas({
           pendingRemoteRef.current = {
             elements: remoteElements,
             appState: remoteAppState,
+            revision,
           }
         } else {
           pendingRemoteRef.current = {
             elements: mergeSceneElements(pending.elements, remoteElements).next,
             appState: remoteAppState ?? pending.appState,
+            revision:
+              revision === undefined
+                ? pending.revision
+                : Math.max(revision, pending.revision ?? 0),
           }
         }
         return
@@ -243,9 +301,10 @@ export default function WhiteboardCanvas({
           captureUpdate: CaptureUpdateAction.NEVER,
         })
         lastSceneVersionRef.current = getSceneVersion(reconciled)
+        // Keep the local observed map separate from the server ack baseline.
         rememberElementVersions(
           reconciled as SceneElement[],
-          lastElementVersionsRef.current,
+          observedElementVersionsRef.current,
         )
         sceneHydratedRef.current = true
       } finally {
@@ -257,36 +316,95 @@ export default function WhiteboardCanvas({
     [],
   )
 
+  type MutationSendResult = 'sent' | 'not-ready' | 'terminal'
+
+  const showClientSceneError = useCallback((code: 'scene_too_large' | 'malformed_scene') => {
+    const now = Date.now()
+    if (now - persistErrorToastAtRef.current < 5000) return
+    persistErrorToastAtRef.current = now
+    apiRef.current?.setToast?.({
+      message:
+        code === SCENE_MALFORMED_CODE
+          ? SCENE_MALFORMED_MESSAGE
+          : SCENE_TOO_LARGE_MESSAGE,
+      duration: 8000,
+      closable: true,
+    })
+  }, [])
+
+  const sendMutationFrame = useCallback(
+    (
+      mutation: {
+        mutationId: string
+        elements: readonly SceneElement[]
+        full: boolean
+        databaseJson?: string
+        baseRevision?: number
+      },
+      ws: WebSocket,
+    ): MutationSendResult => {
+      if (
+        ws.readyState !== WebSocket.OPEN ||
+        !authSentRef.current ||
+        !sceneHydratedRef.current
+      ) {
+        return 'not-ready'
+      }
+      const preflight = preflightSceneMutationFrame(mutation)
+      if (!preflight.ok) {
+        showClientSceneError(preflight.code)
+        return 'terminal'
+      }
+      try {
+        ws.send(preflight.json)
+      } catch {
+        return 'not-ready'
+      }
+      mutationSocketRef.current = ws
+      return 'sent'
+    },
+    [showClientSceneError],
+  )
+
   const sendSceneUpdate = useCallback(
     (
       elements: readonly OrderedExcalidrawElement[],
       appState: AppState,
       forceFull: boolean,
-    ): boolean => {
+      forceDispatch = false,
+      baseRevisionOverride?: number,
+    ): MutationSendResult => {
       const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return false
-      if (!authSentRef.current) return false
-      if (applyingRemoteRef.current) return false
-      if (!canEditRef.current) return false
-      if (!sceneHydratedRef.current) return false
+      if (!ws || ws.readyState !== WebSocket.OPEN) return 'not-ready'
+      if (applyingRemoteRef.current) return 'not-ready'
+      if (!canEditRef.current || !sceneHydratedRef.current) return 'not-ready'
+      // Exactly one immutable mutation may be in flight. The caller retains
+      // the latest snapshot as the sole coalesced queued item until its ack.
+      if (outboxRef.current.inFlight) return 'not-ready'
 
       const version = getSceneVersion(elements)
-      if (!forceFull && version === lastSceneVersionRef.current) return true
-
       const asScene = elements as unknown as SceneElement[]
       const dirty = elementsWithIncreasedVersion(
         asScene,
-        lastElementVersionsRef.current,
+        ackedElementVersionsRef.current,
       )
-      if (!forceFull && dirty.length === 0) {
+      if (!forceDispatch && dirty.length === 0) {
         lastSceneVersionRef.current = version
-        return true
+        return 'sent'
       }
 
       fullSyncCounterRef.current += 1
-      const full = forceFull || fullSyncCounterRef.current % 15 === 0
-      const payload = full ? asScene : dirty
-
+      const full =
+        forceFull ||
+        forceFullNextRef.current ||
+        fullSyncCounterRef.current % 15 === 0
+      forceFullNextRef.current = false
+      // A coalesced local snapshot is an explicit delivery obligation. Keep
+      // its elements in the retry even if a peer frame happened to advance
+      // the server baseline to the same versions in the meantime.
+      const payload = immutableSceneElements(
+        full || forceDispatch ? asScene : dirty,
+      )
       let databaseJson: string | undefined
       try {
         databaseJson = serializeAsJSON(
@@ -296,41 +414,61 @@ export default function WhiteboardCanvas({
           'database',
         )
       } catch {
-        databaseJson = undefined
+        showClientSceneError(SCENE_MALFORMED_CODE)
+        return 'terminal'
       }
-
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'scene:update',
-            elements: payload,
-            full,
-            databaseJson,
-          }),
-        )
-      } catch {
-        return false
+      const mutationId = crypto.randomUUID()
+      if (!isMutationId(mutationId)) return 'terminal'
+      const mutation = {
+        mutationId,
+        elements: payload,
+        full,
+        baseRevision: baseRevisionOverride ?? sceneRevisionRef.current,
+        ...(databaseJson ? { databaseJson } : {}),
       }
-
-      rememberElementVersions(payload, lastElementVersionsRef.current)
+      const sendResult = sendMutationFrame(mutation, ws)
+      if (sendResult !== 'sent') return sendResult
+      outboxRef.current = sceneOutboxStart(outboxRef.current, mutation)
+      rememberElementVersions(payload, observedElementVersionsRef.current)
       lastSceneVersionRef.current = version
-      return true
+      return 'sent'
     },
-    [],
+    [sendMutationFrame, showClientSceneError],
   )
 
   const flushPending = useCallback(
     (forceFull = false) => {
-      const pending = pendingFlushRef.current
+      const ws = wsRef.current
+      const inFlight = sceneOutboxReplay(outboxRef.current)
+      if (inFlight) {
+        // A reconnect gets the exact same ID and payload. Do not replay it on
+        // the same socket merely because a remote scene arrived.
+        if (ws && mutationSocketRef.current !== ws) {
+          const replay = sendMutationFrame(inFlight, ws)
+          if (replay === 'terminal') {
+            outboxRef.current = sceneOutboxTerminalFailure(outboxRef.current)
+            mutationSocketRef.current = null
+            queueMicrotask(() => flushNowRef.current(false))
+          }
+        }
+        return
+      }
+      const pending = outboxRef.current.pending
       if (!pending) return
       const sent = sendSceneUpdate(
         pending.elements,
         pending.appState,
         forceFull,
+        true,
+        pending.baseRevision,
       )
-      if (sent) pendingFlushRef.current = null
+      if (sent === 'sent' || sent === 'terminal') {
+        if (sent === 'terminal') {
+          outboxRef.current = sceneOutboxClearPending(outboxRef.current)
+        }
+      }
     },
-    [sendSceneUpdate],
+    [sendMutationFrame, sendSceneUpdate],
   )
 
   const flushNow = useCallback(
@@ -346,78 +484,50 @@ export default function WhiteboardCanvas({
   const flushNowRef = useRef(flushNow)
   flushNowRef.current = flushNow
 
-  const clearPreviewTimer = useCallback(() => {
-    if (previewTimerRef.current == null) return
-    window.clearTimeout(previewTimerRef.current)
-    previewTimerRef.current = null
-  }, [])
-
-  const uploadCachedPreview = useCallback(
-    (keepalive: boolean) => {
-      if (!boardId || previewSkipOwnerRef.current) return
-      const blob = lastPreviewBlobRef.current
-      const version = lastPreviewVersionRef.current
-      if (!blob || version === 0) return
-      if (version === lastUploadedPreviewVersionRef.current) return
-      if (keepalive && blob.size > PREVIEW_KEEPALIVE_MAX_BYTES) return
-      previewUploadingRef.current = true
-      void uploadBoardPreview({ boardId, blob, keepalive })
-        .then((status) => {
-          if (status === 'skipped-not-owner') {
-            previewSkipOwnerRef.current = true
-            return
-          }
-          if (status === 'uploaded') {
-            lastUploadedPreviewVersionRef.current = version
-          }
-        })
-        .catch(() => {
-          // Keep the blob; a later idle or hide can retry.
-        })
-        .finally(() => {
-          previewUploadingRef.current = false
-        })
-    },
-    [boardId],
-  )
-  const uploadCachedPreviewRef = useRef(uploadCachedPreview)
-  uploadCachedPreviewRef.current = uploadCachedPreview
-
-  const captureBoardPreviewRef = useRef<() => void>(() => {})
-  const captureBoardPreview = useCallback(() => {
-    const api = apiRef.current
-    if (!api || !canEditRef.current || !sceneHydratedRef.current) return
-    if (previewSkipOwnerRef.current) return
-    const blocked = previewExportBlockReason(api)
-    if (blocked === 'empty') return
-    if (blocked === 'files') {
-      previewTimerRef.current = window.setTimeout(() => {
-        previewTimerRef.current = null
-        captureBoardPreviewRef.current()
-      }, PREVIEW_IDLE_MS)
-      return
-    }
-    const version = getSceneVersion(api.getSceneElementsIncludingDeleted())
-    void exportBoardPreview(api).then((blob) => {
-      if (!blob) return
-      lastPreviewBlobRef.current = blob
-      lastPreviewVersionRef.current = version
-      if (document.visibilityState === 'visible') {
-        uploadCachedPreviewRef.current(false)
-      }
+  if (!previewCoordinatorRef.current) {
+    previewCoordinatorRef.current = createPreviewCoordinator({
+      getVersion: () => {
+        const api = apiRef.current
+        return api ? getSceneVersion(api.getSceneElementsIncludingDeleted()) : 0
+      },
+      canCapture: () => {
+        const api = apiRef.current
+        return Boolean(
+          api &&
+            canEditRef.current &&
+            sceneHydratedRef.current &&
+            !previewSkipOwnerRef.current,
+        )
+      },
+      exportPreview: () => {
+        const api = apiRef.current
+        return api ? exportBoardPreview(api) : Promise.resolve(null)
+      },
+      uploadPreview: (blob, keepalive) =>
+        uploadBoardPreview({ boardId, blob, keepalive }),
+      isVisible: () =>
+        typeof document === 'undefined' || document.visibilityState === 'visible',
+      setTimer: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      clearTimer: (timer) => window.clearTimeout(timer),
+      onTerminalStatus: (status) => {
+        if (status === 'skipped-not-owner' || status === 'skipped-deleted') {
+          previewSkipOwnerRef.current = true
+        }
+      },
     })
-  }, [])
-  captureBoardPreviewRef.current = captureBoardPreview
+  }
+
+  useEffect(() => {
+    // Role changes can make capture illegal without remounting the component.
+    // Invalidate pending exports before a late completion can cache/upload.
+    previewCoordinatorRef.current?.invalidate()
+  }, [roles.canEdit, roles.role])
 
   const schedulePreviewCapture = useCallback(() => {
     if (previewSkipOwnerRef.current) return
     if (!isSignedIn()) return
-    clearPreviewTimer()
-    previewTimerRef.current = window.setTimeout(() => {
-      previewTimerRef.current = null
-      captureBoardPreviewRef.current()
-    }, PREVIEW_IDLE_MS)
-  }, [clearPreviewTimer])
+    previewCoordinatorRef.current?.scheduleCapture()
+  }, [])
 
   const handleChange = useCallback(
     (
@@ -433,7 +543,15 @@ export default function WhiteboardCanvas({
       if (!sceneHydratedRef.current) return
       const version = getSceneVersion(elements)
       if (version === lastSceneVersionRef.current) return
-      pendingFlushRef.current = { elements, appState }
+      outboxRef.current = sceneOutboxQueue(outboxRef.current, {
+        // Excalidraw reuses/mutates scene objects between callbacks. Keep one
+        // immutable queued snapshot so a retry cannot change underneath it.
+        elements: immutableSceneElements(
+          elements as unknown as SceneElement[],
+        ) as unknown as readonly OrderedExcalidrawElement[],
+        appState: { ...appState },
+        baseRevision: sceneRevisionRef.current,
+      })
       schedulePreviewCapture()
       if (flushTimerRef.current != null) return
       flushTimerRef.current = window.setTimeout(() => {
@@ -447,17 +565,12 @@ export default function WhiteboardCanvas({
   useEffect(() => {
     const persist = () => {
       flushNowRef.current(true)
-      uploadCachedPreviewRef.current(true)
+      previewCoordinatorRef.current?.persist()
     }
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') persist()
-    }
-    window.addEventListener('pagehide', persist)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      window.removeEventListener('pagehide', persist)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
+    return bindPreviewLifecycle(
+      { window, document },
+      { persist, visible: () => previewCoordinatorRef.current?.visible() },
+    )
   }, [])
 
   useEffect(() => {
@@ -472,6 +585,7 @@ export default function WhiteboardCanvas({
     let lastAuthTokenSent = ''
     let lastAuthSignedInSent = false
     let attempt = 0
+    let preserveReconnectBackoff = false
     let lastSocketJsAt = 0
 
     const clearAuthRetry = () => {
@@ -612,7 +726,8 @@ export default function WhiteboardCanvas({
       wsRef.current = ws
 
       ws.addEventListener('open', () => {
-        attempt = 0
+        if (!preserveReconnectBackoff) attempt = 0
+        preserveReconnectBackoff = false
         clearTimers()
         void sendConnectAuth(ws)
         pingTimer = window.setInterval(() => {
@@ -665,6 +780,36 @@ export default function WhiteboardCanvas({
           queueMicrotask(() => flushNowRef.current(true))
         }
 
+        if (
+          data.type === 'scene:ack' &&
+          isMutationId(data.mutationId) &&
+          (data.status === 'applied' ||
+            data.status === 'duplicate' ||
+            data.status === 'noop')
+        ) {
+          if (
+            typeof data.revision === 'number' &&
+            Number.isSafeInteger(data.revision) &&
+            data.revision >= sceneRevisionRef.current
+          ) {
+            sceneRevisionRef.current = data.revision
+          }
+          const inFlight = outboxRef.current.inFlight
+          if (inFlight?.mutationId === data.mutationId) {
+            outboxRef.current = sceneOutboxAcknowledge(
+              outboxRef.current,
+              (flight) => flight.mutationId === data.mutationId,
+            )
+            mutationSocketRef.current = null
+            rememberElementVersions(
+              inFlight.elements,
+              ackedElementVersionsRef.current,
+            )
+            queueMicrotask(() => flushNowRef.current(false))
+          }
+          return
+        }
+
         if (data.type === 'wb:error') {
           const message =
             typeof data.message === 'string' && data.message.trim()
@@ -678,6 +823,36 @@ export default function WhiteboardCanvas({
               duration: 8000,
               closable: true,
             })
+          }
+          const errorMutationId = isMutationId(data.mutationId)
+            ? data.mutationId
+            : null
+          const inFlight = outboxRef.current.inFlight
+          if (inFlight && inFlight.mutationId === errorMutationId) {
+            const terminal =
+              data.terminal === true ||
+              data.code === SCENE_TOO_LARGE_CODE ||
+              data.code === SCENE_MALFORMED_CODE
+            if (terminal) {
+              // Permanent failures are visible but must not retry forever.
+              // Re-send a complete snapshot on the next higher-version edit;
+              // the rejected payload may have contained elements unknown to
+              // the server (for example, an over-4000 scene).
+              forceFullNextRef.current = true
+              outboxRef.current = sceneOutboxTerminalFailure(outboxRef.current)
+              mutationSocketRef.current = null
+              queueMicrotask(() => flushNowRef.current(false))
+            } else if (data.code === SCENE_PERSIST_FAILED_CODE) {
+              // Keep the immutable mutation. A reconnect (with the normal
+              // bounded backoff) is the only retry trigger.
+              preserveReconnectBackoff = true
+              outboxRef.current = sceneOutboxRetry(outboxRef.current)
+              try {
+                ws.close(1011, 'retry scene persistence')
+              } catch {
+                // ignore a socket already closing
+              }
+            }
           }
           return
         }
@@ -693,7 +868,13 @@ export default function WhiteboardCanvas({
             data.appState && typeof data.appState === 'object'
               ? (data.appState as SceneAppState)
               : null
-          applyRemoteElements(elements, appState)
+          const revision =
+            typeof data.revision === 'number' &&
+            Number.isSafeInteger(data.revision) &&
+            data.revision >= 0
+              ? data.revision
+              : undefined
+          applyRemoteElements(elements, appState, revision)
           // The 101 and hello may now arrive before a cold scene read finishes.
           // Once the scene is hydrated, flush any edits retained across reconnect.
           flushNowRef.current(true)
@@ -705,19 +886,23 @@ export default function WhiteboardCanvas({
         clearTimers()
         clearAuthRetry()
         if (wsRef.current === ws) {
+          if (mutationSocketRef.current === ws) mutationSocketRef.current = null
           const api = apiRef.current
           if (
             api &&
             canEditRef.current &&
-            !pendingFlushRef.current &&
+            !outboxRef.current.pending &&
             !applyingRemoteRef.current
           ) {
             const elements = api.getSceneElementsIncludingDeleted()
             if (getSceneVersion(elements) !== lastSceneVersionRef.current) {
-              pendingFlushRef.current = {
-                elements,
-                appState: api.getAppState(),
-              }
+              outboxRef.current = sceneOutboxQueue(outboxRef.current, {
+                elements: immutableSceneElements(
+                  elements as unknown as SceneElement[],
+                ) as unknown as readonly OrderedExcalidrawElement[],
+                appState: { ...api.getAppState() },
+                baseRevision: sceneRevisionRef.current,
+              })
             }
           }
           wsRef.current = null
@@ -750,7 +935,8 @@ export default function WhiteboardCanvas({
       clearAuthRetry()
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
       flushNowRef.current(true)
-      uploadCachedPreviewRef.current(true)
+      previewCoordinatorRef.current?.persist()
+      previewCoordinatorRef.current?.dispose()
       const ws = wsRef.current
       wsRef.current = null
       try {
@@ -759,30 +945,33 @@ export default function WhiteboardCanvas({
         // ignore
       }
     }
-  }, [applyRemoteElements, boardId, sendSceneUpdate])
+  }, [
+    applyRemoteElements,
+    boardId,
+    sendSceneUpdate,
+  ])
 
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
+      // Excalidraw is remounted when its edit/view mode changes. Any export
+      // started by the prior API must not publish that old scene afterward.
+      previewCoordinatorRef.current?.invalidate()
       apiRef.current = api
       // New (or remounted, via key={canEdit}) instance starts empty; block
       // outgoing scene pushes until a server scene has been applied, and drop
       // anything the previous instance had queued so the empty starting scene
       // can never be flushed over the stored board.
       sceneHydratedRef.current = false
-      pendingFlushRef.current = null
+      outboxRef.current = sceneOutboxClearPending(outboxRef.current)
       if (flushTimerRef.current != null) {
         window.clearTimeout(flushTimerRef.current)
         flushTimerRef.current = null
-      }
-      if (previewTimerRef.current != null) {
-        window.clearTimeout(previewTimerRef.current)
-        previewTimerRef.current = null
       }
       // Version bookkeeping belongs to the old instance. Left in place, the new
       // empty instance's first onChange looks like a real edit and queues an
       // empty snapshot that a later forceFull flush would push as the scene.
       lastSceneVersionRef.current = 0
-      lastElementVersionsRef.current.clear()
+      observedElementVersionsRef.current.clear()
       unsubUserFollowRef.current?.()
       unsubUserFollowRef.current = api.onUserFollow((payload) => {
         onUserFollowRef.current(payload)
@@ -797,7 +986,11 @@ export default function WhiteboardCanvas({
       const pending = pendingRemoteRef.current
       if (pending) {
         pendingRemoteRef.current = null
-        applyRemoteElements(pending.elements, pending.appState)
+        applyRemoteElements(
+          pending.elements,
+          pending.appState,
+          pending.revision,
+        )
       } else if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'scene:request' }))
       }

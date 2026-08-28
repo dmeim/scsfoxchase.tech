@@ -1,6 +1,6 @@
 # Environment variables
 
-Runtime and build configuration for Worker `scsfoxchase-tech`. Bindings (DO / R2 / KV) live in `wrangler.jsonc` and do not need env vars — see [deployment.md](./deployment.md). Architecture and whiteboard auth flows: [architecture.md](./architecture.md), [whiteboard/](./whiteboard/).
+Runtime and build configuration for Worker `scsfoxchase-tech`. Bindings (DO / D1 / R2 / KV / Rate Limiting) live in `wrangler.jsonc` and do not need env vars — see [deployment.md](./deployment.md). Architecture and whiteboard auth flows: [architecture.md](./architecture.md), [whiteboard/](./whiteboard/).
 
 **Never commit secrets.** Do not put `CLERK_SECRET_KEY` (or any production secret) in git, `wrangler.jsonc`, or example files with real values. Use Wrangler secrets in production and gitignored local files for development.
 
@@ -26,11 +26,17 @@ Worker `Env` also accepts legacy alias `CLERK_PUBLISHABLE_KEY` as a fallback for
 
 ### Whiteboard storage
 
-No extra env vars for sync, assets, share codes, or fonts. Those use bindings plus self-hosted files under `public/excalidraw/`:
+No extra env vars for sync, assets, share codes, library metadata, connection admission, or fonts. Those use bindings plus self-hosted files under `public/excalidraw/`:
 
-- `WHITEBOARDS` — Durable Objects (Excalidraw scene JSON)
-- `WHITEBOARD_ASSETS` — R2 bucket `scsfoxchase-tech-whiteboards`
+- `WHITEBOARDS` — Durable Objects (Excalidraw scene JSON and room metadata)
+- `WHITEBOARD_LIBRARY` — D1 database `scsfoxchase-tech-whiteboard-library` in production; signed-in Library / Recents / Assets metadata only. Preview uses the separate `preview_database_id` in `wrangler.jsonc`; local test workers use `scsfoxchase-tech-whiteboard-library-worker-tests`.
+- `WHITEBOARD_ASSETS` — R2 bucket `scsfoxchase-tech-whiteboards` (previews and legacy media reads; historical library JSON source indexes retained)
 - `WHITEBOARD_CODES` — KV share-code index
+- `WHITEBOARD_CONNECT_LIMITER` — Rate Limiting binding, 120 admissions per 60 seconds keyed only by trusted `CF-Connecting-IP`
+
+Scenes never move to D1 or R2. New image/video insertion remains disabled. The historical R2 indexes are read-only migration sources; normal library CRUD uses D1.
+
+Apply migrations in filename order (`0000_create_whiteboard_library.sql`, `0001_enforce_library_owner_imports_owner_key.sql`, `0002_add_library_tombstones.sql`) local → preview → production. Production migration and the R2 backfill are separate operator steps and are not implied by setting the binding. See [d1-library-operations.md](./whiteboard/d1-library-operations.md).
 
 ## Where to set values
 
@@ -87,6 +93,10 @@ Client setup uses `publishableKey` + `afterSignOutUrl` only (no `domain` / `isSa
 
 Authorized parties checked by the Worker include `https://scsfoxchase.tech`, `https://www.scsfoxchase.tech`, and local Astro origins (`http://localhost:4321`, `http://127.0.0.1:4321`).
 
+## Observability configuration
+
+`wrangler.jsonc` enables structured Worker logs, disables invocation logs (`invocation_logs: false`), and sets production head sampling to `0.05` (5%). The application logger is allow-listed and emits only low-cardinality admission/auth transitions, throttles, scene rejection/persistence failures, and bounded storage-failure categories. It does not emit board/session IDs, IPs, URLs/paths, host secrets, JWTs, arbitrary exception strings, or scene contents.
+
 ## Related config files
 
 | File | Role |
@@ -96,3 +106,5 @@ Authorized parties checked by the Worker include `https://scsfoxchase.tech`, `ht
 | `wrangler.jsonc` | Bindings only; secrets are not stored here |
 | `public/_headers` | CSP allowlists for Clerk, Google, Turnstile, same-origin Whiteboard (fonts, WebSocket, player, YouTube/Vimeo) |
 | `worker-configuration.d.ts` | TypeScript `Env` shape for the Worker |
+| `migrations/` | Additive D1 schema migrations, applied in order |
+| `docs/whiteboard/d1-library-operations.md` | Scan/import/export, verification, and rollback runbook |

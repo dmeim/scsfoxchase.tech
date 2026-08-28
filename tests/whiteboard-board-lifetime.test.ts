@@ -38,6 +38,8 @@ class FakeWebSocketRequestResponsePair {
 
 type BoardPrivate = {
 	ensureShareCode: (boardId: string) => Promise<{ code: string } | null>
+	revokeActiveCode: () => Promise<void>
+	expireUnsavedBoard: () => Promise<void>
 	persistScene: (
 		scene: { elements: SceneElement[]; appState: Record<string, unknown> },
 		opts?: { force?: boolean },
@@ -49,7 +51,11 @@ type BoardPrivate = {
 		incoming: SceneElement[],
 		databaseJson: string | undefined,
 		full: boolean,
+		mutationId?: string | null,
+		baseRevision?: number,
 	) => Promise<void>
+	sendInitialScene: (ws: WebSocket) => Promise<void>
+	closeAfterSceneHydrationFailure: (ws: WebSocket, cause: unknown) => void
 	loadScene: () => Promise<{
 		elements: SceneElement[]
 		appState: Record<string, unknown>
@@ -71,9 +77,20 @@ function isSceneTableCreate(query: string): boolean {
 function createHarness(options?: {
 	expiresAt?: string
 	alarm?: number | null
-	sceneTable?: 'current' | 'legacy-v2' | 'v2' | 'missing'
+	sceneTable?:
+		| 'current'
+		| 'legacy-v2'
+		| 'legacy-live-only'
+		| 'legacy-database-only'
+		| 'partial-canonical-v2'
+		| 'v2'
+		| 'missing'
 	sceneJson?: string
+	v2SceneJson?: string
 	legacyLiveJson?: string
+	legacyDatabaseJson?: string
+	extraTables?: string[]
+	sceneReadFailure?: boolean
 }) {
 	const meta = new Map<string, unknown>()
 	if (options?.expiresAt) {
@@ -86,26 +103,37 @@ function createHarness(options?: {
 		options?.alarm === undefined ? null : options.alarm
 	const sceneTable = options?.sceneTable ?? 'current'
 	let sceneJson: string | null = options?.sceneJson ?? null
+	const v2SceneJson: string | null = options?.v2SceneJson ?? null
 	const kv = new Map<string, string>()
 	let initPromise = Promise.resolve()
 
 	const sqlExec = vi.fn((query: string, ...binds: unknown[]) => {
 		const q = String(query)
+		if (
+			options?.sceneReadFailure &&
+			/PRAGMA table_info\(excalidraw_scene\)/i.test(q)
+		) {
+			throw new Error('injected scene read failure')
+		}
 		if (/sqlite_master/i.test(q)) {
-			const names =
+			const sceneNames =
 				sceneTable === 'legacy-v2'
 					? ['excalidraw_scene', 'excalidraw_scene_v2']
+					: sceneTable === 'partial-canonical-v2'
+						? ['excalidraw_scene', 'excalidraw_scene_v2']
 					: sceneTable === 'current'
 						? ['excalidraw_scene']
 						: sceneTable === 'v2'
 							? ['excalidraw_scene_v2']
 							: []
+			const names = [...sceneNames, ...(options?.extraTables ?? [])]
 			return { toArray: () => names.map((name) => ({ name })) }
 		}
 		if (/PRAGMA table_info\(excalidraw_scene\)/i.test(q)) {
 			return {
 				toArray: () =>
-					sceneTable === 'current'
+					sceneTable === 'current' ||
+						sceneTable === 'partial-canonical-v2'
 						? [
 								{ name: 'id' },
 								{ name: 'scene_json' },
@@ -117,14 +145,28 @@ function createHarness(options?: {
 									{ name: 'live_json' },
 									{ name: 'database_json' },
 									{ name: 'updated_at' },
-								]
+								  ]
+							: sceneTable === 'legacy-live-only'
+								? [
+										{ name: 'id' },
+										{ name: 'live_json' },
+										{ name: 'updated_at' },
+									  ]
+								: sceneTable === 'legacy-database-only'
+									? [
+											{ name: 'id' },
+											{ name: 'database_json' },
+											{ name: 'updated_at' },
+										  ]
 						: [],
 			}
 		}
 		if (/PRAGMA table_info\(excalidraw_scene_v2\)/i.test(q)) {
 			return {
 				toArray: () =>
-					sceneTable === 'v2' || sceneTable === 'legacy-v2'
+					sceneTable === 'v2' ||
+					sceneTable === 'legacy-v2' ||
+					sceneTable === 'partial-canonical-v2'
 						? [
 								{ name: 'id' },
 								{ name: 'scene_json' },
@@ -133,22 +175,34 @@ function createHarness(options?: {
 						: [],
 			}
 		}
-		if (/SELECT scene_json FROM excalidraw_scene(?:_v2)?/i.test(q)) {
+		if (/SELECT scene_json FROM excalidraw_scene_v2/i.test(q)) {
+			return {
+				toArray: () =>
+					(v2SceneJson ?? sceneJson)
+						? [{ scene_json: v2SceneJson ?? sceneJson }]
+						: [],
+			}
+		}
+		if (/SELECT scene_json FROM excalidraw_scene/i.test(q)) {
 			return {
 				toArray: () => (sceneJson ? [{ scene_json: sceneJson }] : []),
 			}
 		}
-		if (/SELECT live_json, database_json FROM excalidraw_scene/i.test(q)) {
+		if (/^SELECT (?:live_json(?:, database_json)?|database_json)(?:, updated_at)? FROM excalidraw_scene/i.test(q)) {
 			return {
 				toArray: () =>
-					options?.legacyLiveJson
-						? [
-								{
-									live_json: options.legacyLiveJson,
-									database_json: '',
-								},
-							]
-						: [],
+					{
+						const row: Record<string, unknown> = {}
+						if (q.includes('live_json')) {
+							row.live_json = options?.legacyLiveJson ?? null
+						}
+						if (q.includes('database_json')) {
+							row.database_json = options?.legacyDatabaseJson ?? null
+						}
+						return options?.legacyLiveJson || options?.legacyDatabaseJson
+							? [row]
+							: []
+					},
 			}
 		}
 		if (isSceneInsert(q)) {
@@ -202,15 +256,35 @@ function createHarness(options?: {
 		WHITEBOARD_CODES: codes,
 	} as unknown as Env
 
-	return { meta, codes, storage, ctx, env, sqlExec, getInit: () => initPromise }
+	return {
+		meta,
+		kv,
+		codes,
+		storage,
+		ctx,
+		env,
+		sqlExec,
+		getInit: () => initPromise,
+	}
 }
 
 async function createBoard(options?: {
 	expiresAt?: string
 	alarm?: number | null
-	sceneTable?: 'current' | 'legacy-v2' | 'v2' | 'missing'
+	sceneTable?:
+		| 'current'
+		| 'legacy-v2'
+		| 'legacy-live-only'
+		| 'legacy-database-only'
+		| 'partial-canonical-v2'
+		| 'v2'
+		| 'missing'
 	sceneJson?: string
+	v2SceneJson?: string
 	legacyLiveJson?: string
+	legacyDatabaseJson?: string
+	extraTables?: string[]
+	sceneReadFailure?: boolean
 }) {
 	const harness = createHarness(options)
 	const board = new WhiteboardBoard(
@@ -224,6 +298,17 @@ async function createBoard(options?: {
 function sceneInsertCount(sqlExec: { mock: { calls: unknown[][] } }): number {
 	return sqlExec.mock.calls.filter((call) => isSceneInsert(String(call[0])))
 		.length
+}
+
+function deferred<T>(): {
+	promise: Promise<T>
+		resolve: (value: T | PromiseLike<T>) => void
+} {
+	let resolve!: (value: T | PromiseLike<T>) => void
+	const promise = new Promise<T>((res) => {
+		resolve = res
+	})
+	return { promise, resolve }
 }
 
 beforeEach(() => {
@@ -263,6 +348,28 @@ describe('shouldApplySocketRoleUpgrade', () => {
 })
 
 describe('WhiteboardBoard share-code and persist lifetime', () => {
+	it('closes a socket with a reconnectable code after initial scene hydration fails', async () => {
+		const { board } = await createBoard({ sceneReadFailure: true })
+		const ws = {
+			send: vi.fn(),
+			close: vi.fn(),
+		} as unknown as WebSocket
+
+		await priv(board).sendInitialScene(ws)
+
+		expect(ws.send).toHaveBeenCalledTimes(1)
+		const error = JSON.parse(
+			String((ws.send as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0]),
+		) as Record<string, unknown>
+		expect(error).toMatchObject({
+			type: 'wb:error',
+			code: 'persist_failed',
+			mutationId: null,
+			terminal: false,
+		})
+		expect(ws.close).toHaveBeenCalledWith(4001, 'scene hydration failed')
+	})
+
 	it('does not inspect or mutate storage in the constructor', async () => {
 		const harness = createHarness()
 		new WhiteboardBoard(
@@ -293,6 +400,65 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		expect(
 			sqlExec.mock.calls.filter((call) => isSceneTableCreate(String(call[0]))),
 		).toHaveLength(1)
+	})
+
+	it('does not write schema or metadata on a second object lifetime', async () => {
+		const first = await createBoard()
+		const request = () =>
+			new Request(
+				`https://scsfoxchase.tech/api/whiteboard/boards/${BOARD_ID}/meta`,
+			)
+		await first.board.fetch(request())
+		const sqlCalls = first.sqlExec.mock.calls.length
+		const storagePutCalls = first.storage.put.mock.calls.length
+
+		const secondBoard = new WhiteboardBoard(
+			first.ctx as unknown as DurableObjectState,
+			first.env,
+		)
+		await first.getInit()
+		await secondBoard.fetch(request())
+
+		expect(first.sqlExec.mock.calls).toHaveLength(sqlCalls)
+		expect(first.storage.put.mock.calls).toHaveLength(storagePutCalls)
+	})
+
+	it('keeps historical tldraw tables and the Excalidraw scene on initialization', async () => {
+		const sceneJson = JSON.stringify({
+			elements: [
+				{
+					id: 'excalidraw-survivor',
+					type: 'rectangle',
+					version: 2,
+					versionNonce: 11,
+				},
+			],
+			appState: { viewBackgroundColor: '#ffffff' },
+		})
+		const { board, storage, sqlExec } = await createBoard({
+			sceneTable: 'current',
+			sceneJson,
+			extraTables: ['tldraw_document', 'tldraw_snapshot'],
+		})
+
+		const response = await board.fetch(
+			new Request(
+				`https://scsfoxchase.tech/api/whiteboard/boards/${BOARD_ID}/meta`,
+			),
+		)
+		expect(response.status).toBe(200)
+		expect(storage.deleteAll).not.toHaveBeenCalled()
+		expect(
+			sqlExec.mock.calls.some((call) =>
+				/\b(?:ALTER|DROP|DELETE)\b/i.test(String(call[0])),
+			),
+		).toBe(false)
+
+		const scene = await priv(board).loadScene()
+		expect(scene.elements.map((element) => element.id)).toEqual([
+			'excalidraw-survivor',
+		])
+		expect(scene.appState).toEqual({ viewBackgroundColor: '#ffffff' })
 	})
 
 	it('reads an interrupted v2 scene without schema writes', async () => {
@@ -356,6 +522,123 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		).toBe(false)
 	})
 
+	it('reads a mixed legacy Excalidraw and tldraw schema without wake writes', async () => {
+		const legacyLiveJson = JSON.stringify({
+			elements: [
+				{
+					id: 'legacy-with-tldraw',
+					type: 'ellipse',
+					version: 3,
+					versionNonce: 13,
+				},
+			],
+			appState: { viewBackgroundColor: '#fefefe' },
+		})
+		const { board, sqlExec } = await createBoard({
+			expiresAt: '2026-08-28T12:00:00.000Z',
+			sceneTable: 'legacy-v2',
+			legacyLiveJson,
+			extraTables: ['tldraw_document'],
+		})
+
+		const scene = await priv(board).loadScene()
+		expect(scene.elements.map((element) => element.id)).toEqual([
+			'legacy-with-tldraw',
+		])
+		expect(scene.appState).toEqual({ viewBackgroundColor: '#fefefe' })
+		expect(
+			sqlExec.mock.calls.some((call) =>
+				/\b(?:CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)\b/i.test(String(call[0])),
+			),
+		).toBe(false)
+	})
+
+	it('reads a partial legacy live_json schema without selecting database_json', async () => {
+		const legacyLiveJson = JSON.stringify({
+			elements: [
+				{ id: 'legacy-live-only', type: 'rectangle', version: 1, versionNonce: 2 },
+			],
+			appState: { viewBackgroundColor: '#abcabc' },
+		})
+		const { board, sqlExec } = await createBoard({
+			sceneTable: 'legacy-live-only',
+			legacyLiveJson,
+		})
+
+		const scene = await priv(board).loadScene()
+
+		expect(scene.elements.map((element) => element.id)).toEqual([
+			'legacy-live-only',
+		])
+		expect(
+			sqlExec.mock.calls.some((call) =>
+				/^SELECT .*database_json.*FROM excalidraw_scene/i.test(String(call[0])),
+			),
+		).toBe(false)
+	})
+
+	it('reads a partial legacy database_json schema without selecting live_json', async () => {
+		const legacyDatabaseJson = JSON.stringify({
+			type: 'excalidraw',
+			version: 2,
+			source: 'https://scsfoxchase.tech',
+			elements: [
+				{ id: 'legacy-database-only', type: 'ellipse', version: 2, versionNonce: 3 },
+			],
+			appState: { viewBackgroundColor: '#defdef' },
+		})
+		const { board, sqlExec } = await createBoard({
+			sceneTable: 'legacy-database-only',
+			legacyDatabaseJson,
+		})
+
+		const scene = await priv(board).loadScene()
+
+		expect(scene.elements.map((element) => element.id)).toEqual([
+			'legacy-database-only',
+		])
+		expect(scene.appState).toEqual({ viewBackgroundColor: '#defdef' })
+		expect(
+			sqlExec.mock.calls.some((call) =>
+				/^SELECT .*live_json.*FROM excalidraw_scene/i.test(String(call[0])),
+			),
+		).toBe(false)
+	})
+
+	it('falls back to a valid v2 row after a partial canonical migration', async () => {
+		const v2SceneJson = JSON.stringify({
+			elements: [
+				{
+					id: 'partial-migration-survivor',
+					type: 'diamond',
+					version: 2,
+					versionNonce: 17,
+				},
+			],
+			appState: { viewBackgroundColor: '#ededed' },
+		})
+		const { board, sqlExec } = await createBoard({
+			expiresAt: '2026-08-28T12:00:00.000Z',
+			sceneTable: 'partial-canonical-v2',
+			sceneJson: 'not-json',
+			v2SceneJson,
+		})
+
+		const scene = await priv(board).loadScene()
+
+		expect(scene.elements.map((element) => element.id)).toEqual([
+			'partial-migration-survivor',
+		])
+		expect(scene.appState).toEqual({ viewBackgroundColor: '#ededed' })
+		expect(
+			sqlExec.mock.calls.some((call) =>
+				/\b(?:CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)\b/i.test(
+					String(call[0]),
+				),
+			),
+		).toBe(false)
+	})
+
 	it('ensureShareCode with an existing code does not KV put', async () => {
 		const { board, codes, storage, meta } = await createBoard()
 		meta.set('meta:activeCode', SHARE_CODE)
@@ -365,6 +648,114 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		expect(state).toEqual({ code: SHARE_CODE })
 		expect(codes.put).not.toHaveBeenCalled()
 		expect(storage.delete).not.toHaveBeenCalledWith('meta:codeExpiresAt')
+	})
+
+	it('coalesces concurrent first-time share-code mints', async () => {
+		const { board, codes } = await createBoard()
+
+		const results = await Promise.all(
+			Array.from({ length: 8 }, () => priv(board).ensureShareCode(BOARD_ID)),
+		)
+
+		expect(results.every((result) => result?.code === results[0]?.code)).toBe(
+			true,
+		)
+		expect(results[0]?.code).toMatch(/^[0-9A-Z]{8}$/)
+		expect(codes.put).toHaveBeenCalledTimes(1)
+		expect(codes.put).toHaveBeenCalledWith(
+			`code:${results[0]?.code}`,
+			JSON.stringify({ boardId: BOARD_ID }),
+		)
+	})
+
+	it('does not return a code when revoke races a deferred mint', async () => {
+		const { board, codes, kv, meta } = await createBoard()
+		const putStarted = deferred<{ key: string }>()
+		const releasePut = deferred<void>()
+		codes.put.mockImplementationOnce(async (key: string, value: string) => {
+			kv.set(key, value)
+			putStarted.resolve({ key })
+			await releasePut.promise
+		})
+
+		const pendingMint = priv(board).ensureShareCode(BOARD_ID)
+		const { key } = await putStarted.promise
+		const pendingRevoke = priv(board).revokeActiveCode()
+		releasePut.resolve()
+
+		expect(await pendingMint).toBeNull()
+		await pendingRevoke
+		expect(meta.has('meta:activeCode')).toBe(false)
+		expect(kv.has(key)).toBe(false)
+		expect(codes.delete).toHaveBeenCalledWith(key)
+	})
+
+	it('cleans up an ambiguous KV put failure before retrying', async () => {
+		const { board, codes, kv, meta } = await createBoard()
+		codes.put.mockImplementationOnce(async (key: string, value: string) => {
+			kv.set(key, value)
+			throw new Error('KV put failed after commit')
+		})
+
+		await expect(priv(board).ensureShareCode(BOARD_ID)).rejects.toThrow(
+			'KV put failed after commit',
+		)
+		const failedKey = String(codes.put.mock.calls[0]?.[0])
+		expect(codes.delete).toHaveBeenCalledWith(failedKey)
+		expect(kv.has(failedKey)).toBe(false)
+		expect(meta.has('meta:activeCode')).toBe(false)
+
+		const retry = await priv(board).ensureShareCode(BOARD_ID)
+		expect(retry?.code).toMatch(/^[0-9A-Z]{8}$/)
+		expect(kv.get(`code:${retry?.code}`)).toBe(
+			JSON.stringify({ boardId: BOARD_ID }),
+		)
+	})
+
+	it('compensates an active-code write failure and permits a clean retry', async () => {
+		const { board, codes, kv, meta, storage } = await createBoard()
+		let failActiveWrite = true
+		storage.put.mockImplementation(async (key: string, value: unknown) => {
+			if (key === 'meta:activeCode' && failActiveWrite) {
+				failActiveWrite = false
+				throw new Error('active-code write failed')
+			}
+			meta.set(key, value)
+		})
+
+		await expect(priv(board).ensureShareCode(BOARD_ID)).rejects.toThrow(
+			'active-code write failed',
+		)
+		const failedKey = String(codes.put.mock.calls[0]?.[0])
+		expect(codes.delete).toHaveBeenCalledWith(failedKey)
+		expect(kv.has(failedKey)).toBe(false)
+		expect(meta.has('meta:activeCode')).toBe(false)
+
+		const retry = await priv(board).ensureShareCode(BOARD_ID)
+		expect(retry?.code).toMatch(/^[0-9A-Z]{8}$/)
+		expect(meta.get('meta:activeCode')).toBe(retry?.code)
+		expect(kv.size).toBe(1)
+	})
+
+	it('serializes expiry behind an in-flight mint', async () => {
+		const { board, codes, kv, meta } = await createBoard()
+		const putStarted = deferred<{ key: string }>()
+		const releasePut = deferred<void>()
+		codes.put.mockImplementationOnce(async (key: string, value: string) => {
+			kv.set(key, value)
+			putStarted.resolve({ key })
+			await releasePut.promise
+		})
+
+		const pendingMint = priv(board).ensureShareCode(BOARD_ID)
+		const { key } = await putStarted.promise
+		const pendingExpiry = priv(board).expireUnsavedBoard()
+		releasePut.resolve()
+
+		expect(await pendingMint).toBeNull()
+		await pendingExpiry
+		expect(kv.has(key)).toBe(false)
+		expect(meta.has('meta:activeCode')).toBe(false)
 	})
 
 	it('deletes leftover codeExpiresAt only when that key exists', async () => {
@@ -451,6 +842,44 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		)
 
 		expect(sceneInsertCount(sqlExec)).toBe(inserts + 1)
+	})
+
+	it('keeps a failed mutation retryable without advancing its scene revision', async () => {
+		const { board, sqlExec } = await createBoard()
+		priv(board).persistScene({ elements: [], appState: {} })
+		const original = sqlExec.getMockImplementation()
+		if (!original) throw new Error('missing SQL harness implementation')
+		sqlExec.mockImplementationOnce((query: string, ...binds: unknown[]) => {
+			if (isSceneInsert(query)) throw new Error('injected scene write failure')
+			return original(query, ...binds)
+		})
+		const element = {
+			id: 'retryable-scene-element',
+			type: 'rectangle',
+			version: 1,
+			versionNonce: 1,
+		}
+		const mutationId = crypto.randomUUID()
+		await expect(
+			priv(board).applySceneUpdate(
+				'writer-session',
+				[element],
+				undefined,
+				false,
+				mutationId,
+				1,
+			),
+		).rejects.toThrow()
+		await expect(
+			priv(board).applySceneUpdate(
+				'writer-session',
+				[element],
+				undefined,
+				false,
+				mutationId,
+				1,
+			),
+		).resolves.toBe('applied')
 	})
 
 	it('skips setAlarm when an alarm is already that time', async () => {

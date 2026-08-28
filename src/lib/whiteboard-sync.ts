@@ -17,12 +17,22 @@ export const RECONNECT_MAX_MS = 60_000
 export const FULL_RESYNC_EVERY = 20
 export const MAX_SCENE_ELEMENTS = 4000
 export const MAX_SCENE_JSON_BYTES = 2_000_000
+/**
+ * A scene update may contain one bounded live scene and one bounded database
+ * scene, plus a small JSON envelope. Keep the pre-parse guard below that
+ * combined worst case while leaving room for envelope/UTF-8 overhead.
+ */
+export const MAX_SCENE_FRAME_BYTES =
+	MAX_SCENE_JSON_BYTES * 2 + 128 * 1024
 export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
 export const SCENE_PERSIST_FAILED_CODE = 'persist_failed' as const
+export const SCENE_MALFORMED_CODE = 'malformed_scene' as const
 export const SCENE_TOO_LARGE_MESSAGE =
 	'This board is too large to save. The last change was not stored.'
 export const SCENE_PERSIST_FAILED_MESSAGE =
 	'Could not save this board. The last change was not stored.'
+export const SCENE_MALFORMED_MESSAGE =
+	'This board update was invalid and was not stored.'
 
 /** Exponential reconnect backoff with a one-minute outage ceiling. */
 export function reconnectDelayMs(attempt: number): number {
@@ -35,24 +45,39 @@ export function reconnectDelayMs(attempt: number): number {
 export type SceneErrorCode =
 	| typeof SCENE_TOO_LARGE_CODE
 	| typeof SCENE_PERSIST_FAILED_CODE
+	| typeof SCENE_MALFORMED_CODE
 
 export type SceneErrorMessage = {
 	type: 'wb:error'
 	code: SceneErrorCode
 	message: string
+	mutationId: string | null
+	terminal: boolean
 }
 
 export class ScenePersistError extends Error {
 	readonly code: SceneErrorCode
-	constructor(code: SceneErrorCode, message: string) {
+	readonly terminal: boolean
+	constructor(
+		code: SceneErrorCode,
+		message: string,
+		terminal = code !== SCENE_PERSIST_FAILED_CODE,
+	) {
 		super(message)
 		this.name = 'ScenePersistError'
 		this.code = code
+		this.terminal = terminal
 	}
 }
 
 export function sceneTooLargeError(): ScenePersistError {
 	return new ScenePersistError(SCENE_TOO_LARGE_CODE, SCENE_TOO_LARGE_MESSAGE)
+}
+
+export function sceneMalformedError(
+	message = SCENE_MALFORMED_MESSAGE,
+): ScenePersistError {
+	return new ScenePersistError(SCENE_MALFORMED_CODE, message)
 }
 
 export function asScenePersistError(err: unknown): ScenePersistError {
@@ -222,13 +247,99 @@ export type SceneSyncMessage = {
 	type: 'scene:sync'
 	elements: SceneElement[]
 	appState: SceneAppState
+	/** Monotonic scene revision used to order database appState writes. */
+	revision?: number
 }
 
 export type SceneUpdateMessage = {
 	type: 'scene:update'
 	elements: SceneElement[]
+	/** Required for new clients; omitted only for rolling-deploy compatibility. */
+	mutationId?: string
 	full?: boolean
 	databaseJson?: string
+	/** Revision observed by the sender before creating this mutation. */
+	baseRevision?: number
+	/** Server revision on broadcasts; absent on rolling-deploy peers. */
+	revision?: number
+}
+
+/** The wire payload used by current clients for one durable mutation. */
+export type SceneMutationFrame = {
+	type: 'scene:update'
+	mutationId: string
+	elements: readonly SceneElement[]
+	full: boolean
+	databaseJson?: string
+	/** Required for appState ordering by current clients. */
+	baseRevision?: number
+}
+
+/** Mutable-ref state for the client outbox; one flight plus one latest queue. */
+export type SceneOutboxState<InFlight, Pending> = {
+	inFlight: InFlight | null
+	pending: Pending | null
+}
+
+export function sceneOutboxStart<InFlight, Pending>(
+	state: SceneOutboxState<InFlight, Pending>,
+	inFlight: InFlight,
+): SceneOutboxState<InFlight, Pending> {
+	if (state.inFlight !== null) return state
+	return { inFlight, pending: null }
+}
+
+/** Keep only the newest local snapshot while a mutation is in flight. */
+export function sceneOutboxQueue<InFlight, Pending>(
+	state: SceneOutboxState<InFlight, Pending>,
+	pending: Pending,
+): SceneOutboxState<InFlight, Pending> {
+	return { inFlight: state.inFlight, pending }
+}
+
+/** An ack retires only its matching immutable flight; pending remains queued. */
+export function sceneOutboxAcknowledge<InFlight, Pending>(
+	state: SceneOutboxState<InFlight, Pending>,
+	matches: (inFlight: InFlight) => boolean,
+): SceneOutboxState<InFlight, Pending> {
+	if (state.inFlight === null || !matches(state.inFlight)) return state
+	return { inFlight: null, pending: state.pending }
+}
+
+/** Transient persistence failure/reconnect: retain both flight and pending. */
+export function sceneOutboxRetry<InFlight, Pending>(
+	state: SceneOutboxState<InFlight, Pending>,
+): SceneOutboxState<InFlight, Pending> {
+	return state
+}
+
+/** Replay exactly the immutable flight on a new socket. */
+export function sceneOutboxReplay<InFlight, Pending>(
+	state: SceneOutboxState<InFlight, Pending>,
+): InFlight | null {
+	return state.inFlight
+}
+
+/** Terminal preflight/protocol failure drops only the rejected flight. */
+export function sceneOutboxTerminalFailure<InFlight, Pending>(
+	state: SceneOutboxState<InFlight, Pending>,
+): SceneOutboxState<InFlight, Pending> {
+	return { inFlight: null, pending: state.pending }
+}
+
+export function sceneOutboxClearPending<InFlight, Pending>(
+	state: SceneOutboxState<InFlight, Pending>,
+): SceneOutboxState<InFlight, Pending> {
+	return { inFlight: state.inFlight, pending: null }
+}
+
+export type SceneAckStatus = 'applied' | 'duplicate' | 'noop'
+
+export type SceneAckMessage = {
+	type: 'scene:ack'
+	mutationId: string
+	status: SceneAckStatus
+	revision?: number
 }
 
 export type SceneRequestMessage = {
@@ -243,9 +354,11 @@ export function isSceneElement(value: unknown): value is SceneElement {
 		el.id.length > 0 &&
 		el.id.length <= 64 &&
 		typeof el.version === 'number' &&
-		Number.isFinite(el.version) &&
+		Number.isSafeInteger(el.version) &&
+		el.version >= 0 &&
 		typeof el.versionNonce === 'number' &&
-		Number.isFinite(el.versionNonce)
+		Number.isSafeInteger(el.versionNonce) &&
+		el.versionNonce >= 0
 	)
 }
 
@@ -272,11 +385,17 @@ function collectSceneElements(
  * persist or broadcast a silently trimmed scene.
  */
 export function parseSceneElements(value: unknown): SceneElement[] {
-	const { elements, overflow } = collectSceneElements(
-		value,
-		MAX_SCENE_ELEMENTS,
-	)
-	if (overflow) throw sceneTooLargeError()
+	if (!Array.isArray(value)) {
+		throw sceneMalformedError('Scene elements must be an array.')
+	}
+	if (value.length > MAX_SCENE_ELEMENTS) throw sceneTooLargeError()
+	const elements: SceneElement[] = []
+	for (const item of value) {
+		if (!isSceneElement(item)) {
+			throw sceneMalformedError('Scene contains a malformed element.')
+		}
+		elements.push(item)
+	}
 	return elements
 }
 
@@ -353,21 +472,20 @@ export function toDatabaseScene(
 }
 
 export function parseDatabaseScene(raw: string): DatabaseScene | null {
-	if (raw.length > MAX_SCENE_JSON_BYTES) return null
+	if (utf8ByteLength(raw) > MAX_SCENE_JSON_BYTES) return null
 	try {
 		const parsed = JSON.parse(raw) as unknown
 		if (!parsed || typeof parsed !== 'object') return null
 		const data = parsed as Record<string, unknown>
 		if (data.type !== 'excalidraw') return null
-		const { elements, overflow } = collectSceneElements(
-			data.elements,
-			MAX_SCENE_ELEMENTS,
-		)
-		if (overflow) return null
+		const elements = parseSceneElements(data.elements)
 		const appState =
-			data.appState && typeof data.appState === 'object'
-				? (data.appState as SceneAppState)
-				: {}
+			data.appState &&
+			typeof data.appState === 'object' &&
+			!Array.isArray(data.appState)
+			? (data.appState as SceneAppState)
+			: null
+		if (!appState) return null
 		return {
 			type: 'excalidraw',
 			version: typeof data.version === 'number' ? data.version : 2,
@@ -381,6 +499,59 @@ export function parseDatabaseScene(raw: string): DatabaseScene | null {
 	} catch {
 		return null
 	}
+}
+
+/** Count the bytes that will cross the WebSocket/storage boundary. */
+export function utf8ByteLength(value: string): number {
+	return new TextEncoder().encode(value).byteLength
+}
+
+/**
+ * Build and preflight a scene mutation before it crosses the WebSocket. The
+ * database scene has its own storage limit and the complete envelope has a
+ * separate frame limit; checking both here keeps a local oversize terminal.
+ */
+export function preflightSceneMutationFrame(
+	mutation: Omit<SceneMutationFrame, 'type'> | SceneMutationFrame,
+):
+	| { ok: true; json: string }
+	| {
+			ok: false
+			code: typeof SCENE_TOO_LARGE_CODE | typeof SCENE_MALFORMED_CODE
+	  } {
+	try {
+		if (
+			mutation.databaseJson !== undefined &&
+			utf8ByteLength(mutation.databaseJson) > MAX_SCENE_JSON_BYTES
+		) {
+			return { ok: false, code: SCENE_TOO_LARGE_CODE }
+		}
+		const json = JSON.stringify({
+			type: 'scene:update',
+			mutationId: mutation.mutationId,
+			elements: mutation.elements,
+			full: mutation.full,
+			...(mutation.databaseJson !== undefined
+				? { databaseJson: mutation.databaseJson }
+				: {}),
+			...(mutation.baseRevision !== undefined
+				? { baseRevision: mutation.baseRevision }
+				: {}),
+		})
+		if (utf8ByteLength(json) > MAX_SCENE_FRAME_BYTES) {
+			return { ok: false, code: SCENE_TOO_LARGE_CODE }
+		}
+		return { ok: true, json }
+	} catch {
+		return { ok: false, code: SCENE_MALFORMED_CODE }
+	}
+}
+
+export const MUTATION_ID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function isMutationId(value: unknown): value is string {
+	return typeof value === 'string' && MUTATION_ID_RE.test(value)
 }
 
 export function stringifyDatabaseScene(scene: DatabaseScene): string {

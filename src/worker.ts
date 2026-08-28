@@ -6,7 +6,7 @@
  * - Binding WHITEBOARD_ASSETS → R2 bucket scsfoxchase-tech-whiteboards
  *   (R2 names disallow `_`; product family keeps the underscore spelling)
  * - Binding WHITEBOARD_CODES → KV share-code → boardId index (permanent per board)
- * - Cloud library indexes (Phase 4b): R2 JSON under library/{ownerKey}/*.json
+ * - Cloud library metadata: D1, with historical R2 indexes kept read-only
  * - Auth: Clerk (CLERK_SECRET_KEY + PUBLIC_CLERK_PUBLISHABLE_KEY)
  */
 import { handle } from '@astrojs/cloudflare/handler'
@@ -21,6 +21,21 @@ import { handleForceFollowRequest } from './worker/forceFollowRoutes'
 import { handleParticipantRequest } from './worker/participantRoutes'
 import { handleAdminRequest } from './worker/adminRoutes'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
+import {
+	admitWhiteboardConnect,
+	isValidConnectSessionId,
+} from './worker/connectAdmission'
+import {
+	copyProofHeaders,
+	forwardLegacyProofHeaders,
+	jsonHeaders,
+	jsonResponse,
+	logWhiteboardEvent,
+	JsonBodyError,
+	readBoundedJsonBody,
+	readHostProof,
+	withJsonHeaders,
+} from './worker/httpSecurity'
 
 declare const __BUILD_SHA__: string
 declare const __BUILD_TIME__: string
@@ -34,26 +49,6 @@ function isBoardUuid(value: string): boolean {
 	return UUID_RE.test(value)
 }
 
-function looksLikeJwt(raw: string | null): boolean {
-	if (!raw) return false
-	const parts = raw.trim().split('.')
-	return parts.length === 3 && raw.trim().length > 40
-}
-
-/** Host proof only — skip JWT-shaped leftovers so Clerk Bearer stays Clerk. */
-function extractHostSecret(request: Request, url: URL): string | null {
-	const header = request.headers.get('X-Board-Host')?.trim()
-	if (header && !looksLikeJwt(header)) return header
-	const auth = request.headers.get('Authorization')
-	if (auth?.toLowerCase().startsWith('bearer ')) {
-		const token = auth.slice(7).trim()
-		if (token && !looksLikeJwt(token)) return token
-	}
-	const query = url.searchParams.get('hostSecret')?.trim()
-	if (query && !looksLikeJwt(query)) return query
-	return null
-}
-
 export default {
 	async fetch(
 		request: Request,
@@ -64,14 +59,11 @@ export default {
 
 		// Disambiguates the deployed Workers Build from a local preview upload.
 		if (url.pathname === '/api/whiteboard/version') {
-			return new Response(
-				JSON.stringify({ sha: __BUILD_SHA__, builtAt: __BUILD_TIME__ }),
-				{
-					headers: {
-						'Content-Type': 'application/json',
-						'Cache-Control': 'no-store',
-					},
-				},
+			return jsonResponse(
+				request,
+				200,
+				{ sha: __BUILD_SHA__, builtAt: __BUILD_TIME__ },
+				{ methods: 'GET, OPTIONS' },
 			)
 		}
 
@@ -131,11 +123,20 @@ export default {
 		if (connectMatch) {
 			const boardId = decodeURIComponent(connectMatch[1])
 			if (!isBoardUuid(boardId)) {
+				logWhiteboardEvent('connect_rejected')
 				return new Response('Invalid board id', { status: 400 })
 			}
 			if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+				logWhiteboardEvent('connect_rejected')
 				return new Response('Expected WebSocket upgrade', { status: 426 })
 			}
+			const sessionId = url.searchParams.get('sessionId')
+			if (!isValidConnectSessionId(sessionId)) {
+				logWhiteboardEvent('connect_rejected')
+				return new Response('Invalid session id', { status: 400 })
+			}
+			const admission = await admitWhiteboardConnect(request, env)
+			if (admission) return admission
 			const id = env.WHITEBOARDS.idFromName(boardId)
 			const stub = env.WHITEBOARDS.get(id)
 			return stub.fetch(request)
@@ -148,40 +149,56 @@ export default {
 		if (metaMatch) {
 			const boardId = decodeURIComponent(metaMatch[1]!)
 			if (!isBoardUuid(boardId)) {
-				return new Response('Invalid board id', { status: 400 })
+				return jsonResponse(
+					request,
+					400,
+					{ error: 'Invalid board id' },
+					{ methods: 'GET, PATCH, OPTIONS' },
+				)
 			}
 			if (request.method === 'OPTIONS') {
-				return new Response(null, { status: 204 })
+				return new Response(null, {
+					status: 204,
+					headers: jsonHeaders(request, {
+						methods: 'GET, PATCH, OPTIONS',
+						maxAge: 86400,
+					}),
+				})
+			}
+			if (request.method !== 'GET' && request.method !== 'PATCH') {
+				return jsonResponse(
+					request,
+					405,
+					{ error: 'Method not allowed' },
+					{ methods: 'GET, PATCH, OPTIONS' },
+				)
 			}
 			const id = env.WHITEBOARDS.idFromName(boardId)
 			const stub = env.WHITEBOARDS.get(id)
 			const forwardUrl = new URL(request.url)
+			const hostProof = readHostProof(request, forwardUrl)
+			const headers = copyProofHeaders(request, { includeCookie: true })
+			headers.set('Content-Type', 'application/json')
+			forwardLegacyProofHeaders(request, forwardUrl, headers)
 			forwardUrl.searchParams.set('boardId', boardId)
-			const hostSecret = extractHostSecret(request, forwardUrl)
-			if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
-			const actorSessionId = request.headers.get('X-Board-Session')?.trim()
-			const actorAuth = request.headers.get('X-Board-Auth')?.trim()
-			if (actorSessionId) {
-				forwardUrl.searchParams.set('actorSessionId', actorSessionId)
+			if (hostProof.value && !headers.has('X-Board-Host')) {
+				headers.set('X-Board-Host', hostProof.value)
 			}
-			if (actorAuth) {
-				forwardUrl.searchParams.set('actorAuth', actorAuth)
+			let body: string | undefined
+			if (request.method === 'PATCH') {
+				try {
+					body = JSON.stringify(await readBoundedJsonBody(request))
+				} catch (error) {
+					if (error instanceof JsonBodyError) {
+						return jsonResponse(request, error.status, { error: error.message }, {
+							methods: 'GET, PATCH, OPTIONS',
+						})
+					}
+					return jsonResponse(request, 400, { error: 'Invalid JSON body' }, {
+						methods: 'GET, PATCH, OPTIONS',
+					})
+				}
 			}
-			const headers = new Headers({ 'Content-Type': 'application/json' })
-			const authorization = request.headers.get('Authorization')
-			if (authorization) headers.set('Authorization', authorization)
-			const cookie = request.headers.get('Cookie')
-			if (cookie) headers.set('Cookie', cookie)
-			const origin = request.headers.get('Origin')
-			if (origin) headers.set('Origin', origin)
-			const boardHost = request.headers.get('X-Board-Host')?.trim()
-			if (boardHost) headers.set('X-Board-Host', boardHost)
-			if (actorSessionId) headers.set('X-Board-Session', actorSessionId)
-			if (actorAuth) headers.set('X-Board-Auth', actorAuth)
-			const body =
-				request.method === 'GET' || request.method === 'HEAD'
-					? undefined
-					: await request.text()
 			const metaResponse = await stub.fetch(
 				new Request(forwardUrl.toString(), {
 					method: request.method,
@@ -199,7 +216,9 @@ export default {
 					),
 				)
 			}
-			return metaResponse
+			return withJsonHeaders(request, metaResponse, {
+				methods: 'GET, PATCH, OPTIONS',
+			})
 		}
 
 		// PHASE 3.2: same-origin video player must be frameable by the canvas.

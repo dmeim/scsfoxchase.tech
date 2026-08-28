@@ -49,78 +49,32 @@ export function isEmailAllowed(email: string, env: Env): boolean {
 	return !!domain && domains.includes(domain)
 }
 
-function authorizedParties(request: Request): string[] {
-	const origin = request.headers.get('Origin')
-	const parties = new Set<string>([
-		'https://scsfoxchase.tech',
-		'https://www.scsfoxchase.tech',
-		// Custom Clerk Frontend API — session JWTs may set azp to this host.
-		'https://clerk.scsfoxchase.tech',
-		'http://localhost:4321',
-		'http://127.0.0.1:4321',
-	])
-	if (origin) parties.add(origin)
-	return [...parties]
-}
+const TRUSTED_AUTHORIZED_PARTIES = [
+	'https://scsfoxchase.tech',
+	'https://www.scsfoxchase.tech',
+	// Custom Clerk Frontend API — session JWTs may set azp to this host.
+	'https://clerk.scsfoxchase.tech',
+	'http://localhost:4321',
+	'http://127.0.0.1:4321',
+] as const
 
-function isTrustedAzpHost(host: string): boolean {
-	const h = host.toLowerCase()
-	if (
-		h === 'scsfoxchase.tech' ||
-		h === 'www.scsfoxchase.tech' ||
-		h === 'clerk.scsfoxchase.tech' ||
-		h === 'localhost' ||
-		h === '127.0.0.1'
-	) {
-		return true
-	}
-	return h.endsWith('.scsfoxchase.tech')
-}
-
-function decodeJwtAzp(token: string): string | null {
-	const parts = token.split('.')
-	if (parts.length < 2 || !parts[1]) return null
-	try {
-		const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-		const pad = '='.repeat((4 - (b64.length % 4)) % 4)
-		const json = atob(b64 + pad)
-		const payload = JSON.parse(json) as { azp?: unknown }
-		return typeof payload.azp === 'string' && payload.azp.trim()
-			? payload.azp.trim()
-			: null
-	} catch {
-		return null
-	}
+function authorizedParties(): string[] {
+	return [...TRUSTED_AUTHORIZED_PARTIES]
 }
 
 /**
  * Clerk rejects tokens when `authorizedParties` is non-empty and `azp` is
- * missing or not an exact string match. Include the token's own azp when its
- * host is this school site (or localhost).
+ * missing or not an exact string match. Keep this list fixed; request Origin
+ * and token claims must never widen the trusted-party boundary.
  */
-function authorizedPartiesForToken(
-	token: string,
-	origin?: string | null,
-): string[] | undefined {
-	const headers = new Headers()
-	if (origin) headers.set('Origin', origin)
-	const parties = new Set(
-		authorizedParties(
-			new Request('https://scsfoxchase.tech/api/whiteboard/connect', {
-				method: 'GET',
-				headers,
-			}),
-		),
-	)
-	const azp = decodeJwtAzp(token)
-	if (!azp) return undefined
-	try {
-		const host = new URL(azp).hostname
-		if (isTrustedAzpHost(host)) parties.add(azp)
-	} catch {
-		if (isTrustedAzpHost(azp)) parties.add(azp)
-	}
-	return [...parties]
+export function authorizedPartiesForToken(
+	_token?: string,
+	_origin?: string | null,
+): string[] {
+	// Clerk's azp is an issuer-controlled claim. Request Origin and token azp
+	// are intentionally not promoted to authorized parties: doing so would let
+	// an arbitrary cross-origin request widen the trust boundary.
+	return authorizedParties()
 }
 
 function isGoogleExternalAccount(account: { provider?: string | null }): boolean {
@@ -360,7 +314,7 @@ export async function requireClerkWhiteboardAuth(
 	const clerk = clerkClient(env)
 
 	const state = await clerk.authenticateRequest(request, {
-		authorizedParties: authorizedParties(request),
+		authorizedParties: authorizedParties(),
 	})
 
 	if (!state.isAuthenticated) {

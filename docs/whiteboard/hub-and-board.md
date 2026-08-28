@@ -6,7 +6,7 @@ How teachers and students create, join, and manage whiteboards in the browser.
 
 ## Overview
 
-- **Hub** (`/whiteboard`) — create a board, join by share code / link / UUID. Recents, Assets, and Library render only when signed in (cloud indexes).
+- **Hub** (`/whiteboard`) — create a board, join by share code / link / UUID. Recents, Assets, and Library render only when signed in (D1 cloud metadata).
 - **Board** (`/board/{uuid}`) — full-page Excalidraw canvas under the site header; manage panel opens from the centered **Whiteboard** control.
 - There is **no localStorage board library**. Signed-out create is a live scratch Durable Object (URL + DO). Save / reopen from Library requires Google sign-in. See [auth-libraries.md](./auth-libraries.md).
 
@@ -25,7 +25,7 @@ Chromebook vertical space: `@media (max-height: 800px)` tightens hub padding and
 - **Create a new whiteboard** mints a UUID, stores a **host secret** in `localStorage` (ephemeral Owner proof for this browser), then navigates to `/board/{uuid}`.
 - Default title: `YYYY-MM-DD_HH-MM-SS` (local 24-hour time).
 - Create waits for Clerk auth to settle (`whenAuthReady`) so signed-in users autosave to the cloud library and become **Owner**.
-- Signed-out create does **not** write a library index. The board stays in the Durable Object across Chromebook refresh and is deleted after **24 hours** if it is never saved.
+- Signed-out create does **not** write signed-in D1 library metadata. The board stays in the Durable Object across Chromebook refresh and is deleted after **24 hours** if it is never saved.
 
 ### Join
 
@@ -54,7 +54,7 @@ Shown only while signed in (`[data-wb-cloud-lists]`). Signed-out hub copy explai
 | **Library** | Full sorted cloud board list |
 | **Assets** | Hidden for now — canvas media is not a class media library; new image/video insertion is temporarily disabled |
 
-Recents and Library cards support **Rename** and **Delete** (confirmation). Delete removes the **cloud index** row and **frees the share-code KV mapping**. `/board/{uuid}` may still load (UUID access is a separate capability). Board delete does not wipe Durable Object scene or R2 media for classmates still on the board.
+Recents and Library cards support **Rename** and **Delete** (confirmation). Delete removes the **D1 metadata** row and **frees the share-code KV mapping**. `/board/{uuid}` may still load (UUID access is a separate capability). Board delete does not wipe Durable Object scene or R2 media for classmates still on the board.
 
 While Clerk is loading, empty states show **Loading…** so cloud lists do not flash empty.
 

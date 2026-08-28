@@ -1,6 +1,6 @@
 # R2 rollback and Cloudflare usage postmortem
 
-> **Current status (2026-08-27): recovered and live.** The image/R2 redesign introduced after `81242d2` was removed by `e6f2eec`; the remaining Durable Object cold-wake write was removed by `6720789`. Production was verified on live SHA `6720789ce878`. Boards connect and persist again. New image/video insertion remains intentionally disabled. Existing media remains readable.
+> **Historical recovery snapshot (2026-08-27):** The image/R2 redesign introduced after `81242d2` was removed by `e6f2eec`; the remaining Durable Object cold-wake write was removed by `6720789`. The SHA and production checks below document that earlier recovery, not the current D1 cutover. Verify the current live SHA and migration state before relying on them; production D1 migration, R2 backfill, and cutover deployment are not claimed complete here. New image/video insertion remains intentionally disabled. Existing media remains readable.
 
 This is the canonical handoff for the rollback, the Cloudflare usage incident, and the safeguards that must survive future work. The older [incident history](./image-r2-incident-history.md) and [fix plan](./image-r2-fix-plan.md) are detailed historical evidence, not instructions for the current runtime.
 
@@ -77,7 +77,7 @@ Removed behavior and code included:
 - the `whiteboard_asset_manifest` Durable Object table and manifest RPCs;
 - the fail-closed `asset_not_ready` scene gate;
 - the IndexedDB upload outbox (`whiteboard-upload-outbox.ts`);
-- scene-publication filtering and scene acknowledgement protocol;
+- scene-publication filtering and the abandoned pre-rollback acknowledgement design;
 - board write-proof helpers and the `roleResolved` / `authResult` additions;
 - the file sync planner and SHA-256 upload pipeline;
 - tests that asserted the removed manifest/outbox/write-proof architecture;
@@ -107,7 +107,7 @@ Hydration tries the board-scoped compatibility object first, then legacy owner-k
 
 The Excalidraw image tool is hidden and local image/video paste, drag, and drop insertion are blocked. This is a safety boundary, not a browser bug. Do not remove it until a replacement R2 design passes the checklist later in this document.
 
-Other legitimate R2 writes still exist: signed-in board/library JSON, board previews, legacy owner-key operations, and temp-to-Google claim. Therefore R2 Class A usage should be low, not necessarily zero.
+Other legitimate storage activity still exists: signed-in board and asset metadata writes use D1, while board previews, legacy owner-key operations, and temp-to-Google claim use R2. Historical `library/{ownerKey}/boards.json` and `assets.json` objects remain read-only source indexes for migration/recovery. Therefore R2 Class A usage should be low, not necessarily zero.
 
 ## Cloudflare usage safeguards now live
 
@@ -130,8 +130,8 @@ Tests in `tests/whiteboard-board-lifetime.test.ts` cover constructor write-freed
 - `persistScene` compares the exact serialized scene with `lastPersistedJson`; an identical blob skips the SQLite UPSERT.
 - A merge with genuinely accepted element changes forces one persist, so the optimization does not drop real edits.
 - Empty or stale updates are ignored.
-- Scene size remains bounded at 4,000 elements and 2,000,000 JSON characters.
-- Persistence succeeds before broadcast. Failed persistence emits `wb:error` instead of advertising unsaved state.
+- Scene size remains bounded at 4,000 elements and 2,000,000 UTF-8 bytes.
+- Persistence succeeds before broadcast. Accepted mutation IDs receive `scene:ack`; transient failures remain eligible for bounded reconnect retry, while terminal failures emit `wb:error` instead of advertising unsaved state.
 - Full and incremental broadcasts exclude the originating writer.
 - The client uses a trailing approximately one-second edit flush and sends only increased element versions during normal editing.
 
@@ -191,9 +191,9 @@ Red flags:
 - the Free-tier row-write error on an account that the dashboard says is Paid;
 - a storage/read exception followed by an empty board scene.
 
-## Production validation performed
+## Historical production validation (pre-D1 cutover)
 
-For `6720789`:
+For the older recovery release `6720789` (not a current cutover-status claim):
 
 - `npm test`: 12 files, 49 tests passed;
 - `npm run build`: passed;
@@ -237,9 +237,9 @@ Do **not** delete/recreate the Durable Object namespace or call the admin wipe e
 
 - New image/video insertion is still disabled. Image durability has not been solved.
 - The 30-second full resync is still intentional DO activity, although unchanged persistence is skipped.
-- A client `wb:error` displays a throttled toast but does not explicitly requeue a failed scene write. A later local edit or reconnect may be required to retry.
+- A client `wb:error` displays a throttled toast. Transient `persist_failed` updates are retried on reconnect with bounded backoff; malformed or oversized updates are terminal until corrected.
 - Preview upload paths are not fully de-duplicated: a board-list read can occur again during preview upsert, and overlapping idle/hide triggers do not have a dedicated integration test.
-- Legacy R2 PUT/DELETE, temp cleanup, claim, and library index paths remain for compatibility. Their MIME/auth/8 MB constraints do not currently have full end-to-end production tests.
+- Legacy R2 PUT/DELETE, temp cleanup, and claim paths remain for compatibility. Normal library routes use D1; historical R2 library JSON indexes are read-only source inputs. Their MIME/auth/8 MB constraints do not currently have full end-to-end production tests.
 - Alarm expiry and legacy-schema migration have unit coverage but not a production migration fixture for every historical board shape.
 - Workers Paid removes the Free hard stop but introduces billable overage. It is capacity, not a substitute for write bounds.
 

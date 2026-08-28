@@ -17,6 +17,15 @@ import {
 	normalizeShareCode,
 	parseShareCodeRecord,
 } from './shareCode'
+import {
+	copyProofHeaders,
+	forwardLegacyProofHeaders,
+	jsonHeaders,
+	jsonResponse,
+	logWhiteboardEvent,
+	readHostProof,
+	withJsonHeaders,
+} from './httpSecurity'
 
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -38,51 +47,19 @@ function isBoardUuid(value: string): boolean {
 	return UUID_RE.test(value)
 }
 
-function looksLikeJwt(raw: string | null): boolean {
-	if (!raw) return false
-	const parts = raw.trim().split('.')
-	return parts.length === 3 && raw.trim().length > 40
-}
-
-function extractHostSecret(request: Request, url: URL): string | null {
-	const header = request.headers.get('X-Board-Host')?.trim()
-	if (header && !looksLikeJwt(header)) return header
-	const auth = request.headers.get('Authorization')
-	if (auth?.toLowerCase().startsWith('bearer ')) {
-		const token = auth.slice(7).trim()
-		if (token && !looksLikeJwt(token)) return token
-	}
-	const query = url.searchParams.get('hostSecret')?.trim()
-	if (query && !looksLikeJwt(query)) return query
-	return null
-}
-
-function corsHeaders(request: Request): HeadersInit {
-	const origin = request.headers.get('Origin')
-	if (!origin) return {}
-	return {
-		'Access-Control-Allow-Origin': origin,
-		'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-		'Access-Control-Allow-Headers':
-			'Content-Type, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth',
-		Vary: 'Origin',
-	}
-}
-
 function json(
 	status: number,
 	body: unknown,
 	request: Request,
 	extraHeaders?: HeadersInit,
 ): Response {
-	return new Response(JSON.stringify(body), {
+	return jsonResponse(
+		request,
 		status,
-		headers: {
-			'Content-Type': 'application/json',
-			...corsHeaders(request),
-			...extraHeaders,
-		},
-	})
+		body,
+		{ methods: 'GET, POST, DELETE, OPTIONS' },
+		extraHeaders,
+	)
 }
 
 function joinUnavailable(request: Request): Response {
@@ -170,7 +147,10 @@ export async function handleCodeRequest(
 		) {
 			return new Response(null, {
 				status: 204,
-				headers: corsHeaders(request),
+				headers: jsonHeaders(request, {
+					methods: 'GET, POST, DELETE, OPTIONS',
+					maxAge: 86400,
+				}),
 			})
 		}
 		return null
@@ -208,42 +188,25 @@ export async function handleCodeRequest(
 				request,
 			)
 		}
-		const hostSecret = extractHostSecret(request, url)
-		const actorSessionId = request.headers.get('X-Board-Session')?.trim() || ''
-		const actorAuth = request.headers.get('X-Board-Auth')?.trim() || ''
+		const hostProof = readHostProof(request, url)
+		const hostSecret = hostProof.value
 		const id = env.WHITEBOARDS.idFromName(boardId)
-		const stub = env.WHITEBOARDS.get(id)
-		const forwardUrl = new URL(request.url)
-		forwardUrl.searchParams.set('boardId', boardId)
-		if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
-		if (actorSessionId) {
-			forwardUrl.searchParams.set('actorSessionId', actorSessionId)
-		}
-		if (actorAuth) forwardUrl.searchParams.set('actorAuth', actorAuth)
-		const headers = new Headers({ Accept: 'application/json' })
-		const authorization = request.headers.get('Authorization')
-		if (authorization) headers.set('Authorization', authorization)
-		const cookie = request.headers.get('Cookie')
-		if (cookie) headers.set('Cookie', cookie)
-		const origin = request.headers.get('Origin')
-		if (origin) headers.set('Origin', origin)
-		const boardHost = request.headers.get('X-Board-Host')?.trim()
-		if (boardHost) headers.set('X-Board-Host', boardHost)
-		if (actorSessionId) headers.set('X-Board-Session', actorSessionId)
-		if (actorAuth) headers.set('X-Board-Auth', actorAuth)
+			const stub = env.WHITEBOARDS.get(id)
+			const forwardUrl = new URL(request.url)
+			const headers = copyProofHeaders(request, { includeCookie: true })
+			forwardLegacyProofHeaders(request, forwardUrl, headers)
+			forwardUrl.searchParams.set('boardId', boardId)
+			if (hostSecret && !headers.has('X-Board-Host')) {
+				headers.set('X-Board-Host', hostSecret)
+			}
 		const response = await stub.fetch(
 			new Request(forwardUrl.toString(), {
 				method: request.method,
 				headers,
 			}),
 		)
-		const text = await response.text()
-		return new Response(text, {
-			status: response.status,
-			headers: {
-				'Content-Type': 'application/json',
-				...corsHeaders(request),
-			},
+		return withJsonHeaders(request, response, {
+			methods: 'GET, POST, DELETE, OPTIONS',
 		})
 	}
 
@@ -262,6 +225,10 @@ async function handleJoin(
 		JOIN_IP_WINDOW_MS,
 	)
 	if (ipRetry !== null) {
+		logWhiteboardEvent('join_throttled', {
+			method: request.method,
+			status: 429,
+		})
 		return joinRateLimited(request, ipRetry)
 	}
 
@@ -277,9 +244,22 @@ async function handleJoin(
 		)
 	}
 
-	const record = parseShareCodeRecord(
-		await env.WHITEBOARD_CODES.get(kvCodeKey(code)),
-	)
+	let record: ReturnType<typeof parseShareCodeRecord>
+	try {
+		record = parseShareCodeRecord(
+			await env.WHITEBOARD_CODES.get(kvCodeKey(code)),
+		)
+	} catch {
+		logWhiteboardEvent('kv_read_error', {
+			method: request.method,
+			status: 503,
+		})
+		return json(
+			503,
+			{ error: 'Share codes are temporarily unavailable.' },
+			request,
+		)
+	}
 	if (!record || !isBoardUuid(record.boardId)) {
 		const failRetry = consumeJoinRate(
 			joinFailsByCode,
@@ -288,6 +268,10 @@ async function handleJoin(
 			JOIN_CODE_FAIL_WINDOW_MS,
 		)
 		if (failRetry !== null) {
+			logWhiteboardEvent('join_throttled', {
+				method: request.method,
+				status: 429,
+			})
 			return joinRateLimited(request, failRetry)
 		}
 		return joinUnavailable(request)

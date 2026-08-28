@@ -1,6 +1,6 @@
 # Deploying to Cloudflare Workers
 
-St. Cecilia Technology is an **Astro** site deployed as a **Cloudflare Worker** with static assets (Workers Assets). Pages are prerendered (`output: 'server'` + `prerender = true` on each page) so the Worker can also host `/api/whiteboard/*` and Durable Objects. It is **not** a Cloudflare Pages project anymore.
+St. Cecilia Technology is an **Astro** site deployed as a **Cloudflare Worker** with static assets (Workers Assets). Pages are prerendered (`output: 'server'` + `prerender = true` on each page) so the Worker can also host `/api/whiteboard/*`, Durable Objects, D1 metadata, R2 media/previews, and KV share codes. It is **not** a Cloudflare Pages project anymore.
 
 - **Worker name:** `scsfoxchase-tech` (must match `wrangler.jsonc` `name`)
 - **Domain:** `scsfoxchase.tech` — live on Worker `scsfoxchase-tech`
@@ -9,6 +9,8 @@ St. Cecilia Technology is an **Astro** site deployed as a **Cloudflare Worker** 
 - **Assets directory:** `./dist/client` (Astro adapter emits client assets here — not repo root `/`, not flat `./dist`)
 
 **GitHub Workers Builds on `main` is the only path that should take production traffic.** Manual `npx wrangler deploy` from a laptop is **discouraged**: Builds overwrites that version ~70 seconds later, silently replacing the Worker you just tested.
+
+The D1 metadata cutover is staged separately from the Worker release. Do not assume production migration, R2 backfill, or deployment has completed; use the [D1 library operations runbook](docs/whiteboard/d1-library-operations.md) and record each verification result.
 
 Before trusting any production observation, confirm the live commit:
 
@@ -122,6 +124,9 @@ Product resource family: **`scsfoxchase-tech_whiteboards`**.
 | R2 bucket | `scsfoxchase-tech-whiteboards` |
 | KV binding | `WHITEBOARD_CODES` |
 | KV namespace | `scsfoxchase-tech-whiteboard-codes` (share code → boardId, permanent) |
+| D1 binding | `WHITEBOARD_LIBRARY` |
+| D1 production database | `scsfoxchase-tech-whiteboard-library` (metadata only) |
+| Rate Limiting binding | `WHITEBOARD_CONNECT_LIMITER` (120 admissions / 60 seconds / trusted IP) |
 
 **R2 naming note:** Cloudflare R2 bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling with an underscore is unchanged for docs / DO naming.
 
@@ -140,6 +145,12 @@ npx wrangler kv namespace create scsfoxchase-tech-whiteboard-codes-preview
 
 First deploy after adding the DO applies migration `whiteboard-v1` automatically via `wrangler deploy`. No separate create command is required for Durable Objects.
 
+## Observability and connection admission
+
+`wrangler.jsonc` explicitly enables structured Worker logs with `invocation_logs: false` and a production head sampling rate of `0.05` (5%). The `WHITEBOARD_CONNECT_LIMITER` binding runs before Durable Object resolution and admits up to 120 WebSocket upgrades per 60-second window per trusted `CF-Connecting-IP`. Local/test fallback buckets expire and are capped at 4096 keys. Per-board limits are 64 total sockets, 32 pending-auth sockets, and approximately 30 seconds pending age; pending cleanup does not schedule one alarm per socket.
+
+The safe logger records only low-cardinality admission/auth transitions, scene rejection/persistence failures, bounded storage failures, and throttles. It excludes board/session identifiers, IPs, URLs/paths, host secrets, JWTs, arbitrary exception text, and scene contents. Review the [whiteboard runbook](docs/whiteboard/d1-library-operations.md) for migration and rollback checks.
+
 Asset API (capability URLs; no public list):
 
 - `PUT|GET|DELETE /api/whiteboard/assets/{ownerKey}/{assetId}`
@@ -157,12 +168,30 @@ Share codes (Phase 5):
 - `DELETE /api/whiteboard/boards/{uuid}/code` — internal revoke (library delete + unsaved expiry)
 - Auth for GET/POST/DELETE: Owner or Manager (live session, scratch host, or Clerk). Join lookup is unauthenticated and rate-limited.
 
-Cloud library indexes reuse the same R2 bucket (no extra KV/D1):
+## D1 library cutover
+
+`WHITEBOARD_LIBRARY` is the dedicated D1 database named `scsfoxchase-tech-whiteboard-library`. The preview binding selects the separate `preview_database_id` configured in `wrangler.jsonc`; it is not the production database. Test workers use the local database identity `scsfoxchase-tech-whiteboard-library-worker-tests`. D1 contains only signed-in Library / Recents / Assets metadata; scenes remain in DO SQLite.
+
+Migrations are additive and must be applied in filename order: `0000_create_whiteboard_library.sql`, `0001_enforce_library_owner_imports_owner_key.sql`, then `0002_add_library_tombstones.sql`. Use the preview database before production, and apply production D1 before pushing the Worker cutover commit:
+
+```bash
+npx wrangler d1 migrations list WHITEBOARD_LIBRARY --local
+npx wrangler d1 migrations apply WHITEBOARD_LIBRARY --local
+npx wrangler d1 migrations list WHITEBOARD_LIBRARY --remote --preview
+npx wrangler d1 migrations apply WHITEBOARD_LIBRARY --remote --preview
+npx wrangler d1 migrations list WHITEBOARD_LIBRARY --remote
+# After preview verification and explicit approval:
+npx wrangler d1 migrations apply WHITEBOARD_LIBRARY --remote
+```
+
+The apply command prompts for confirmation and captures a backup. The production migration/backfill/deploy sequence is not recorded as complete by this document. Scan/import/export, count verification, and emergency rollback are in [d1-library-operations.md](docs/whiteboard/d1-library-operations.md).
+
+The historical R2 objects remain source indexes for migration and recovery:
 
 - `library/{ownerKey}/boards.json`
 - `library/{ownerKey}/assets.json`
-- APIs: `GET|PUT /api/whiteboard/library/boards`, `DELETE .../boards/:id`, same for `assets` (Clerk Bearer token)
-- Recents / Library / Assets are signed-in cloud only. Signed-out create is a scratch Durable Object (24h TTL until Save).
+
+Normal `GET|PUT|DELETE /api/whiteboard/library/*` routes use D1 and never rewrite those source indexes. R2 continues to store previews and serve legacy media compatibility reads. New image/video insertion remains disabled.
 
 ### Clerk (Google sign-in)
 
@@ -187,7 +216,7 @@ npm run build && npm run preview
 # or during iteration: npm run dev
 # 1. Signed out: /whiteboard → Create (no Recents). Draw on two windows of /board/{uuid}; refresh keeps the scene.
 # 2. Sign in with Google on a scratch board this browser created → Save claims Owner; Recents/Library appear.
-# 3. Signed-in Create autosaves; paste an image (R2 google:{id}) and an MP4 (same-origin /whiteboard-player).
+# 3. Signed-in Create autosaves; new image/video insertion is disabled. Existing media remains readable from legacy google:{id} / temp:{boardId} paths and retained board-scoped compatibility objects.
 # 4. Sign out → hub lists hide; scratch create still works; cloud data remains for next sign-in.
 # 5. Join by share code as a guest: Editor (Group Edit Off = view-only). Follow (pan unfollows). Follow User locks the camera.
 ```

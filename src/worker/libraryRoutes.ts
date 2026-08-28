@@ -1,169 +1,87 @@
 /**
  * Cloud Recents / Library / Assets indexes (Phase 3.1).
  *
- * Storage: R2 JSON in the existing WHITEBOARD_ASSETS bucket
- *   library/{ownerKey}/boards.json
- *   library/{ownerKey}/assets.json
+ * Storage: normalized metadata in WHITEBOARD_LIBRARY (D1). Existing R2 JSON
+ * indexes are imported lazily by libraryStore and are never mutated here.
  *
  * Signed-in Clerk sessions only. PUT on a board may include X-Board-Host so
  * we can lift the Phase 2 24h scratch TTL on the Durable Object. The index
  * write is not treated as durable success until DO `savedToLibrary` is true.
- * Index files use R2 etags (If-Match / If-None-Match) with retry.
  */
 import { parsePreviewAsset } from '../lib/whiteboard-preview-url'
 import { r2ObjectKey } from './assetRoutes'
 import { requireClerkWhiteboardAuth } from './clerkAuth'
+import {
+	deleteLibraryAsset,
+	deleteLibraryBoard,
+	getLibraryBoard,
+	isLibraryAssetEntry,
+	isLibraryBoardEntry,
+	libraryContainsBoard,
+	listLibraryAssets,
+	listLibraryBoards,
+	patchLibraryBoardPreview,
+	upsertLibraryAsset,
+	upsertLibraryBoard,
+	LibraryStoreError,
+	type LibraryAsset,
+	type LibraryBoard,
+} from './libraryStore'
+import {
+	JsonBodyError,
+	jsonHeaders,
+	jsonResponse,
+	readBoundedJsonBody,
+	withJsonHeaders,
+} from './httpSecurity'
 
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-const INDEX_WRITE_ATTEMPTS = 8
 const META_SAVE_ATTEMPTS = 8
 const META_SAVE_DELAY_MS = 250
+const SHARE_CODE_REVOKE_ATTEMPTS = 3
+const SHARE_CODE_REVOKE_DELAY_MS = 50
 
-type BoardEntry = {
-	id: string
-	title: string
-	lastAccessedAt: string
-	previewDataUrl?: string
-}
-
-type AssetEntry = {
-	id: string
-	title: string
-	createdAt: string
-	lastAccessedAt: string
-	mimeType: string
-	size?: number
-	r2Key: string
-	ownerKey: string
-	sourceBoardIds?: string[]
-}
+type BoardEntry = LibraryBoard
+type AssetEntry = LibraryAsset
 
 type MarkSavedResult =
 	| { ok: true }
 	| { ok: false; status: number; error: string }
-
-function boardsObjectKey(ownerKey: string): string {
-	return `library/${ownerKey}/boards.json`
-}
-
-function assetsObjectKey(ownerKey: string): string {
-	return `library/${ownerKey}/assets.json`
-}
-
-function corsHeaders(request: Request): HeadersInit {
-	const origin = request.headers.get('Origin')
-	if (!origin) return {}
-	return {
-		'Access-Control-Allow-Origin': origin,
-		'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
-		'Access-Control-Allow-Headers':
-			'Content-Type, Content-Length, Authorization, X-Board-Host',
-		Vary: 'Origin',
-	}
-}
 
 function json(
 	status: number,
 	body: unknown,
 	request: Request,
 ): Response {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Content-Type': 'application/json',
-			...corsHeaders(request),
-		},
+	return jsonResponse(request, status, body, {
+		methods: 'GET, PUT, PATCH, DELETE, OPTIONS',
 	})
 }
 
 function isBoardEntry(value: unknown): value is BoardEntry {
+	return isLibraryBoardEntry(value)
+}
+
+function isBoardPreviewPatch(
+	value: unknown,
+): value is { previewDataUrl: string } {
 	if (!value || typeof value !== 'object') return false
-	const entry = value as Record<string, unknown>
+	const previewDataUrl = (value as Record<string, unknown>).previewDataUrl
 	return (
-		typeof entry.id === 'string' &&
-		UUID_RE.test(entry.id) &&
-		typeof entry.title === 'string' &&
-		typeof entry.lastAccessedAt === 'string'
+		typeof previewDataUrl === 'string' &&
+		previewDataUrl.length > 0 &&
+		previewDataUrl.length <= 1024
 	)
 }
 
 function isAssetEntry(value: unknown): value is AssetEntry {
-	if (!value || typeof value !== 'object') return false
-	const entry = value as Record<string, unknown>
-	return (
-		typeof entry.id === 'string' &&
-		UUID_RE.test(entry.id) &&
-		typeof entry.title === 'string' &&
-		typeof entry.createdAt === 'string' &&
-		typeof entry.lastAccessedAt === 'string' &&
-		typeof entry.mimeType === 'string' &&
-		typeof entry.r2Key === 'string' &&
-		typeof entry.ownerKey === 'string'
-	)
+	return isLibraryAssetEntry(value)
 }
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function laterIso(a: string, b: string): string {
-	return Date.parse(a) >= Date.parse(b) ? a : b
-}
-
-function r2PutOnlyIf(etag: string | null): R2Conditional {
-	return etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' }
-}
-
-async function readJsonArray<T>(
-	bucket: R2Bucket,
-	key: string,
-	guard: (value: unknown) => value is T,
-): Promise<{ entries: T[]; etag: string | null }> {
-	const object = await bucket.get(key)
-	if (!object) return { entries: [], etag: null }
-	try {
-		const parsed = (await object.json()) as unknown
-		if (!Array.isArray(parsed)) {
-			return { entries: [], etag: object.etag }
-		}
-		return { entries: parsed.filter(guard), etag: object.etag }
-	} catch {
-		return { entries: [], etag: object.etag }
-	}
-}
-
-async function writeJsonArray(
-	bucket: R2Bucket,
-	key: string,
-	entries: unknown[],
-	etag: string | null,
-): Promise<boolean> {
-	const stored = await bucket.put(key, JSON.stringify(entries), {
-		httpMetadata: {
-			contentType: 'application/json',
-			cacheControl: 'no-store',
-		},
-		onlyIf: r2PutOnlyIf(etag),
-	})
-	return stored !== null
-}
-
-async function mutateJsonArray<T>(
-	bucket: R2Bucket,
-	key: string,
-	guard: (value: unknown) => value is T,
-	mutate: (entries: T[]) => T[],
-): Promise<{ ok: true; entries: T[] } | { ok: false }> {
-	for (let attempt = 0; attempt < INDEX_WRITE_ATTEMPTS; attempt++) {
-		const { entries, etag } = await readJsonArray(bucket, key, guard)
-		const next = mutate(entries)
-		if (await writeJsonArray(bucket, key, next, etag)) {
-			return { ok: true, entries: next }
-		}
-	}
-	return { ok: false }
 }
 
 function sortByAccessed<T extends { lastAccessedAt: string }>(
@@ -174,6 +92,13 @@ function sortByAccessed<T extends { lastAccessedAt: string }>(
 			new Date(b.lastAccessedAt).getTime() -
 			new Date(a.lastAccessedAt).getTime(),
 	)
+}
+
+function libraryStoreError(request: Request, error: unknown): Response {
+	if (error instanceof LibraryStoreError) {
+		return json(503, { error: error.message }, request)
+	}
+	return json(503, { error: 'Library storage is temporarily unavailable' }, request)
 }
 
 /**
@@ -190,83 +115,19 @@ function candidateOwnerKeys(auth: {
 	return [...new Set([auth.ownerKey, `google:${auth.clerkUserId}`])]
 }
 
-async function readMergedBoards(
-	bucket: R2Bucket,
-	auth: { ownerKey: string; clerkUserId: string },
-): Promise<BoardEntry[]> {
-	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
-	const { entries } = await readJsonArray(
-		bucket,
-		boardsObjectKey(canonical!),
-		isBoardEntry,
-	)
-	let merged = entries
-	for (const key of legacyKeys) {
-		const legacy = await readJsonArray(
-			bucket,
-			boardsObjectKey(key),
-			isBoardEntry,
-		)
-		if (legacy.entries.length === 0) continue
-		const known = new Set(merged.map((entry) => entry.id))
-		const missing = legacy.entries.filter((entry) => !known.has(entry.id))
-		if (missing.length === 0) continue
-		merged = [...merged, ...missing]
-		// Best-effort migration into the canonical index; legacy file stays.
-		await mutateJsonArray(
-			bucket,
-			boardsObjectKey(canonical!),
-			isBoardEntry,
-			(boards) => {
-				let next = boards
-				for (const entry of missing) next = upsertBoardEntry(next, entry)
-				return next
-			},
-		)
-	}
-	return merged
-}
-
-async function readMergedAssets(
-	bucket: R2Bucket,
-	auth: { ownerKey: string; clerkUserId: string },
-): Promise<AssetEntry[]> {
-	const [canonical, ...legacyKeys] = candidateOwnerKeys(auth)
-	const { entries } = await readJsonArray(
-		bucket,
-		assetsObjectKey(canonical!),
-		isAssetEntry,
-	)
-	let merged = entries
-	for (const key of legacyKeys) {
-		const legacy = await readJsonArray(
-			bucket,
-			assetsObjectKey(key),
-			isAssetEntry,
-		)
-		if (legacy.entries.length === 0) continue
-		const known = new Set(merged.map((entry) => entry.id))
-		merged = [
-			...merged,
-			...legacy.entries.filter((entry) => !known.has(entry.id)),
-		]
-	}
-	return merged
-}
-
-/** Recents/Library membership for this Clerk ownerKey (R2 index, not DO Owner). */
+/** Recents/Library membership for this Clerk ownerKey (D1, not DO Owner). */
 export async function libraryIndexContainsBoard(
 	env: Env,
-	ownerKey: string,
+	ownerKeys: string | string[],
 	boardId: string,
 ): Promise<boolean> {
-	if (!ownerKey || !boardId || !env.WHITEBOARD_ASSETS) return false
-	const { entries } = await readJsonArray(
-		env.WHITEBOARD_ASSETS,
-		boardsObjectKey(ownerKey),
-		isBoardEntry,
-	)
-	return entries.some((entry) => entry.id === boardId)
+	if (!boardId || !env.WHITEBOARD_LIBRARY) return false
+	try {
+		return await libraryContainsBoard(env, ownerKeys, boardId)
+	} catch {
+		// Owner inference in the DO must fail closed if D1/import is unavailable.
+		return false
+	}
 }
 
 function boardMetaUrl(request: Request, boardId: string): URL {
@@ -278,21 +139,41 @@ function boardMetaUrl(request: Request, boardId: string): URL {
 }
 
 /** Drop the board's KV share-code mapping. UUID access is unchanged. */
-async function revokeBoardShareCode(env: Env, boardId: string): Promise<void> {
-	if (!env.WHITEBOARDS) return
-	try {
-		const id = env.WHITEBOARDS.idFromName(boardId)
-		const stub = env.WHITEBOARDS.get(id)
-		await stub.revokeShareCodeMapping()
-	} catch {
-		// Index delete still proceeds; an orphaned code is cleaned on next mint clash.
+export async function revokeBoardShareCode(
+	env: Env,
+	boardId: string,
+): Promise<boolean> {
+	if (!env.WHITEBOARDS) return false
+	for (let attempt = 0; attempt < SHARE_CODE_REVOKE_ATTEMPTS; attempt += 1) {
+		try {
+			const id = env.WHITEBOARDS.idFromName(boardId)
+			const stub = env.WHITEBOARDS.get(id) as unknown as {
+				revokeShareCodeMapping(): Promise<void>
+			}
+			await stub.revokeShareCodeMapping()
+			return true
+		} catch {
+			if (attempt < SHARE_CODE_REVOKE_ATTEMPTS - 1) {
+				await sleep(SHARE_CODE_REVOKE_DELAY_MS)
+			}
+		}
 	}
+	return false
 }
 
 function patchHeaders(request: Request): Headers {
 	const headers = new Headers({ 'Content-Type': 'application/json' })
-	const authorization = request.headers.get('Authorization')
-	if (authorization) headers.set('Authorization', authorization)
+	for (const name of [
+		'Authorization',
+		'Origin',
+		'X-Board-Host',
+		'X-Board-Session',
+		'X-Board-Auth',
+		'Cookie',
+	]) {
+		const value = request.headers.get(name)
+		if (value) headers.set(name, value)
+	}
 	return headers
 }
 
@@ -398,7 +279,10 @@ async function tryMarkSavedToLibrary(
 	const id = env.WHITEBOARDS.idFromName(boardId)
 	const stub = env.WHITEBOARDS.get(id)
 	const forwardUrl = boardMetaUrl(request, boardId)
-	forwardUrl.searchParams.set('hostSecret', hostSecret)
+	const headers = patchHeaders(request)
+	// Keep normal host proof in the forwarded header. The DO accepts a
+	// hostSecret query only for historical callers.
+	headers.set('X-Board-Host', hostSecret)
 
 	const fallbackError =
 		'Could not mark this board as saved. Open the board and try again.'
@@ -410,7 +294,7 @@ async function tryMarkSavedToLibrary(
 			const res = await stub.fetch(
 				new Request(forwardUrl.toString(), {
 					method: 'PATCH',
-					headers: patchHeaders(request),
+					headers,
 					body: JSON.stringify({
 						savedToLibrary: true,
 						cloudOwnerKey: ownerKey,
@@ -447,45 +331,6 @@ async function tryMarkSavedToLibrary(
 	return { ok: false, status: lastStatus, error: lastError }
 }
 
-function upsertBoardEntry(
-	boards: BoardEntry[],
-	next: BoardEntry,
-): BoardEntry[] {
-	const copy = [...boards]
-	const index = copy.findIndex((entry) => entry.id === next.id)
-	const prev = index >= 0 ? copy[index] : undefined
-	if (prev) {
-		copy[index] = {
-			...prev,
-			...next,
-			lastAccessedAt: laterIso(prev.lastAccessedAt, next.lastAccessedAt),
-			previewDataUrl: next.previewDataUrl ?? prev.previewDataUrl,
-		}
-		return copy
-	}
-	copy.unshift(next)
-	return copy
-}
-
-function upsertAssetEntry(
-	assets: AssetEntry[],
-	next: AssetEntry,
-): AssetEntry[] {
-	const copy = [...assets]
-	const index = copy.findIndex((entry) => entry.id === next.id)
-	const prev = index >= 0 ? copy[index] : undefined
-	if (prev) {
-		copy[index] = {
-			...prev,
-			...next,
-			lastAccessedAt: laterIso(prev.lastAccessedAt, next.lastAccessedAt),
-		}
-		return copy
-	}
-	copy.unshift(next)
-	return copy
-}
-
 /**
  * Handle /api/whiteboard/library/*
  * Returns null if the path is not a library route.
@@ -500,33 +345,31 @@ export async function handleLibraryRequest(
 	if (request.method === 'OPTIONS') {
 		return new Response(null, {
 			status: 204,
-			headers: {
-				...corsHeaders(request),
-				'Access-Control-Max-Age': '86400',
-			},
+			headers: jsonHeaders(request, {
+				methods: 'GET, PUT, PATCH, DELETE, OPTIONS',
+				maxAge: 86400,
+			}),
 		})
 	}
 
 	const authResult = await requireClerkWhiteboardAuth(request, env)
 	if (!authResult.ok) {
-		const headers = new Headers(authResult.response.headers)
-		Object.entries(corsHeaders(request)).forEach(([k, v]) => {
-			headers.set(k, v)
-		})
-		return new Response(authResult.response.body, {
-			status: authResult.response.status,
-			headers,
+		return withJsonHeaders(request, authResult.response, {
+			methods: 'GET, PUT, PATCH, DELETE, OPTIONS',
 		})
 	}
 
 	const { ownerKey } = authResult.auth
-	const bucket = env.WHITEBOARD_ASSETS
+	const legacyOwnerKeys = candidateOwnerKeys(authResult.auth).slice(1)
 
 	const boardsList = url.pathname.match(
 		/^\/api\/whiteboard\/library\/boards\/?$/i,
 	)
 	const boardOne = url.pathname.match(
 		/^\/api\/whiteboard\/library\/boards\/([^/]+)\/?$/i,
+	)
+	const boardPreview = url.pathname.match(
+		/^\/api\/whiteboard\/library\/boards\/([^/]+)\/preview\/?$/i,
 	)
 	const assetsList = url.pathname.match(
 		/^\/api\/whiteboard\/library\/assets\/?$/i,
@@ -537,14 +380,25 @@ export async function handleLibraryRequest(
 
 	if (boardsList) {
 		if (request.method === 'GET') {
-			const entries = await readMergedBoards(bucket, authResult.auth)
-			return json(200, { boards: sortByAccessed(entries), ownerKey }, request)
+			try {
+				const entries = await listLibraryBoards(
+					env,
+					ownerKey,
+					legacyOwnerKeys,
+				)
+				return json(200, { boards: sortByAccessed(entries), ownerKey }, request)
+			} catch (error) {
+				return libraryStoreError(request, error)
+			}
 		}
 		if (request.method === 'PUT') {
 			let body: unknown
 			try {
-				body = await request.json()
-			} catch {
+				body = await readBoundedJsonBody(request)
+			} catch (error) {
+				if (error instanceof JsonBodyError) {
+					return json(error.status, { error: error.message }, request)
+				}
 				return json(400, { error: 'Invalid JSON' }, request)
 			}
 			if (!isBoardEntry(body)) {
@@ -565,22 +419,58 @@ export async function handleLibraryRequest(
 			if (!marked.ok) {
 				return json(marked.status, { error: marked.error }, request)
 			}
-			const written = await mutateJsonArray(
-				bucket,
-				boardsObjectKey(ownerKey),
-				isBoardEntry,
-				(boards) => upsertBoardEntry(boards, next),
-			)
-			if (!written.ok) {
-				return json(
-					409,
-					{ error: 'Library index conflict, retry' },
-					request,
-				)
+			try {
+				await upsertLibraryBoard(env, ownerKey, next, legacyOwnerKeys)
+			} catch (error) {
+				return libraryStoreError(request, error)
 			}
 			return json(200, { board: next }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
+	}
+
+	if (boardPreview) {
+		const boardId = decodeURIComponent(boardPreview[1])
+		if (!UUID_RE.test(boardId)) {
+			return json(400, { error: 'Invalid board id' }, request)
+		}
+		if (request.method !== 'PATCH') {
+			return json(405, { error: 'Method not allowed' }, request)
+		}
+
+		let body: unknown
+		try {
+			body = await readBoundedJsonBody(request)
+		} catch (error) {
+			if (error instanceof JsonBodyError) {
+				return json(error.status, { error: error.message }, request)
+			}
+			return json(400, { error: 'Invalid JSON' }, request)
+		}
+		if (!isBoardPreviewPatch(body)) {
+			return json(400, { error: 'Invalid board preview' }, request)
+		}
+		const parsed = parsePreviewAsset(body.previewDataUrl)
+		if (!parsed || !candidateOwnerKeys(authResult.auth).includes(parsed.ownerKey)) {
+			return json(400, { error: 'Invalid board preview' }, request)
+		}
+
+		let board: BoardEntry | null
+		try {
+			board = await patchLibraryBoardPreview(
+				env,
+				ownerKey,
+				boardId,
+				body.previewDataUrl,
+				legacyOwnerKeys,
+			)
+		} catch (error) {
+			return libraryStoreError(request, error)
+		}
+		if (!board) {
+			return json(404, { error: 'Board is no longer in your library' }, request)
+		}
+		return json(200, { board }, request)
 	}
 
 	if (boardOne) {
@@ -589,35 +479,44 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid board id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			const existing = (await readMergedBoards(bucket, authResult.auth)).find(
-				(entry) => entry.id === boardId,
-			)
-			const preview = parsePreviewAsset(existing?.previewDataUrl)
-			if (preview) {
-				try {
-					await bucket.delete(r2ObjectKey(preview.ownerKey, preview.assetId))
-				} catch {
-					// Still drop the index row; an orphaned JPEG is acceptable.
-				}
-			}
-			// Remove from every candidate key or a merged legacy row would
-			// resurrect the board on the next GET.
-			for (const key of candidateOwnerKeys(authResult.auth)) {
-				const written = await mutateJsonArray(
-					bucket,
-					boardsObjectKey(key),
-					isBoardEntry,
-					(boards) => boards.filter((entry) => entry.id !== boardId),
+			let existing: BoardEntry | null
+			try {
+				existing = await getLibraryBoard(
+					env,
+					ownerKey,
+					boardId,
+					legacyOwnerKeys,
 				)
-				if (!written.ok) {
-					return json(
-						409,
-						{ error: 'Library index conflict, retry' },
-						request,
+			} catch (error) {
+				return libraryStoreError(request, error)
+			}
+			if (!existing) {
+				// Ownership lookup is authoritative. Never revoke a board code when
+				// this owner has no row (including another owner's board).
+				return json(404, { error: 'Board is no longer in your library' }, request)
+			}
+			if (!(await revokeBoardShareCode(env, boardId))) {
+				return json(
+					503,
+					{ error: 'Could not revoke this board share code. Please retry.' },
+					request,
+				)
+			}
+			const preview = parsePreviewAsset(existing?.previewDataUrl)
+			if (preview && env.WHITEBOARD_ASSETS) {
+				try {
+					await env.WHITEBOARD_ASSETS.delete(
+						r2ObjectKey(preview.ownerKey, preview.assetId),
 					)
+				} catch {
+					// Still drop the D1 row; an orphaned JPEG is acceptable.
 				}
 			}
-			await revokeBoardShareCode(env, boardId)
+			try {
+				await deleteLibraryBoard(env, ownerKey, boardId, legacyOwnerKeys)
+			} catch (error) {
+				return libraryStoreError(request, error)
+			}
 			return json(200, { ok: true }, request)
 		}
 		return json(405, { error: 'Method not allowed' }, request)
@@ -625,14 +524,25 @@ export async function handleLibraryRequest(
 
 	if (assetsList) {
 		if (request.method === 'GET') {
-			const entries = await readMergedAssets(bucket, authResult.auth)
-			return json(200, { assets: sortByAccessed(entries), ownerKey }, request)
+			try {
+				const entries = await listLibraryAssets(
+					env,
+					ownerKey,
+					legacyOwnerKeys,
+				)
+				return json(200, { assets: sortByAccessed(entries), ownerKey }, request)
+			} catch (error) {
+				return libraryStoreError(request, error)
+			}
 		}
 		if (request.method === 'PUT') {
 			let body: unknown
 			try {
-				body = await request.json()
-			} catch {
+				body = await readBoundedJsonBody(request)
+			} catch (error) {
+				if (error instanceof JsonBodyError) {
+					return json(error.status, { error: error.message }, request)
+				}
 				return json(400, { error: 'Invalid JSON' }, request)
 			}
 			if (!isAssetEntry(body)) {
@@ -652,18 +562,10 @@ export async function handleLibraryRequest(
 				ownerKey,
 				sourceBoardIds: body.sourceBoardIds,
 			}
-			const written = await mutateJsonArray(
-				bucket,
-				assetsObjectKey(ownerKey),
-				isAssetEntry,
-				(assets) => upsertAssetEntry(assets, next),
-			)
-			if (!written.ok) {
-				return json(
-					409,
-					{ error: 'Library index conflict, retry' },
-					request,
-				)
+			try {
+				await upsertLibraryAsset(env, ownerKey, next, legacyOwnerKeys)
+			} catch (error) {
+				return libraryStoreError(request, error)
 			}
 			return json(200, { asset: next }, request)
 		}
@@ -676,20 +578,10 @@ export async function handleLibraryRequest(
 			return json(400, { error: 'Invalid asset id' }, request)
 		}
 		if (request.method === 'DELETE') {
-			for (const key of candidateOwnerKeys(authResult.auth)) {
-				const written = await mutateJsonArray(
-					bucket,
-					assetsObjectKey(key),
-					isAssetEntry,
-					(assets) => assets.filter((entry) => entry.id !== assetId),
-				)
-				if (!written.ok) {
-					return json(
-						409,
-						{ error: 'Library index conflict, retry' },
-						request,
-					)
-				}
+			try {
+				await deleteLibraryAsset(env, ownerKey, assetId, legacyOwnerKeys)
+			} catch (error) {
+				return libraryStoreError(request, error)
 			}
 			return json(200, { ok: true }, request)
 		}

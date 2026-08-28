@@ -12,6 +12,7 @@ import { generateGuestDisplayName } from '../lib/whiteboard-display-name'
 import {
 	FULL_RESYNC_EVERY,
 	MAX_SCENE_ELEMENTS,
+	MAX_SCENE_FRAME_BYTES,
 	MAX_SCENE_JSON_BYTES,
 	META_BOARD_ID_KEY,
 	META_CLASS_CAN_EDIT_KEY,
@@ -26,11 +27,13 @@ import {
 	isAssignableRole,
 	isWhiteboardRole,
 	isGuestConnectUserId,
+	isMutationId,
 	mergeSceneElements,
 	parseDatabaseScene,
 	parseSceneElements,
 	parseStoredSceneElements,
 	roleCanEdit,
+	sceneMalformedError,
 	sessionCanEdit,
 	sceneTooLargeError,
 	type AssignableRole,
@@ -39,14 +42,20 @@ import {
 	type SceneAppState,
 	type SceneElement,
 	type ScenePersistError,
+	type SceneAckStatus,
 	type WhiteboardRole,
+	utf8ByteLength,
 } from '../lib/whiteboard-sync'
 import {
 	tryClerkWhiteboardAuth,
 	verifyClerkWhiteboardToken,
 	type ClerkWhiteboardAuth,
 } from './clerkAuth'
+import {
+	isValidConnectSessionId,
+} from './connectAdmission'
 import { libraryIndexContainsBoard } from './libraryRoutes'
+import { logWhiteboardEvent } from './httpSecurity'
 import {
 	isExpiredIso,
 	kvCodeKey,
@@ -68,6 +77,10 @@ const CODE_EXPIRES_AT_KEY = 'meta:codeExpiresAt'
 const CODE_MINT_LOG_KEY = 'meta:codeMintLog'
 /** Skip replacing an alarm when it is already scheduled at the target time. */
 const ALARM_SET_TOLERANCE_MS = 1000
+/** Bounds apply before any per-board storage reads on a websocket upgrade. */
+export const MAX_BOARD_SOCKETS = 64
+export const MAX_PENDING_AUTH_SOCKETS = 32
+export const PENDING_AUTH_MAX_AGE_MS = 30_000
 
 export function shouldSkipIdenticalScenePersist(
 	lastPersistedJson: string | null,
@@ -103,15 +116,10 @@ const SCENE_TABLE_SQL = `
 	CREATE TABLE IF NOT EXISTS excalidraw_scene (
 		id INTEGER PRIMARY KEY CHECK (id = 1),
 		scene_json TEXT NOT NULL,
-		updated_at INTEGER NOT NULL
-	)
-`
-
-const SCENE_TABLE_V2_SQL = `
-	CREATE TABLE IF NOT EXISTS excalidraw_scene_v2 (
-		id INTEGER PRIMARY KEY CHECK (id = 1),
-		scene_json TEXT NOT NULL,
-		updated_at INTEGER NOT NULL
+		updated_at INTEGER NOT NULL,
+		last_mutation_id TEXT,
+		last_mutation_hash TEXT,
+		scene_revision INTEGER NOT NULL DEFAULT 0
 	)
 `
 
@@ -187,54 +195,84 @@ function migrateExcalidrawSceneTable(
 ): boolean {
 	const tables = new Set(knownTables ?? listUserSqlTables(storage))
 	if (tables.has('excalidraw_scene_v2') && !tables.has('excalidraw_scene')) {
-		storage.sql.exec(
-			'ALTER TABLE excalidraw_scene_v2 RENAME TO excalidraw_scene',
-		)
+		// Keep the interrupted v2 table as a recoverable source. Copying it into
+		// the canonical table is additive; renaming it would make a partial
+		// migration needlessly destructive if the next write fails.
+		try {
+			storage.sql.exec(SCENE_TABLE_SQL)
+			storage.sql.exec(
+				`INSERT INTO excalidraw_scene (id, scene_json, updated_at)
+				 SELECT id, scene_json, updated_at
+				 FROM excalidraw_scene_v2
+				 WHERE id = 1
+				 ON CONFLICT(id) DO NOTHING`,
+			)
+		} catch {
+			// The v2 table remains readable if an additive copy is interrupted.
+			return false
+		}
 		return true
 	}
 
-	storage.sql.exec(SCENE_TABLE_SQL)
+	try {
+		storage.sql.exec(SCENE_TABLE_SQL)
+	} catch {
+		// Leave an existing legacy table readable when canonical setup fails.
+		return false
+	}
 	const columns = new Set(listSceneTableColumns(storage))
-	if (
-		columns.has('scene_json') &&
-		!columns.has('live_json') &&
-		!columns.has('database_json')
-	) {
-		if (tables.has('excalidraw_scene_v2')) {
-			storage.sql.exec('DROP TABLE IF EXISTS excalidraw_scene_v2')
-		}
+	if (columns.has('scene_json')) {
+		// A leftover v2 table is historical data, not disposable migration
+		// scratch. Leave it in place. For an additive legacy table, the old
+		// columns remain the read-authoritative fallback until the next scene
+		// write has durably populated the canonical column.
+		// This also covers an additive legacy table, which must not receive a
+		// second scene_json column on a later scene write.
 		return true
 	}
 	if (!columns.has('live_json') && !columns.has('database_json')) return true
 
+	const legacyColumns = [
+		columns.has('live_json') ? 'live_json' : null,
+		columns.has('database_json') ? 'database_json' : null,
+		columns.has('updated_at') ? 'updated_at' : null,
+	].filter((column): column is string => column !== null)
 	const row = storage.sql
 		.exec<{
-			live_json: string | null
-			database_json: string | null
-			updated_at: number | null
-		}>('SELECT live_json, database_json, updated_at FROM excalidraw_scene WHERE id = 1')
+			live_json?: string | null
+			database_json?: string | null
+			updated_at?: number | null
+		}>(
+			`SELECT ${legacyColumns.join(', ')} FROM excalidraw_scene WHERE id = 1`,
+		)
 		.toArray()[0]
 	const sceneJson = row ? liveOrDatabaseToSceneJson(row) : null
 
-	storage.sql.exec(SCENE_TABLE_V2_SQL)
-	storage.sql.exec('DELETE FROM excalidraw_scene_v2')
+	// Legacy boards use this table name already, so migrate additively instead
+	// of replacing the table. The old live/database columns remain available
+	// as a lossless fallback if the copy cannot be represented.
 	try {
-		if (sceneJson) {
+		storage.sql.exec(
+			'ALTER TABLE excalidraw_scene ADD COLUMN scene_json TEXT',
+		)
+	} catch {
+		// The legacy columns remain the lossless read fallback.
+		return false
+	}
+	if (sceneJson) {
+		try {
 			storage.sql.exec(
-				`INSERT INTO excalidraw_scene_v2 (id, scene_json, updated_at)
-				 VALUES (1, ?, ?)`,
+				`UPDATE excalidraw_scene
+				 SET scene_json = ?, updated_at = COALESCE(updated_at, ?)
+				 WHERE id = 1 AND (scene_json IS NULL OR scene_json = '')`,
 				sceneJson,
 				row?.updated_at ?? Date.now(),
 			)
+		} catch {
+			// A failed copy does not invalidate the legacy source row.
+			return false
 		}
-	} catch {
-		storage.sql.exec('DROP TABLE IF EXISTS excalidraw_scene_v2')
-		return false
 	}
-	storage.sql.exec('DROP TABLE excalidraw_scene')
-	storage.sql.exec(
-		'ALTER TABLE excalidraw_scene_v2 RENAME TO excalidraw_scene',
-	)
 	return true
 }
 
@@ -259,6 +297,8 @@ interface SocketAttachment {
 	meta: SessionMeta
 	/** Waiting for first-message Clerk / host proof (`wb:auth`). */
 	pendingClerkAuth?: boolean
+	/** Wall-clock age for pending auth; attachment survives DO hibernation. */
+	pendingSince?: number
 	connectOrigin?: string
 	/** Voluntary Follow target; survives hibernation with the socket. */
 	followTargetSessionId?: string
@@ -292,6 +332,35 @@ type ParticipantPublic = {
 type LiveScene = {
 	elements: SceneElement[]
 	appState: SceneAppState
+}
+
+/** Compare JSON-derived appState values without treating object key order as a change. */
+function stableJson(value: unknown): string {
+	if (value === null || typeof value !== 'object') {
+		return JSON.stringify(value) ?? 'null'
+	}
+	if (Array.isArray(value)) {
+		return `[${value.map((item) => stableJson(item)).join(',')}]`
+	}
+	const record = value as Record<string, unknown>
+	return `{${Object.keys(record)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+		.join(',')}}`
+}
+
+function sameSceneAppState(
+	left: SceneAppState,
+	right: SceneAppState,
+): boolean {
+	return stableJson(left) === stableJson(right)
+}
+
+function liveSceneJson(scene: LiveScene): string {
+	return JSON.stringify({
+		elements: scene.elements,
+		appState: scene.appState,
+	})
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -431,6 +500,15 @@ function normalizeAttachment(
 			isHost: Boolean(meta.isHost || isHost),
 		},
 		pendingClerkAuth: Boolean(raw?.pendingClerkAuth),
+		pendingSince:
+			raw?.pendingClerkAuth &&
+			typeof raw?.pendingSince === 'number' &&
+			Number.isFinite(raw.pendingSince) &&
+			raw.pendingSince > 0
+				? raw.pendingSince
+				: raw?.pendingClerkAuth
+					? Date.now()
+					: undefined,
 		connectOrigin:
 			typeof raw?.connectOrigin === 'string' ? raw.connectOrigin : '',
 		followTargetSessionId:
@@ -477,6 +555,25 @@ function sendJson(ws: WebSocket, payload: unknown): void {
 	}
 }
 
+function protocolError(
+	ws: WebSocket,
+	error: ScenePersistError,
+	mutationId: string | null = null,
+): void {
+	if (error.code === 'scene_too_large' || error.code === 'malformed_scene') {
+		logWhiteboardEvent('scene_rejected', {
+			reason: error.code === 'scene_too_large' ? 'too_large' : 'malformed',
+		})
+	}
+	sendJson(ws, {
+		type: 'wb:error',
+		code: error.code,
+		message: error.message,
+		mutationId,
+		terminal: error.terminal,
+	})
+}
+
 export class WhiteboardBoard extends DurableObject<Env> {
 	/** Map sessionId → ws so HTTP handlers can reach a live socket. */
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
@@ -491,11 +588,30 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private sceneLoaded = false
 	/** Canonical scene table is ready for writes in this object lifetime. */
 	private sceneTableReady = false
+	/** Mutation receipt columns are added lazily on the first scene write. */
+	private sceneMutationColumnsReady = false
+	/** Monotonic appState revision column is added with the receipt columns. */
+	private sceneRevisionColumnReady = false
 	/** Coalesces concurrent /meta + WebSocket lifetime checks after a wake. */
 	private lifetimeInitialization: Promise<void> | null = null
+	/** Serializes share-code mint, revoke, and expiry transitions. */
+	private shareCodeTransition: Promise<void> = Promise.resolve()
+	/** Invalidates a mint as soon as revoke/expiry is requested. */
+	private shareCodeTransitionVersion = 0
 	/** Last scene_json blob written or loaded; identical writes are no-ops. */
 	private lastPersistedJson: string | null = null
+	/**
+	 * Deliberately retain only the latest receipt in the same scene row. Mutation
+	 * IDs are ack correlation, not an unbounded replay log. Older replays use
+	 * element LWW, while the same-row scene revision prevents stale appState.
+	 */
+	private lastMutationId: string | null = null
+	private lastMutationHash: string | null = null
 	private updatesSinceFullSync = 0
+	/** Serializes scene read/merge/persist/broadcast/ack transitions. */
+	private sceneTransition: Promise<void> = Promise.resolve()
+	/** Persisted monotonic ordering for database appState mutations. */
+	private sceneRevision = 0
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -505,6 +621,16 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 	}
 
+	/** Keep the queue usable after a failed operation. */
+	private enqueueSceneTransition<T>(operation: () => Promise<T>): Promise<T> {
+		const run = this.sceneTransition.then(operation, operation)
+		this.sceneTransition = run.then(
+			() => undefined,
+			() => undefined,
+		)
+		return run
+	}
+
 	private resetLiveState(): void {
 		this.forceFollowCache = null
 		this.voluntaryFollow.clear()
@@ -512,7 +638,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
 		this.sceneTableReady = false
+		this.sceneMutationColumnsReady = false
+		this.sceneRevisionColumnReady = false
 		this.lastPersistedJson = null
+		this.lastMutationId = null
+		this.lastMutationHash = null
+		this.sceneRevision = 0
 		this.updatesSinceFullSync = 0
 	}
 
@@ -528,7 +659,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	/** Library delete: free the KV PIN. Does not wipe the scene. */
 	async revokeShareCodeMapping(): Promise<void> {
-		await this.clearActiveCodeKeys()
+		this.shareCodeTransitionVersion += 1
+		await this.enqueueShareCodeTransition(() =>
+			this.clearActiveCodeKeys(),
+		)
 		await this.scheduleNextAlarm()
 	}
 
@@ -538,6 +672,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	 * own — the Worker only calls this for listed object IDs.
 	 */
 	async wipeStoredData(): Promise<WipeStoredDataResult> {
+		this.shareCodeTransitionVersion += 1
 		return this.ctx.blockConcurrencyWhile(async () => {
 			const tablesBefore = listUserSqlTables(this.ctx.storage)
 			for (const ws of this.ctx.getWebSockets()) {
@@ -548,11 +683,15 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				}
 			}
 			this.sessionIdToWs.clear()
-			await this.clearActiveCodeKeys()
+			await this.enqueueShareCodeTransition(() =>
+				this.clearActiveCodeKeys(),
+			)
 			await this.clearAllStorage()
 			this.lifetimeInitialization = null
 			this.ctx.storage.sql.exec(SCENE_TABLE_SQL)
 			this.sceneTableReady = true
+			this.sceneMutationColumnsReady = true
+			this.sceneRevisionColumnReady = true
 			return {
 				objectId: this.ctx.id.toString(),
 				tablesBefore,
@@ -659,7 +798,14 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.voluntaryFollow.clear()
 		for (const ws of this.ctx.getWebSockets()) {
 			const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
-			if (!raw?.sessionId) continue
+			if (!raw?.sessionId || !isValidConnectSessionId(raw.sessionId)) {
+				try {
+					ws.close(4002, 'invalid session id')
+				} catch {
+					// already closing
+				}
+				continue
+			}
 			const attachment = normalizeAttachment(raw, raw.sessionId)
 			ws.serializeAttachment(attachment)
 			this.sessionIdToWs.set(attachment.sessionId, ws)
@@ -679,6 +825,45 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		this.forceFollowNeedsRebroadcast = this.sessionIdToWs.size > 0
 	}
 
+	private pendingSocketCount(): number {
+		let count = 0
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const attachment = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			if (attachment.pendingClerkAuth) count += 1
+		}
+		return count
+	}
+
+	/**
+	 * Pending auth has no storage alarm of its own. A wake/connect/message
+	 * prunes stale sockets and keeps the in-memory admission counters finite.
+	 */
+	private pruneExpiredPendingSockets(now = Date.now()): void {
+		for (const [sessionId, ws] of this.sessionIdToWs) {
+			const attachment = normalizeAttachment(
+				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
+				sessionId,
+			)
+			if (
+				!attachment.pendingClerkAuth ||
+				!attachment.pendingSince ||
+				now - attachment.pendingSince < PENDING_AUTH_MAX_AGE_MS
+			)
+				continue
+			try {
+				ws.close(4008, 'authentication timeout')
+			} catch {
+				// already closing
+			}
+			this.sessionIdToWs.delete(sessionId)
+			this.voluntaryFollow.delete(sessionId)
+			logWhiteboardEvent('connect_auth_timeout')
+		}
+	}
+
 	/**
 	 * After hibernation, already-open tabs never got a new `wb:hello`.
 	 * Reload Follow Me from storage and send `wb:forceFollow` to them.
@@ -691,18 +876,18 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	/**
-	 * Store host secret hash on first connect that supplies a secret;
-	 * verify on later connects. Creating browser is ephemeral Owner.
+	 * Store host secret hash on the first authenticated wb:auth that supplies a
+	 * secret; verify on later connects. Creating browser is ephemeral Owner.
 	 */
 	private async resolveHost(hostSecret: string | null): Promise<boolean> {
 		if (!hostSecret || looksLikeJwt(hostSecret)) return false
 		const hash = await sha256Hex(hostSecret)
-		const existing = await this.ctx.storage.get<string>(HOST_SECRET_HASH_KEY)
-		if (!existing) {
-			await this.ctx.storage.put(HOST_SECRET_HASH_KEY, hash)
+		return this.ctx.storage.transaction(async (transaction) => {
+			const existing = await transaction.get<string>(HOST_SECRET_HASH_KEY)
+			if (existing) return existing === hash
+			await transaction.put(HOST_SECRET_HASH_KEY, hash)
 			return true
-		}
-		return existing === hash
+		})
 	}
 
 	private async assertHost(hostSecret: string | null): Promise<boolean> {
@@ -723,19 +908,22 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		hostSecret: string | null,
 		opts: { mint: boolean; clerkAuth?: ClerkWhiteboardAuth | null },
 	): Promise<boolean> {
-		const ok = opts.mint
-			? await this.resolveHost(hostSecret)
-			: await this.assertHost(hostSecret)
-		if (!ok) return false
 		const cloudOwnerKey =
 			(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
 		if (cloudOwnerKey && cloudOwnerKey.startsWith('google:')) {
-			return Boolean(
-				opts.clerkAuth &&
-					this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey),
+			if (
+				!opts.clerkAuth ||
+				!this.clerkMatchesCloudOwner(opts.clerkAuth, cloudOwnerKey)
 			)
+				return false
+			// A leftover host secret may verify for the matching Clerk owner, but
+			// a host header/auth retry must never plant a new secret on a claimed
+			// board. Claiming is already established by Clerk metadata.
+			return await this.assertHost(hostSecret)
 		}
-		return true
+		return opts.mint
+			? await this.resolveHost(hostSecret)
+			: await this.assertHost(hostSecret)
 	}
 
 	/** Header only — never the WebSocket query string (access logs). */
@@ -747,7 +935,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	async fetch(request: Request): Promise<Response> {
 		this.hydrateSockets()
-		await this.restoreFollowAfterWake()
 		const url = new URL(request.url)
 		const connectMatch = url.pathname.match(
 			/^\/api\/whiteboard\/connect\/([^/]+)\/?$/i,
@@ -759,6 +946,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				decodeURIComponent(connectMatch[1]!),
 			)
 		}
+		await this.restoreFollowAfterWake()
 
 		const codeMatch = url.pathname.match(
 			/^\/api\/whiteboard\/boards\/([^/]+)\/code\/?$/i,
@@ -804,8 +992,32 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		boardId: string,
 	): Promise<Response> {
 		const sessionId = url.searchParams.get('sessionId')
-		if (!sessionId) {
-			return new Response('Missing sessionId', { status: 400 })
+		if (!isValidConnectSessionId(sessionId)) {
+			logWhiteboardEvent('connect_rejected')
+			return new Response('Invalid session id', { status: 400 })
+		}
+
+		// This check intentionally precedes host/share/storage reads and the
+		// platform acceptWebSocket call. Reconnects replace their own socket.
+		this.pruneExpiredPendingSockets()
+		const replacing = this.sessionIdToWs.get(sessionId)
+		const socketCount = this.sessionIdToWs.size - (replacing ? 1 : 0)
+		if (socketCount >= MAX_BOARD_SOCKETS) {
+			logWhiteboardEvent('connect_socket_cap_rejected')
+			return new Response('Board connection limit reached', { status: 429 })
+		}
+		const pendingCount =
+			this.pendingSocketCount() -
+			(replacing &&
+				normalizeAttachment(
+					replacing.deserializeAttachment() as Partial<SocketAttachment> | null,
+					sessionId,
+				).pendingClerkAuth
+				? 1
+				: 0)
+		if (pendingCount >= MAX_PENDING_AUTH_SOCKETS) {
+			logWhiteboardEvent('connect_pending_cap_rejected')
+			return new Response('Pending authentication limit reached', { status: 429 })
 		}
 
 		const headerHost = this.connectHostSecretFromHeader(request)
@@ -814,7 +1026,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		// here blocks the 101 handshake and the initial scene:sync. Role is
 		// decided at first-message `wb:auth` (finishPendingConnectAuth).
 		const isHost = await this.hostProvesScratchOwner(headerHost, {
-			mint: true,
+			// A header is only a non-mutating proof of an already initialized
+			// board. New scratch ownership is claimed by the first wb:auth frame.
+			mint: false,
 			clerkAuth: null,
 		})
 		const guestUserId = sanitizeUserId(url.searchParams.get('userId'))
@@ -829,7 +1043,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		const joinedViaShareCode = await this.presentedJoinCodeIsActive(
 			joinCodeFromConnectRequest(request, boardId),
 		)
-		await this.ensureBoardLifetime(boardId)
 		const role = await this.resolveConnectRole({
 			clerkAuth: null,
 			guestUserId,
@@ -866,23 +1079,19 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			authToken,
 			meta,
 			pendingClerkAuth,
+			pendingSince: Date.now(),
 			connectOrigin: request.headers.get('Origin') ?? '',
 			joinedViaShareCode,
 			boardId,
 		}
 		serverWebSocket.serializeAttachment(attachment)
 		this.sessionIdToWs.set(sessionId, serverWebSocket)
+		logWhiteboardEvent('connect_accepted')
 
 		// Do not make the HTTP 101 wait on an old/large scene read. The accepted
 		// socket queues this initial frame, and waitUntil keeps delivery alive.
 		this.ctx.waitUntil(
-			this.sendFullScene(serverWebSocket).catch(() => {
-				sendJson(serverWebSocket, {
-					type: 'wb:error',
-					code: 'persist_failed',
-					message: 'This board could not load its saved scene.',
-				})
-			}),
+			this.sendInitialScene(serverWebSocket),
 		)
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
@@ -967,12 +1176,22 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		// loaded yet — keep that socket pending instead of locking it to Viewer.
 		if (signedInWithoutClerk && !roleCanEdit(role)) return null
 
+		// Upgrade-time reads are deliberately write-free. Only a verified Clerk
+		// token, active share cookie, or valid host proof from this first auth
+		// frame may initialize board metadata and its alarm.
+		if (boardId && (clerkAuth || isHost || joinedViaShareCode)) {
+			await this.ensureBoardLifetime(boardId, {
+				mintShareCode: role === 'owner' || role === 'manager',
+			})
+		}
+
 		return {
 			...attachment,
 			isHost,
 			role,
 			canEdit: sessionCanEdit(role, await this.readClassCanEdit()),
 			pendingClerkAuth: false,
+			pendingSince: undefined,
 			joinedViaShareCode,
 			boardId,
 			meta: {
@@ -1001,6 +1220,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		)
 		if (!current.pendingClerkAuth) return current
 		ws.serializeAttachment(next)
+		if (next.isHost || next.role !== 'viewer' || next.joinedViaShareCode) {
+			logWhiteboardEvent('connect_auth_accepted')
+		} else {
+			logWhiteboardEvent('connect_viewer_accepted')
+		}
 		await this.sendConnectHello(ws, next)
 		this.broadcastParticipants()
 		void this.broadcastForceFollow()
@@ -1116,7 +1340,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(400, { error: 'No meta fields to update' })
 		}
 
-		const hostSecret = url.searchParams.get('hostSecret')
+		// Header proof is the normal transport from the Worker boundary. Keep
+		// the URL value only for historical callers that predate X-Board-Host.
+		const hostSecret = this.hostSecretFromRequest(request, url)
 		if (!(await this.assertHost(hostSecret))) {
 			return json(403, { error: 'Host secret required' })
 		}
@@ -1248,7 +1474,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		request: Request,
 		url: URL,
 	): Promise<boolean> {
-		const hostSecret = url.searchParams.get('hostSecret')
+		const hostSecret = this.hostSecretFromRequest(request, url)
 		if (await this.assertHost(hostSecret)) {
 			return true
 		}
@@ -1278,8 +1504,8 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	/**
-	 * Worker meta forwarding copies Authorization Bearer into `hostSecret`.
-	 * Treat JWT-shaped values as Clerk proof, not as a host secret.
+	 * Normal Worker forwarding keeps Clerk Authorization in its header. A
+	 * JWT-shaped `hostSecret` query value is retained only for old callers.
 	 */
 	private async tryClerkFromMetaRequest(
 		request: Request,
@@ -1328,7 +1554,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	/**
 	 * Title / class-can-edit PATCH: live session token, scratch host proof,
 	 * then Clerk Owner (`cloudOwnerKey`) or stored Clerk Manager. Hub rename
-	 * usually has Clerk (worker forwards the JWT as `hostSecret`) and no
+	 * usually has Clerk (Worker forwards the JWT Authorization header) and no
 	 * live socket. JWT-shaped values stay Clerk, not host proof.
 	 */
 	private async resolveActorFromMeta(
@@ -1337,27 +1563,34 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		body: { sessionId?: unknown; authToken?: unknown },
 	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
 		const actorUrl = new URL(url.toString())
-		const sessionId =
-			actorUrl.searchParams.get('actorSessionId') ||
-			request.headers.get('X-Board-Session')?.trim() ||
-			(typeof body.sessionId === 'string' ? body.sessionId.trim() : '')
-		const authToken =
-			actorUrl.searchParams.get('actorAuth') ||
-			request.headers.get('X-Board-Auth')?.trim() ||
-			(typeof body.authToken === 'string' ? body.authToken.trim() : '')
-		if (sessionId) actorUrl.searchParams.set('actorSessionId', sessionId)
-		if (authToken) actorUrl.searchParams.set('actorAuth', authToken)
-		const headerHost = request.headers.get('X-Board-Host')?.trim()
+		// Headers stay headers on the normal path. Body credentials are retained
+		// only for the older meta PATCH shape, where resolveActor still accepts
+		// the resulting compatibility query values.
 		if (
-			headerHost &&
-			!looksLikeJwt(headerHost) &&
-			!actorUrl.searchParams.get('hostSecret')
+			!request.headers.get('X-Board-Session') &&
+			typeof body.sessionId === 'string' &&
+			body.sessionId.trim()
 		) {
-			actorUrl.searchParams.set('hostSecret', headerHost)
+			actorUrl.searchParams.set('actorSessionId', body.sessionId.trim())
 		}
-		const fromLive = await this.resolveActor(actorUrl)
+		if (
+			!request.headers.get('X-Board-Auth') &&
+			typeof body.authToken === 'string' &&
+			body.authToken.trim()
+		) {
+			actorUrl.searchParams.set('actorAuth', body.authToken.trim())
+		}
+		const fromLive = await this.resolveActor(actorUrl, request)
 		if (fromLive) return fromLive
 		return this.resolveClerkOwnerOrManager(request, url)
+	}
+
+	/** Normal host proof is forwarded in a header; query proof is legacy-only. */
+	private hostSecretFromRequest(request: Request, url: URL): string | null {
+		const header = request.headers.get('X-Board-Host')?.trim()
+		if (header && !looksLikeJwt(header)) return header
+		const legacy = url.searchParams.get('hostSecret')?.trim()
+		return legacy && !looksLikeJwt(legacy) ? legacy : null
 	}
 
 	/**
@@ -1422,17 +1655,14 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			// Schema setup belongs to first board initialization, not every cold
 			// Durable Object wake. Re-running sqlite_master scans and DDL on every
 			// reconnect wastes rows and can make an exhausted write quota block an
-			// otherwise read-only existing board before its WebSocket upgrade.
+			// otherwise read-only existing board before its WebSocket upgrade. Only
+			// supported Excalidraw schemas are considered; unrelated historical
+			// tables (including tldraw_*) are never wiped or otherwise modified.
 			const tables = listUserSqlTables(this.ctx.storage)
-			if (hasTldrawSqlTables(tables)) {
-				await this.clearAllStorage()
-				this.sceneTableReady = migrateExcalidrawSceneTable(this.ctx.storage)
-			} else {
-				this.sceneTableReady = migrateExcalidrawSceneTable(
-					this.ctx.storage,
-					tables,
-				)
-			}
+			this.sceneTableReady = migrateExcalidrawSceneTable(
+				this.ctx.storage,
+				tables,
+			)
 			await this.ctx.storage.put(META_BOARD_ID_KEY, boardId)
 		}
 
@@ -1512,76 +1742,106 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		if (this.sceneLoaded && this.sceneCache) return this.sceneCache
 		this.sceneLoaded = true
 		const columns = new Set(listSceneTableColumns(this.ctx.storage))
+		const hasMutationColumns =
+			columns.has('last_mutation_id') && columns.has('last_mutation_hash')
+		this.sceneMutationColumnsReady = hasMutationColumns
+		this.sceneRevisionColumnReady = columns.has('scene_revision')
+		this.sceneRevision = 0
+		const hasLegacySceneColumns =
+			columns.has('live_json') || columns.has('database_json')
+		const legacySceneColumns = [
+			columns.has('live_json') ? 'live_json' : null,
+			columns.has('database_json') ? 'database_json' : null,
+		].filter((column): column is string => column !== null)
+		const readV2Scene = (): { raw: string; scene: LiveScene } | null => {
+			const v2Columns = new Set(listSceneV2TableColumns(this.ctx.storage))
+			if (!v2Columns.has('scene_json')) return null
+			const row = this.ctx.storage.sql
+				.exec<{ scene_json?: string | null }>(
+					'SELECT scene_json FROM excalidraw_scene_v2 WHERE id = 1',
+				)
+				.toArray()[0]
+			if (typeof row?.scene_json !== 'string') return null
+			const scene = this.parseLiveSceneJson(row.scene_json)
+			return scene ? { raw: row.scene_json, scene } : null
+		}
+		const useScene = (raw: string | null | undefined): LiveScene | null =>
+			typeof raw === 'string' ? this.parseLiveSceneJson(raw) : null
 		if (columns.has('scene_json')) {
 			this.sceneTableReady = true
 			const row = this.ctx.storage.sql
-				.exec<{ scene_json: string }>(
-					'SELECT scene_json FROM excalidraw_scene WHERE id = 1',
+				.exec<{
+					scene_json?: string | null
+					live_json?: string | null
+					database_json?: string | null
+					last_mutation_id?: string | null
+					last_mutation_hash?: string | null
+					scene_revision?: number | null
+				}>(
+					`SELECT scene_json${hasLegacySceneColumns ? `, ${legacySceneColumns.join(', ')}` : ''}${
+						hasMutationColumns
+							? ', last_mutation_id, last_mutation_hash'
+							: ''
+					}${this.sceneRevisionColumnReady ? ', scene_revision' : ''} FROM excalidraw_scene WHERE id = 1`,
 				)
 				.toArray()[0]
-			this.sceneCache = row
-				? this.parseLiveSceneJson(row.scene_json) ?? {
-						elements: [],
-						appState: {},
-					}
-				: { elements: [], appState: {} }
-			// Keep the exact stored representation so a reconnect followed by an
-			// unchanged full resync can take the identical-write fast path.
-			this.lastPersistedJson = row ? row.scene_json : null
-			return this.sceneCache
+			this.sceneRevision =
+				typeof row?.scene_revision === 'number' &&
+				Number.isSafeInteger(row.scene_revision) &&
+				row.scene_revision >= 0
+					? row.scene_revision
+					: 0
+			if (hasMutationColumns) {
+				this.lastMutationId = row?.last_mutation_id ?? null
+				this.lastMutationHash = row?.last_mutation_hash ?? null
+			}
+			const canonicalRaw = [row?.scene_json, row?.live_json, row?.database_json]
+				for (const raw of canonicalRaw) {
+					const scene = useScene(raw)
+					if (scene) {
+						this.sceneCache = scene
+						this.lastPersistedJson = liveSceneJson(scene)
+						return scene
+				}
+			}
+		} else if (hasLegacySceneColumns) {
+			const row = this.ctx.storage.sql
+				.exec<{
+					live_json?: string | null
+					database_json?: string | null
+					last_mutation_id?: string | null
+					last_mutation_hash?: string | null
+				}>(
+					`SELECT ${legacySceneColumns.join(', ')} FROM excalidraw_scene WHERE id = 1`,
+				)
+				.toArray()[0]
+			const legacyScene = useScene(row?.live_json) ?? useScene(row?.database_json)
+			if (legacyScene) {
+				if (
+					(!legacyScene.appState ||
+						Object.keys(legacyScene.appState).length === 0) &&
+					row?.database_json
+				) {
+					const database = parseDatabaseScene(row.database_json)
+					if (database) legacyScene.appState = database.appState
+				}
+					this.sceneCache = legacyScene
+					this.lastPersistedJson = liveSceneJson(legacyScene)
+					return legacyScene
+			}
 		}
 
 		// Some boards can be left in the temporary v2 table when a prior
 		// migration was interrupted. Reading must remain write-free so a cold
 		// wake can still recover the scene while Durable Object writes are capped.
-		const hasLegacySceneColumns =
-			columns.has('live_json') || columns.has('database_json')
-		const v2Columns = hasLegacySceneColumns
-			? new Set<string>()
-			: new Set(listSceneV2TableColumns(this.ctx.storage))
-		if (v2Columns.has('scene_json')) {
-			const row = this.ctx.storage.sql
-				.exec<{ scene_json: string }>(
-					'SELECT scene_json FROM excalidraw_scene_v2 WHERE id = 1',
-				)
-				.toArray()[0]
-			this.sceneCache = row
-				? this.parseLiveSceneJson(row.scene_json) ?? {
-						elements: [],
-						appState: {},
-					}
-				: { elements: [], appState: {} }
-			this.lastPersistedJson = row ? row.scene_json : null
-			return this.sceneCache
+		const v2 = readV2Scene()
+			if (v2) {
+				this.sceneCache = v2.scene
+				this.lastPersistedJson = liveSceneJson(v2.scene)
+			return v2.scene
 		}
-
-		const row = columns.has('live_json')
-			? this.ctx.storage.sql
-					.exec<{ live_json: string; database_json: string }>(
-						'SELECT live_json, database_json FROM excalidraw_scene WHERE id = 1',
-					)
-					.toArray()[0]
-			: undefined
-		if (!row) {
-			this.sceneCache = { elements: [], appState: {} }
-			this.lastPersistedJson = null
-			return this.sceneCache
-		}
-		this.sceneCache =
-			this.parseLiveSceneJson(row.live_json) ??
-			this.parseLiveSceneJson(row.database_json) ?? {
-				elements: [],
-				appState: {},
-			}
-		if (
-			(!this.sceneCache.appState ||
-				Object.keys(this.sceneCache.appState).length === 0) &&
-			row.database_json
-		) {
-			const database = parseDatabaseScene(row.database_json)
-			if (database) this.sceneCache.appState = database.appState
-		}
-		this.lastPersistedJson = row.live_json || JSON.stringify(this.sceneCache)
+		this.sceneCache = { elements: [], appState: {} }
+		this.lastPersistedJson = null
 		return this.sceneCache
 	}
 
@@ -1590,28 +1850,57 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	 * dual-column boards migrate only when a scene write is actually needed.
 	 */
 	private ensureSceneTableForWrite(): void {
-		if (this.sceneTableReady) return
-		const columns = new Set(listSceneTableColumns(this.ctx.storage))
-		if (
-			columns.has('scene_json') &&
-			!columns.has('live_json') &&
-			!columns.has('database_json')
-		) {
-			this.sceneTableReady = true
-			return
+		if (!this.sceneTableReady) {
+			const columns = new Set(listSceneTableColumns(this.ctx.storage))
+			if (
+				columns.has('scene_json') &&
+				!columns.has('live_json') &&
+				!columns.has('database_json')
+			) {
+				this.sceneTableReady = true
+			} else {
+				this.sceneTableReady = migrateExcalidrawSceneTable(this.ctx.storage)
+			}
 		}
-		this.sceneTableReady = migrateExcalidrawSceneTable(this.ctx.storage)
+		if (this.sceneMutationColumnsReady && this.sceneRevisionColumnReady) return
+		const columns = new Set(listSceneTableColumns(this.ctx.storage))
+		try {
+			if (!this.sceneMutationColumnsReady && !columns.has('last_mutation_id')) {
+				this.ctx.storage.sql.exec(
+					'ALTER TABLE excalidraw_scene ADD COLUMN last_mutation_id TEXT',
+				)
+			}
+			if (!this.sceneMutationColumnsReady && !columns.has('last_mutation_hash')) {
+				this.ctx.storage.sql.exec(
+					'ALTER TABLE excalidraw_scene ADD COLUMN last_mutation_hash TEXT',
+				)
+			}
+			this.sceneMutationColumnsReady = true
+			if (!columns.has('scene_revision')) {
+				this.ctx.storage.sql.exec(
+					'ALTER TABLE excalidraw_scene ADD COLUMN scene_revision INTEGER NOT NULL DEFAULT 0',
+				)
+			}
+			this.sceneRevisionColumnReady = true
+		} catch (err) {
+			throw asScenePersistError(err)
+		}
 	}
 
-	private persistScene(scene: LiveScene, opts: { force?: boolean } = {}): void {
+	private persistScene(
+		scene: LiveScene,
+		opts: {
+			force?: boolean
+			mutationId?: string | null
+			mutationHash?: string | null
+			sceneRevision?: number
+		} = {},
+	): void {
 		if (scene.elements.length > MAX_SCENE_ELEMENTS) {
 			throw sceneTooLargeError()
 		}
-		const liveJson = JSON.stringify({
-			elements: scene.elements,
-			appState: scene.appState,
-		})
-		if (liveJson.length > MAX_SCENE_JSON_BYTES) {
+		const liveJson = liveSceneJson(scene)
+		if (utf8ByteLength(liveJson) > MAX_SCENE_JSON_BYTES) {
 			throw sceneTooLargeError()
 		}
 		// Accepted element changes are passed with force=true so they are never
@@ -1627,21 +1916,45 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			this.sceneLoaded = true
 			return
 		}
+		const sceneRevision =
+			typeof opts.sceneRevision === 'number' &&
+			Number.isSafeInteger(opts.sceneRevision) &&
+			opts.sceneRevision >= this.sceneRevision
+				? opts.sceneRevision
+				: this.sceneRevision + 1
 		try {
 			this.ensureSceneTableForWrite()
 			this.ctx.storage.sql.exec(
-				`INSERT INTO excalidraw_scene (id, scene_json, updated_at)
-				 VALUES (1, ?, ?)
+				`INSERT INTO excalidraw_scene
+					(id, scene_json, updated_at, last_mutation_id, last_mutation_hash, scene_revision)
+				 VALUES (1, ?, ?, ?, ?, ?)
 				 ON CONFLICT(id) DO UPDATE SET
 				   scene_json = excluded.scene_json,
-				   updated_at = excluded.updated_at`,
+				   updated_at = excluded.updated_at,
+				   last_mutation_id = excluded.last_mutation_id,
+				   last_mutation_hash = excluded.last_mutation_hash,
+				   scene_revision = excluded.scene_revision`,
 				liveJson,
 				Date.now(),
+				opts.mutationId === undefined
+					? this.lastMutationId
+					: opts.mutationId,
+				opts.mutationHash === undefined
+					? this.lastMutationHash
+					: opts.mutationHash,
+				sceneRevision,
 			)
 		} catch (err) {
 			throw asScenePersistError(err)
 		}
 		this.lastPersistedJson = liveJson
+		this.lastMutationId =
+			opts.mutationId === undefined ? this.lastMutationId : opts.mutationId
+		this.lastMutationHash =
+			opts.mutationHash === undefined
+				? this.lastMutationHash
+				: opts.mutationHash
+		this.sceneRevision = sceneRevision
 		this.sceneCache = scene
 		this.sceneLoaded = true
 	}
@@ -1652,6 +1965,15 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	 * callers must not broadcast until this returns.
 	 */
 	private async applyTempPlayerUrlRewrite(
+		boardId: string,
+		googleOwnerKey: string,
+	): Promise<number> {
+		return this.enqueueSceneTransition(() =>
+			this.applyTempPlayerUrlRewriteNow(boardId, googleOwnerKey),
+		)
+	}
+
+	private async applyTempPlayerUrlRewriteNow(
 		boardId: string,
 		googleOwnerKey: string,
 	): Promise<number> {
@@ -1671,6 +1993,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				type: 'scene:sync',
 				elements: nextScene.elements,
 				appState: nextScene.appState,
+				revision: this.sceneRevision,
 			},
 			null,
 		)
@@ -1678,11 +2001,24 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private async sendFullScene(ws: WebSocket): Promise<void> {
+		return this.enqueueSceneTransition(() => this.sendFullSceneNow(ws))
+	}
+
+	private async sendInitialScene(ws: WebSocket): Promise<void> {
+		try {
+			await this.sendFullScene(ws)
+		} catch (err) {
+			this.closeAfterSceneHydrationFailure(ws, err)
+		}
+	}
+
+	private async sendFullSceneNow(ws: WebSocket): Promise<void> {
 		const scene = await this.loadScene()
 		sendJson(ws, {
 			type: 'scene:sync',
 			elements: scene.elements,
 			appState: scene.appState,
+			revision: this.sceneRevision,
 		})
 	}
 
@@ -1699,11 +2035,15 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private notifyScenePersistError(
 		fromSessionId: string,
 		error: ScenePersistError,
+		mutationId: string | null = null,
 	): void {
+		logWhiteboardEvent('scene_persist_error')
 		const payload = {
 			type: 'wb:error' as const,
 			code: error.code,
 			message: error.message,
+			mutationId,
+			terminal: error.terminal,
 		}
 		const origin = this.sessionIdToWs.get(fromSessionId)
 		if (origin) sendJson(origin, payload)
@@ -1717,43 +2057,133 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 	}
 
+	/** A cold scene-read failure must make the client reconnect, not strand it. */
+	private closeAfterSceneHydrationFailure(ws: WebSocket, cause: unknown): void {
+		const error = asScenePersistError(cause)
+		protocolError(ws, error)
+		try {
+			ws.close(error.terminal ? 4000 : 4001, 'scene hydration failed')
+		} catch {
+			// Socket may already be closing.
+		}
+	}
+
 	private async applySceneUpdate(
 		fromSessionId: string,
 		incoming: SceneElement[],
 		databaseJson: string | undefined,
 		full: boolean,
-	): Promise<void> {
-		if (incoming.length === 0 && !full && !databaseJson) return
-		const scene = await this.loadScene()
-		const { next, accepted } = mergeSceneElements(scene.elements, incoming)
-		if (accepted.length === 0 && !databaseJson) return
+		mutationId: string | null,
+		baseRevision?: number,
+	): Promise<SceneAckStatus | null> {
+		return this.enqueueSceneTransition(() =>
+			this.applySceneUpdateNow(
+				fromSessionId,
+				incoming,
+				databaseJson,
+				full,
+				mutationId,
+				baseRevision,
+			),
+		)
+	}
 
-		let appState = scene.appState
-		if (databaseJson) {
-			const parsed = parseDatabaseScene(databaseJson)
-			if (parsed) appState = parsed.appState
+	private async applySceneUpdateNow(
+		fromSessionId: string,
+		incoming: SceneElement[],
+		databaseJson: string | undefined,
+		full: boolean,
+		mutationId: string | null,
+		baseRevision?: number,
+	): Promise<SceneAckStatus | null> {
+		const mutationHash = mutationId
+			? await sha256Hex(
+					JSON.stringify({
+						elements: incoming,
+						full,
+						databaseJson: databaseJson ?? null,
+						baseRevision: baseRevision ?? null,
+					}),
+				)
+			: null
+		const scene = await this.loadScene()
+		if (mutationId && this.lastMutationId === mutationId) {
+			if (this.lastMutationHash !== mutationHash) {
+				throw sceneMalformedError(
+					'The mutation ID was reused with different scene data.',
+				)
+			}
+			return 'duplicate'
+		}
+		let parsedDatabase: ReturnType<typeof parseDatabaseScene> = null
+		if (databaseJson !== undefined) {
+			parsedDatabase = parseDatabaseScene(databaseJson)
+			if (!parsedDatabase) {
+				throw sceneMalformedError('The database scene is malformed.')
+			}
+		}
+		if (incoming.length === 0 && !full && !parsedDatabase) {
+			return mutationId ? 'noop' : null
+		}
+		const { next, accepted } = mergeSceneElements(scene.elements, incoming)
+		/*
+		 * Current mutation-ID clients include the scene revision they observed.
+		 * Database appState is accepted only against that exact base revision;
+		 * otherwise an old replay could restore a stale viewport after the latest
+		 * receipt has been evicted. Rolling-deploy mutation frames without a base
+		 * revision may still carry appState alongside accepted elements, while
+		 * no-ID legacy appState-only frames remain compatible.
+		 */
+		const appStateMayApply =
+			parsedDatabase !== null &&
+			(mutationId === null
+				? accepted.length > 0 || incoming.length === 0
+				: baseRevision !== undefined
+					? baseRevision === this.sceneRevision
+					: accepted.length > 0)
+		const appState = appStateMayApply
+			? parsedDatabase?.appState ?? scene.appState
+			: scene.appState
+		const appStateChanged = !sameSceneAppState(scene.appState, appState)
+		// A replay that lost its ack must not rewrite the row after another peer
+		// has already advanced the scene. Persist an appState-only mutation only
+		// when its normalized value really changed.
+		if (accepted.length === 0 && !appStateChanged) {
+			return mutationId ? 'noop' : null
 		}
 		const nextScene: LiveScene = { elements: next, appState }
-		this.persistScene(nextScene, { force: accepted.length > 0 })
+		this.persistScene(nextScene, {
+			force: true,
+			mutationId,
+			mutationHash,
+			sceneRevision: this.sceneRevision + 1,
+		})
 
 		this.updatesSinceFullSync += 1
-		if (full || this.updatesSinceFullSync >= FULL_RESYNC_EVERY) {
+		if (full || appStateChanged || this.updatesSinceFullSync >= FULL_RESYNC_EVERY) {
 			this.updatesSinceFullSync = 0
 			this.broadcastScene(
 				{
 					type: 'scene:sync',
 					elements: nextScene.elements,
 					appState: nextScene.appState,
+					revision: this.sceneRevision,
 				},
 				fromSessionId,
 			)
-			return
+			return mutationId ? 'applied' : null
 		}
 
 		this.broadcastScene(
-			{ type: 'scene:update', elements: accepted, full: false },
+			{
+				type: 'scene:update',
+				elements: accepted,
+				full: false,
+				revision: this.sceneRevision,
+			},
 			fromSessionId,
 		)
+		return mutationId ? 'applied' : null
 	}
 
 	private clerkOwnerKeys(auth: ClerkWhiteboardAuth): string[] {
@@ -1790,12 +2220,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		boardId: string,
 	): Promise<boolean> {
 		if (!boardId) return false
-		for (const key of this.clerkOwnerKeys(auth)) {
-			if (await libraryIndexContainsBoard(this.env, key, boardId)) {
-				return true
-			}
-		}
-		return false
+		return libraryIndexContainsBoard(this.env, this.clerkOwnerKeys(auth), boardId)
 	}
 
 	/**
@@ -1990,9 +2415,16 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	private async resolveActor(
 		url: URL,
+		request: Request,
 	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
-		const actorSessionId = url.searchParams.get('actorSessionId')
-		const actorAuth = url.searchParams.get('actorAuth')
+		// Forwarded headers are the normal actor proof. URL credentials remain
+		// only as compatibility for old internal callers.
+		const actorSessionId =
+			request.headers.get('X-Board-Session')?.trim() ||
+			url.searchParams.get('actorSessionId')
+		const actorAuth =
+			request.headers.get('X-Board-Auth')?.trim() ||
+			url.searchParams.get('actorAuth')
 		if (actorSessionId && actorAuth) {
 			const ws = this.sessionIdToWs.get(actorSessionId)
 			if (ws) {
@@ -2010,7 +2442,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			}
 		}
 
-		const hostSecret = url.searchParams.get('hostSecret')
+		const hostSecret = this.hostSecretFromRequest(request, url)
 		if (await this.assertHost(hostSecret)) {
 			const cloudOwnerKey =
 				(await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY)) ?? null
@@ -2037,7 +2469,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(405, { error: 'Method not allowed' })
 		}
 
-		const actor = await this.resolveActor(url)
+		const actor = await this.resolveActor(url, request)
 		if (!actor || (actor.role !== 'owner' && actor.role !== 'manager')) {
 			return json(403, {
 				error: 'Only the Owner or a Manager can change roles.',
@@ -2123,7 +2555,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			return json(405, { error: 'Method not allowed' })
 		}
 
-		const actor = await this.resolveActor(url)
+		const actor = await this.resolveActor(url, request)
 		if (!actor || (actor.role !== 'owner' && actor.role !== 'manager')) {
 			return json(403, {
 				error: 'Only the Owner or a Manager can force follow.',
@@ -2331,26 +2763,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		request: Request,
 		url: URL,
 	): Promise<{ role: WhiteboardRole; userId: string; sessionId: string } | null> {
-		const actorUrl = new URL(url.toString())
-		const sessionId =
-			actorUrl.searchParams.get('actorSessionId') ||
-			request.headers.get('X-Board-Session')?.trim() ||
-			''
-		const authToken =
-			actorUrl.searchParams.get('actorAuth') ||
-			request.headers.get('X-Board-Auth')?.trim() ||
-			''
-		if (sessionId) actorUrl.searchParams.set('actorSessionId', sessionId)
-		if (authToken) actorUrl.searchParams.set('actorAuth', authToken)
-		const headerHost = request.headers.get('X-Board-Host')?.trim()
-		if (
-			headerHost &&
-			!looksLikeJwt(headerHost) &&
-			!actorUrl.searchParams.get('hostSecret')
-		) {
-			actorUrl.searchParams.set('hostSecret', headerHost)
-		}
-		const fromLive = await this.resolveActor(actorUrl)
+		const fromLive = await this.resolveActor(url, request)
 		if (fromLive) return fromLive
 		return this.resolveClerkOwnerOrManager(request, url)
 	}
@@ -2416,21 +2829,47 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		return code
 	}
 
+	/** Run one share-code state transition after all earlier transitions settle. */
+	private enqueueShareCodeTransition<T>(
+		transition: () => Promise<T>,
+	): Promise<T> {
+		const run = this.shareCodeTransition.then(transition, transition)
+		this.shareCodeTransition = run.then(
+			() => undefined,
+			() => undefined,
+		)
+		return run
+	}
+
 	/**
 	 * Mint once if missing. Existing codes (including leftover 4-character)
 	 * are kept and rewritten to KV without TTL.
 	 */
 	private async ensureShareCode(boardId: string): Promise<CodeState | null> {
 		if (!this.env.WHITEBOARD_CODES || !boardId) return null
+		const transitionVersion = this.shareCodeTransitionVersion
+		return this.enqueueShareCodeTransition(() =>
+			this.ensureShareCodeOnce(boardId, transitionVersion),
+		)
+	}
+
+	private async ensureShareCodeOnce(
+		boardId: string,
+		transitionVersion: number,
+	): Promise<CodeState | null> {
+		if (transitionVersion !== this.shareCodeTransitionVersion) return null
 		const existing = await this.readStoredCode()
 		if (existing) {
+			if (transitionVersion !== this.shareCodeTransitionVersion) return null
 			const expiresAt = await this.ctx.storage.get(CODE_EXPIRES_AT_KEY)
+			if (transitionVersion !== this.shareCodeTransitionVersion) return null
 			if (expiresAt != null) {
 				await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
 			}
+			if (transitionVersion !== this.shareCodeTransitionVersion) return null
 			return { code: existing }
 		}
-		return this.mintPermanentCode(boardId)
+		return this.mintPermanentCode(boardId, transitionVersion)
 	}
 
 	private async assertMintAllowed(): Promise<void> {
@@ -2447,35 +2886,92 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		await this.ctx.storage.put(CODE_MINT_LOG_KEY, recent)
 	}
 
-	private async mintPermanentCode(boardId: string): Promise<CodeState> {
+	private async mintPermanentCode(
+		boardId: string,
+		transitionVersion: number,
+	): Promise<CodeState | null> {
 		await this.assertMintAllowed()
+		if (transitionVersion !== this.shareCodeTransitionVersion) return null
 
 		for (let i = 0; i < MINT_SAMPLE_ATTEMPTS; i++) {
 			const candidate = sampleShareCode()
 			const key = kvCodeKey(candidate)
 			const clashRaw = await this.env.WHITEBOARD_CODES.get(key)
+			if (transitionVersion !== this.shareCodeTransitionVersion) return null
 			if (clashRaw) {
 				const clash = parseShareCodeRecord(clashRaw)
 				if (clash?.boardId === boardId) {
-					await this.persistShareCodeKv(candidate, boardId)
-					await this.ctx.storage.put(ACTIVE_CODE_KEY, candidate)
-					await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
-					return { code: candidate }
+					return this.commitMintedCode(
+						candidate,
+						boardId,
+						transitionVersion,
+					)
 				}
 				continue
 			}
 
-			await this.persistShareCodeKv(candidate, boardId)
-			await this.ctx.storage.put(ACTIVE_CODE_KEY, candidate)
-			await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
-			return { code: candidate }
+			return this.commitMintedCode(candidate, boardId, transitionVersion)
 		}
 
 		throw new Error('Could not allocate a free share code. Try again.')
 	}
 
+	private async commitMintedCode(
+		candidate: string,
+		boardId: string,
+		transitionVersion: number,
+	): Promise<CodeState | null> {
+		let mappingMayExist = true
+		const rollback = async (): Promise<void> => {
+			if (!mappingMayExist) return
+			// Mark it handled before awaiting cleanup so a cleanup failure is not
+			// accidentally retried by the catch path. The failed transition must
+			// reject; callers cannot retry while compensation is still pending.
+			mappingMayExist = false
+			await this.compensateMint(candidate)
+		}
+		try {
+			await this.persistShareCodeKv(candidate, boardId)
+			if (transitionVersion !== this.shareCodeTransitionVersion) {
+				await rollback()
+				return null
+			}
+			// The storage write can fail ambiguously after committing. Compensation
+			// therefore removes both the exact KV mapping and a matching active key.
+			await this.ctx.storage.put(ACTIVE_CODE_KEY, candidate)
+			await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+			if (transitionVersion !== this.shareCodeTransitionVersion) {
+				await rollback()
+				return null
+			}
+			mappingMayExist = false
+			return { code: candidate }
+		} catch (error) {
+			try {
+				await rollback()
+			} catch (cleanupError) {
+				throw cleanupError
+			}
+			throw error
+		}
+	}
+
+	private async compensateMint(candidate: string): Promise<void> {
+		if (this.env.WHITEBOARD_CODES) {
+			await this.env.WHITEBOARD_CODES.delete(kvCodeKey(candidate))
+		}
+		const active = await this.ctx.storage.get<string>(ACTIVE_CODE_KEY)
+		if (normalizeShareCode(active ?? '') === candidate) {
+			await this.ctx.storage.delete(ACTIVE_CODE_KEY)
+			await this.ctx.storage.delete(CODE_EXPIRES_AT_KEY)
+		}
+	}
+
 	private async revokeActiveCode(): Promise<void> {
-		await this.clearActiveCodeKeys()
+		this.shareCodeTransitionVersion += 1
+		await this.enqueueShareCodeTransition(() =>
+			this.clearActiveCodeKeys(),
+		)
 		await this.scheduleNextAlarm()
 	}
 
@@ -2532,16 +3028,27 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	}
 
 	private async expireUnsavedBoard(): Promise<void> {
+		return this.enqueueSceneTransition(() => this.expireUnsavedBoardNow())
+	}
+
+	private async expireUnsavedBoardNow(): Promise<void> {
+		this.shareCodeTransitionVersion += 1
+		const clearCode = this.enqueueShareCodeTransition(() =>
+			this.clearActiveCodeKeys(),
+		)
 		this.ctx.storage.sql.exec('DELETE FROM excalidraw_scene')
 		this.sceneCache = { elements: [], appState: {} }
 		this.sceneLoaded = true
 		this.lastPersistedJson = null
+		this.sceneRevision = 0
+		this.lastMutationId = null
+		this.lastMutationHash = null
 		await this.cleanupTempAssets()
-		await this.clearActiveCodeKeys()
+		await clearCode
 		await this.ctx.storage.delete(META_UNSAVED_EXPIRES_AT_KEY)
 		await this.ctx.storage.delete(META_CREATED_AT_KEY)
 		this.broadcastScene(
-			{ type: 'scene:sync', elements: [], appState: {} },
+			{ type: 'scene:sync', elements: [], appState: {}, revision: 0 },
 			null,
 		)
 	}
@@ -2587,24 +3094,48 @@ export class WhiteboardBoard extends DurableObject<Env> {
 
 	private getSessionId(ws: WebSocket): string | null {
 		const attachment = ws.deserializeAttachment() as SocketAttachment | null
-		return attachment?.sessionId ?? null
+		const sessionId = attachment?.sessionId ?? null
+		return isValidConnectSessionId(sessionId) ? sessionId : null
 	}
 
 	override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
 		this.hydrateSockets()
+		this.pruneExpiredPendingSockets()
 		await this.restoreFollowAfterWake()
 		const sessionId = this.getSessionId(ws)
 		if (!sessionId) return
 		this.sessionIdToWs.set(sessionId, ws)
-		if (typeof message !== 'string') return
+		let rawMessage: string
+		if (typeof message === 'string') {
+			if (utf8ByteLength(message) > MAX_SCENE_FRAME_BYTES) {
+				protocolError(ws, sceneTooLargeError())
+				return
+			}
+			rawMessage = message
+		} else {
+			if (message.byteLength > MAX_SCENE_FRAME_BYTES) {
+				protocolError(ws, sceneTooLargeError())
+				return
+			}
+			try {
+				rawMessage = new TextDecoder('utf-8', { fatal: true }).decode(message)
+			} catch {
+				protocolError(ws, sceneMalformedError('The WebSocket frame is not valid UTF-8.'))
+				return
+			}
+		}
 
 		let parsed: unknown
 		try {
-			parsed = JSON.parse(message)
+			parsed = JSON.parse(rawMessage)
 		} catch {
+			protocolError(ws, sceneMalformedError('The WebSocket frame is not valid JSON.'))
 			return
 		}
-		if (!parsed || typeof parsed !== 'object') return
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			protocolError(ws, sceneMalformedError())
+			return
+		}
 		const data = parsed as Record<string, unknown>
 		const attachment = normalizeAttachment(
 			ws.deserializeAttachment() as Partial<SocketAttachment> | null,
@@ -2626,7 +3157,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		if (type === 'scene:request') {
-			await this.sendFullScene(ws)
+			try {
+				await this.sendFullScene(ws)
+			} catch (err) {
+				this.closeAfterSceneHydrationFailure(ws, err)
+			}
 			return
 		}
 
@@ -2663,10 +3198,54 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			if (!sessionCanEdit(attachment.role, await this.readClassCanEdit())) {
 				return
 			}
+			const allowedKeys = new Set([
+				'type',
+				'elements',
+				'full',
+				'databaseJson',
+				'mutationId',
+				'baseRevision',
+			])
+			if (Object.keys(data).some((key) => !allowedKeys.has(key))) {
+				protocolError(ws, sceneMalformedError())
+				return
+			}
+			const rawMutationId = data.mutationId
+			const mutationId =
+				rawMutationId === undefined
+					? null
+					: isMutationId(rawMutationId)
+						? rawMutationId
+						: null
+			if (rawMutationId !== undefined && !mutationId) {
+				protocolError(ws, sceneMalformedError('The mutation ID is invalid.'))
+				return
+			}
+			if ('full' in data && typeof data.full !== 'boolean') {
+				protocolError(ws, sceneMalformedError('The full flag is invalid.'), mutationId)
+				return
+			}
+			if ('databaseJson' in data && typeof data.databaseJson !== 'string') {
+				protocolError(ws, sceneMalformedError('The database scene is invalid.'), mutationId)
+				return
+			}
+			if (
+				'baseRevision' in data &&
+				(typeof data.baseRevision !== 'number' ||
+					!Number.isSafeInteger(data.baseRevision) ||
+					data.baseRevision < 0)
+			) {
+				protocolError(
+					ws,
+					sceneMalformedError('The scene revision is invalid.'),
+					mutationId,
+				)
+				return
+			}
 			try {
 				if (
 					typeof data.databaseJson === 'string' &&
-					data.databaseJson.length > MAX_SCENE_JSON_BYTES
+					utf8ByteLength(data.databaseJson) > MAX_SCENE_JSON_BYTES
 				) {
 					throw sceneTooLargeError()
 				}
@@ -2675,15 +3254,49 @@ export class WhiteboardBoard extends DurableObject<Env> {
 					typeof data.databaseJson === 'string'
 						? data.databaseJson
 						: undefined
-				await this.applySceneUpdate(
-					sessionId,
-					elements,
-					databaseJson,
-					data.full === true,
-				)
-			} catch (err) {
-				this.notifyScenePersistError(sessionId, asScenePersistError(err))
-			}
+				if (
+					databaseJson !== undefined &&
+					!parseDatabaseScene(databaseJson)
+				) {
+					throw sceneMalformedError('The database scene is malformed.')
+				}
+					await this.enqueueSceneTransition(async () => {
+						try {
+							const status = await this.applySceneUpdateNow(
+								sessionId,
+								elements,
+								databaseJson,
+								data.full === true,
+								mutationId,
+								typeof data.baseRevision === 'number'
+									? data.baseRevision
+									: undefined,
+							)
+							if (mutationId && status) {
+								sendJson(ws, {
+									type: 'scene:ack',
+									mutationId,
+									status,
+									revision: this.sceneRevision,
+								})
+							}
+						} catch (err) {
+							this.notifyScenePersistError(
+								sessionId,
+								asScenePersistError(err),
+								mutationId,
+							)
+						}
+					})
+				} catch (err) {
+					// The queued operation handles expected scene persistence errors;
+					// this guard only covers an unexpected queue failure.
+					this.notifyScenePersistError(
+						sessionId,
+						asScenePersistError(err),
+						mutationId,
+					)
+				}
 		}
 	}
 

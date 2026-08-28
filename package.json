@@ -20,7 +20,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@astrojs/cloudflare": "^14.1.7",
+    "@astrojs/cloudflare": "^14.2.5",
     "@astrojs/react": "^6.0.2",
     "@clerk/backend": "^3.15.1",
     "@clerk/react": "^6.12.11",
@@ -37,6 +37,12 @@
     "@cloudflare/workers-types": "^5.20260804.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
-    "wrangler": "^4.119.0"
+    "wrangler": "^4.127.0"
+  },
+  "overrides": {
+    "js-yaml": "4.3.2",
+    "lodash-es": "4.18.1",
+    "nanoid@<4": "3.3.18",
+    "nanoid@>=4 <5.1.16": "5.1.16"
   }
 }

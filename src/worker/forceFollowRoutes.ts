@@ -6,6 +6,18 @@
  * Body: { "forceFollow": boolean, "targetUserId"?: string, "subjectUserId"?: string }
  */
 
+import {
+	copyProofHeaders,
+	forwardLegacyProofHeaders,
+	jsonHeaders,
+	jsonResponse,
+	logWhiteboardEvent,
+	readBoundedJsonBody,
+	JsonBodyError,
+	readHostProof,
+	withJsonHeaders,
+} from './httpSecurity'
+
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -13,38 +25,11 @@ function isBoardUuid(value: string): boolean {
 	return UUID_RE.test(value)
 }
 
-function corsHeaders(request: Request): HeadersInit {
-	const origin = request.headers.get('Origin')
-	if (!origin) return {}
-	return {
-		'Access-Control-Allow-Origin': origin,
-		'Access-Control-Allow-Methods': 'PATCH, OPTIONS',
-		'Access-Control-Allow-Headers':
-			'Content-Type, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth',
-		Vary: 'Origin',
-	}
-}
-
 function json(status: number, body: unknown, request: Request): Response {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Content-Type': 'application/json',
-			...corsHeaders(request),
-		},
-	})
-}
-
-function extractHostSecret(request: Request, url: URL): string | null {
-	const header = request.headers.get('X-Board-Host')?.trim()
-	if (header) return header
-	const auth = request.headers.get('Authorization')
-	if (auth?.toLowerCase().startsWith('bearer ')) {
-		const token = auth.slice(7).trim()
-		if (token) return token
+	if (status >= 400) {
+		logWhiteboardEvent('api_error', { method: request.method, status })
 	}
-	const query = url.searchParams.get('hostSecret')?.trim()
-	return query || null
+	return jsonResponse(request, status, body, { methods: 'PATCH, OPTIONS' })
 }
 
 /**
@@ -64,7 +49,10 @@ export async function handleForceFollowRequest(
 	if (request.method === 'OPTIONS') {
 		return new Response(null, {
 			status: 204,
-			headers: corsHeaders(request),
+			headers: jsonHeaders(request, {
+				methods: 'PATCH, OPTIONS',
+				maxAge: 86400,
+			}),
 		})
 	}
 
@@ -77,9 +65,21 @@ export async function handleForceFollowRequest(
 		return json(400, { error: 'Invalid board id' }, request)
 	}
 
-	const hostSecret = extractHostSecret(request, url)
-	const actorSessionId = request.headers.get('X-Board-Session')?.trim() || ''
-	const actorAuth = request.headers.get('X-Board-Auth')?.trim() || ''
+	const hostProof = readHostProof(request, url)
+	const hostSecret = hostProof.value
+	const headerActorSessionId =
+		request.headers.get('X-Board-Session')?.trim() || ''
+	const headerActorAuth = request.headers.get('X-Board-Auth')?.trim() || ''
+	const legacyActorSessionId = url.searchParams.get('actorSessionId')?.trim() || ''
+	const legacyActorAuth = url.searchParams.get('actorAuth')?.trim() || ''
+	const actorSessionId =
+		headerActorSessionId ||
+		legacyActorSessionId ||
+		''
+	const actorAuth =
+		headerActorAuth ||
+		legacyActorAuth ||
+		''
 	if (!hostSecret && !(actorSessionId && actorAuth)) {
 		return json(401, { error: 'Owner or Manager proof required' }, request)
 	}
@@ -88,7 +88,7 @@ export async function handleForceFollowRequest(
 	let targetUserId = ''
 	let subjectUserId = ''
 	try {
-		const body = (await request.json()) as {
+		const body = (await readBoundedJsonBody(request)) as {
 			forceFollow?: unknown
 			targetUserId?: unknown
 			subjectUserId?: unknown
@@ -107,34 +107,39 @@ export async function handleForceFollowRequest(
 		if (typeof body.subjectUserId === 'string') {
 			subjectUserId = body.subjectUserId.trim().slice(0, 128)
 		}
-	} catch {
+	} catch (error) {
+		if (error instanceof JsonBodyError) {
+			return json(error.status, { error: error.message }, request)
+		}
 		return json(400, { error: 'Invalid JSON body' }, request)
 	}
 
 	const id = env.WHITEBOARDS.idFromName(boardId)
 	const stub = env.WHITEBOARDS.get(id)
 	const forwardUrl = new URL(request.url)
+	const headers = copyProofHeaders(request)
+	forwardLegacyProofHeaders(request, forwardUrl, headers)
 	forwardUrl.searchParams.set('boardId', boardId)
 	forwardUrl.searchParams.set('forceFollow', forceFollow ? '1' : '0')
-	if (hostSecret) forwardUrl.searchParams.set('hostSecret', hostSecret)
-	if (actorSessionId) forwardUrl.searchParams.set('actorSessionId', actorSessionId)
-	if (actorAuth) forwardUrl.searchParams.set('actorAuth', actorAuth)
 	if (targetUserId) forwardUrl.searchParams.set('targetUserId', targetUserId)
 	if (subjectUserId) forwardUrl.searchParams.set('subjectUserId', subjectUserId)
+	headers.set('Content-Type', 'application/json')
+	if (hostSecret && !headers.has('X-Board-Host')) {
+		headers.set('X-Board-Host', hostSecret)
+	}
 
 	const response = await stub.fetch(
 		new Request(forwardUrl.toString(), {
 			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
+			headers,
+			body: JSON.stringify({
+				forceFollow,
+				...(targetUserId ? { targetUserId } : {}),
+				...(subjectUserId ? { subjectUserId } : {}),
+			}),
 		}),
 	)
-
-	const text = await response.text()
-	return new Response(text, {
-		status: response.status,
-		headers: {
-			'Content-Type': 'application/json',
-			...corsHeaders(request),
-		},
+	return withJsonHeaders(request, response, {
+		methods: 'PATCH, OPTIONS',
 	})
 }

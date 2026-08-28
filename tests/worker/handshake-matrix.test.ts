@@ -1,5 +1,7 @@
+import { runInDurableObject } from 'cloudflare:test'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
+	boardStub,
 	bootWorker,
 	collectFrames,
 	connect,
@@ -52,10 +54,30 @@ describe('handshake matrix', () => {
 		expect(framesOfType(socket, 'wb:hello')).toHaveLength(1)
 	})
 
-	it('accepts scratch host proof from the WebSocket header', async () => {
+	it('does not let an upgrade header claim a random UUID; first auth proof does', async () => {
 		const hostSecret = randomHostSecret()
-		const socket = await openBoard(newBoardId(), { hostSecret })
-		sendWbAuth(socket)
+		const boardId = newBoardId()
+		const socket = await openBoard(boardId, { hostSecret })
+		await socket.waitForFrame((frame) => frame.type === 'scene:sync')
+		await collectFrames(socket, 250)
+		expect(framesOfType(socket, 'wb:hello')).toHaveLength(0)
+		const beforeAuth = await runInDurableObject(
+			boardStub(boardId),
+			async (_instance, state) => ({
+				metaKeys: [...(await state.storage.list({ prefix: 'meta:' })).keys()],
+				alarm: await state.storage.getAlarm(),
+				tables: state.storage
+					.sql.exec<{ name: string }>(
+						"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+					)
+					.toArray(),
+			}),
+		)
+		expect(beforeAuth.metaKeys).toEqual([])
+		expect(beforeAuth.alarm).toBeNull()
+		expect(beforeAuth.tables).toEqual([])
+
+		sendWbAuth(socket, { hostSecret })
 
 		const hello = await waitForHello(socket)
 		expect(hello.role).toBe('owner')

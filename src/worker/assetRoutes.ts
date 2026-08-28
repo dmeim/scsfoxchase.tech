@@ -25,6 +25,17 @@ import {
 } from '../lib/whiteboard-preview-url'
 import { UNSAVED_BOARD_TTL_MS } from '../lib/whiteboard-sync'
 import { requireClerkWhiteboardAuth } from './clerkAuth'
+import {
+	corsHeaders,
+	JsonBodyError,
+	jsonHeaders,
+	jsonResponse,
+	logWhiteboardEvent,
+	readHostProof,
+	readBoundedJsonBody,
+	withJsonHeaders,
+	type HostProof,
+} from './httpSecurity'
 import type { WhiteboardBoard } from './WhiteboardBoard'
 
 export const MAX_ASSET_BYTES = 8 * 1024 * 1024 // 8 MB — Chromebook-friendly
@@ -155,17 +166,6 @@ export function parseAssetPath(
 	return { ownerKey, assetId }
 }
 
-/** Site + local Astro origins only. Never echo an arbitrary Origin. */
-const ALLOWED_CORS_ORIGINS = new Set([
-	'https://scsfoxchase.tech',
-	'https://www.scsfoxchase.tech',
-	'http://localhost:4321',
-	'http://127.0.0.1:4321',
-])
-
-const CORS_ALLOW_HEADERS =
-	'Content-Type, Content-Length, Authorization, X-Board-Host, X-Board-Session, X-Board-Auth, X-Board-Id, X-Whiteboard-Kind'
-
 function isPreviewKindRequest(request: Request): boolean {
 	return (
 		request.headers.get(WHITEBOARD_PREVIEW_KIND_HEADER)?.trim().toLowerCase() ===
@@ -177,19 +177,6 @@ function assetCacheControl(kind: string): string {
 	if (kind === WHITEBOARD_PREVIEW_KIND) return PREVIEW_CACHE_CONTROL
 	if (kind === 'temp') return 'private, max-age=3600'
 	return 'public, max-age=31536000, immutable'
-}
-
-function corsHeaders(request: Request): HeadersInit {
-	const origin = request.headers.get('Origin')
-	if (!origin || !ALLOWED_CORS_ORIGINS.has(origin)) {
-		return {}
-	}
-	return {
-		'Access-Control-Allow-Origin': origin,
-		'Access-Control-Allow-Methods': 'GET, PUT, DELETE, POST, OPTIONS',
-		'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS,
-		Vary: 'Origin',
-	}
 }
 
 async function assertGoogleOwnerWrite(
@@ -206,13 +193,8 @@ async function assertGoogleOwnerWrite(
 	}
 	const authResult = await requireClerkWhiteboardAuth(request, env)
 	if (!authResult.ok) {
-		const headers = new Headers(authResult.response.headers)
-		Object.entries(corsHeaders(request)).forEach(([k, v]) => {
-			headers.set(k, v)
-		})
-		return new Response(authResult.response.body, {
-			status: authResult.response.status,
-			headers,
+		return withJsonHeaders(request, authResult.response, {
+			methods: 'GET, PUT, DELETE, POST, OPTIONS',
 		})
 	}
 	if (authResult.auth.ownerKey !== ownerKey) {
@@ -221,16 +203,8 @@ async function assertGoogleOwnerWrite(
 	return null
 }
 
-function extractHostSecret(request: Request): string | null {
-	const header = request.headers.get('X-Board-Host')?.trim()
-	if (header) return header
-	const auth = request.headers.get('Authorization')
-	if (auth?.toLowerCase().startsWith('bearer ')) {
-		const token = auth.slice(7).trim()
-		// Host secrets are hex; Clerk JWTs contain '.'.
-		if (token && !token.includes('.')) return token
-	}
-	return new URL(request.url).searchParams.get('hostSecret')?.trim() || null
+function extractHostProof(request: Request): HostProof {
+	return readHostProof(request)
 }
 
 function extractSessionProof(
@@ -287,15 +261,19 @@ async function tryRevealCloudOwnerKey(
 	env: Env,
 	boardId: string,
 	hostSecret: string | null,
+	session: { sessionId: string; authToken: string } | null,
 ): Promise<string | null> {
 	const stub = boardStub(env, boardId)
 	try {
 		const viaClerk = await readRevealedCloudOwnerKey(stub, request, boardId, {
 			authorization: request.headers.get('Authorization'),
+			sessionId: session?.sessionId ?? null,
+			authToken: session?.authToken ?? null,
 		})
 		if (viaClerk) return viaClerk
 	} catch {
-		// Guest editors have no matching Clerk; session path still proceeds.
+		// A failed owner reveal is not authorization. The caller must either
+		// retry with a valid host proof or fail closed below.
 	}
 	if (!hostSecret) return null
 	try {
@@ -325,7 +303,7 @@ async function assertGoogleAssetWrite(
 		)
 	}
 
-	const hostSecret = extractHostSecret(request)
+	const hostSecret = extractHostProof(request).value
 	const session = extractSessionProof(request)
 	const boardId = boardIdForAssetWrite(request, ownerKey)
 
@@ -345,8 +323,9 @@ async function assertGoogleAssetWrite(
 					env,
 					boardId,
 					hostSecret,
+					session,
 				)
-				if (revealed && revealed !== ownerKey) {
+				if (!revealed || revealed !== ownerKey) {
 					return jsonError(
 						403,
 						'ownerKey does not match this board',
@@ -380,7 +359,7 @@ async function assertTempWrite(
 	env: Env,
 	ownerKey: string,
 ): Promise<Response | null> {
-	const hostSecret = extractHostSecret(request)
+	const hostSecret = extractHostProof(request).value
 	const session = extractSessionProof(request)
 	if (!hostSecret && !session) {
 		return jsonError(
@@ -436,13 +415,15 @@ function jsonError(
 	message: string,
 	request: Request,
 ): Response {
-	return new Response(JSON.stringify({ error: message }), {
+	if (status >= 400) {
+		logWhiteboardEvent('api_error', { method: request.method, status })
+	}
+	return jsonResponse(
+		request,
 		status,
-		headers: {
-			'Content-Type': 'application/json',
-			...corsHeaders(request),
-		},
-	})
+		{ error: message },
+		{ methods: 'GET, PUT, DELETE, POST, OPTIONS' },
+	)
 }
 
 function jsonOk(
@@ -450,13 +431,12 @@ function jsonOk(
 	body: unknown,
 	status = 200,
 ): Response {
-	return new Response(JSON.stringify(body), {
+	return jsonResponse(
+		request,
 		status,
-		headers: {
-			'Content-Type': 'application/json',
-			...corsHeaders(request),
-		},
-	})
+		body,
+		{ methods: 'GET, PUT, DELETE, POST, OPTIONS' },
+	)
 }
 
 function isExpiredUpload(uploaded: Date, now = Date.now()): boolean {
@@ -501,26 +481,43 @@ export async function moveTempPrefixToOwner(
 	const moved: string[] = []
 	let cursor: string | undefined
 	do {
-		const listed = await env.WHITEBOARD_ASSETS.list({
-			prefix,
-			cursor,
-			limit: 100,
-		})
+		let listed: R2Objects
+		try {
+			listed = await env.WHITEBOARD_ASSETS.list({
+				prefix,
+				cursor,
+				limit: 100,
+			})
+		} catch {
+			logWhiteboardEvent('r2_list_error', { method: 'POST', status: 503 })
+			throw new Error('R2 list failed')
+		}
 		for (const obj of listed.objects) {
 			const fileId = obj.key.slice(prefix.length)
 			if (!fileId || fileId.includes('/') || !isAssetUuid(fileId)) continue
-			const source = await env.WHITEBOARD_ASSETS.get(obj.key)
+			let source: R2ObjectBody | null
+			try {
+				source = await env.WHITEBOARD_ASSETS.get(obj.key)
+			} catch {
+				logWhiteboardEvent('r2_read_error', { method: 'POST', status: 503 })
+				throw new Error('R2 read failed')
+			}
 			if (!source) continue
 			const destKey = r2ObjectKey(destOwnerKey, fileId)
-			await env.WHITEBOARD_ASSETS.put(destKey, source.body, {
-				httpMetadata: source.httpMetadata,
-				customMetadata: {
-					...source.customMetadata,
-					ownerKey: destOwnerKey,
-					assetId: fileId,
-					kind: 'persistent',
-				},
-			})
+			try {
+				await env.WHITEBOARD_ASSETS.put(destKey, source.body, {
+					httpMetadata: source.httpMetadata,
+					customMetadata: {
+						...source.customMetadata,
+						ownerKey: destOwnerKey,
+						assetId: fileId,
+						kind: 'persistent',
+					},
+				})
+			} catch {
+				logWhiteboardEvent('r2_write_error', { method: 'POST', status: 503 })
+				throw new Error('R2 write failed')
+			}
 			moved.push(fileId)
 		}
 		cursor = listed.truncated ? listed.cursor : undefined
@@ -528,48 +525,61 @@ export async function moveTempPrefixToOwner(
 	return { moved }
 }
 
+const TEMP_EXPIRY_BATCH_LIMIT = 100
+
+type TempExpiryBatch = { deleted: number; cursor: string | null }
+
 /**
- * Delete temp:* objects older than 24h on unsaved boards only.
- * Saved boards keep temp until google-then-temp resolution can replace it.
- * Called from expire-temp, temp PUT, and (via DO alarm) prefix wipe when
- * an unsaved board expires.
+ * Process one bounded page of stale temp objects. This is maintenance work,
+ * never an upload/read side effect; callers must provide authentication and
+ * may resume with the returned cursor.
+ */
+async function expireTempR2Batch(
+	env: Env,
+	now = Date.now(),
+	cursor?: string,
+): Promise<TempExpiryBatch> {
+	const listed = await env.WHITEBOARD_ASSETS.list({
+		prefix: 'assets/temp:',
+		...(cursor ? { cursor } : {}),
+		limit: TEMP_EXPIRY_BATCH_LIMIT,
+	})
+	const stale: string[] = []
+	const savedByBoard = new Map<string, boolean | null>()
+	for (const obj of listed.objects) {
+		if (!isExpiredUpload(obj.uploaded, now)) continue
+		const boardId = boardIdFromTempR2Key(obj.key)
+		if (!boardId) {
+			stale.push(obj.key)
+			continue
+		}
+		let saved = savedByBoard.get(boardId)
+		if (saved === undefined) {
+			saved = await readSavedToLibraryFlag(env, boardId)
+			savedByBoard.set(boardId, saved)
+		}
+		if (saved !== false) continue
+		stale.push(obj.key)
+	}
+	if (stale.length > 0) {
+		await env.WHITEBOARD_ASSETS.delete(stale)
+	}
+	return {
+		deleted: stale.length,
+		cursor: listed.truncated ? listed.cursor || null : null,
+	}
+}
+
+/**
+ * Compatibility helper for operators/tests. It intentionally processes one
+ * page only; bucket-wide scans belong to an authenticated maintenance caller.
  */
 export async function expireTempR2Objects(
 	env: Env,
 	now = Date.now(),
+	cursor?: string,
 ): Promise<number> {
-	let deleted = 0
-	let cursor: string | undefined
-	const savedByBoard = new Map<string, boolean | null>()
-	do {
-		const listed = await env.WHITEBOARD_ASSETS.list({
-			prefix: 'assets/temp:',
-			cursor,
-			limit: 100,
-		})
-		const stale: string[] = []
-		for (const obj of listed.objects) {
-			if (!isExpiredUpload(obj.uploaded, now)) continue
-			const boardId = boardIdFromTempR2Key(obj.key)
-			if (!boardId) {
-				stale.push(obj.key)
-				continue
-			}
-			let saved = savedByBoard.get(boardId)
-			if (saved === undefined) {
-				saved = await readSavedToLibraryFlag(env, boardId)
-				savedByBoard.set(boardId, saved)
-			}
-			if (saved !== false) continue
-			stale.push(obj.key)
-		}
-		if (stale.length > 0) {
-			await env.WHITEBOARD_ASSETS.delete(stale)
-			deleted += stale.length
-		}
-		cursor = listed.truncated ? listed.cursor : undefined
-	} while (cursor)
-	return deleted
+	return (await expireTempR2Batch(env, now, cursor)).deleted
 }
 
 /** PHASE 3.2: after hub Save/claim PATCHes board meta, move temp R2 objects. */
@@ -615,20 +625,36 @@ async function readRevealedCloudOwnerKey(
 	stub: DurableObjectStub<WhiteboardBoard>,
 	request: Request,
 	boardId: string,
-	proof: { hostSecret?: string | null; authorization?: string | null },
+	proof: {
+		hostSecret?: string | null
+		authorization?: string | null
+		sessionId?: string | null
+		authToken?: string | null
+	},
 ): Promise<string | null> {
 	const forwardUrl = new URL(request.url)
 	forwardUrl.pathname = `/api/whiteboard/boards/${encodeURIComponent(boardId)}/meta`
 	forwardUrl.search = ''
 	forwardUrl.searchParams.set('boardId', boardId)
 	const hostSecret = proof.hostSecret?.trim()
-	if (hostSecret) {
-		forwardUrl.searchParams.set('hostSecret', hostSecret)
-	}
 	const headers = new Headers({ 'Content-Type': 'application/json' })
 	const authorization = proof.authorization?.trim()
 	if (authorization) {
 		headers.set('Authorization', authorization)
+	}
+	const sessionId = proof.sessionId?.trim()
+	const authToken = proof.authToken?.trim()
+	if (sessionId && authToken) {
+		headers.set('X-Board-Session', sessionId)
+		headers.set('X-Board-Auth', authToken)
+	}
+	const boardHost = request.headers.get('X-Board-Host')?.trim()
+	if (boardHost) {
+		headers.set('X-Board-Host', boardHost)
+	} else if (hostSecret) {
+		// Compatibility for callers that supplied Authorization: Bearer <host>.
+		// The normal internal URL remains free of credential query parameters.
+		headers.set('X-Board-Host', hostSecret)
 	}
 	const origin = request.headers.get('Origin')
 	if (origin) headers.set('Origin', origin)
@@ -691,7 +717,7 @@ async function resolveClaimDestination(
 		return { ok: true, destOwnerKey: clerkOwnerKey }
 	}
 
-	const hostSecret = extractHostSecret(request)
+	const hostSecret = extractHostProof(request).value
 	if (!hostSecret) {
 		return {
 			ok: false,
@@ -759,7 +785,10 @@ async function handleClaim(
 	if (request.method === 'OPTIONS') {
 		return new Response(null, {
 			status: 204,
-			headers: corsHeaders(request),
+			headers: jsonHeaders(request, {
+				methods: 'POST, OPTIONS',
+				maxAge: 86400,
+			}),
 		})
 	}
 	if (request.method !== 'POST') {
@@ -768,8 +797,15 @@ async function handleClaim(
 
 	let body: { boardId?: unknown }
 	try {
-		body = (await request.json()) as typeof body
-	} catch {
+		const parsed = await readBoundedJsonBody(request)
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			return jsonError(400, 'Invalid JSON body', request)
+		}
+		body = parsed as typeof body
+	} catch (error) {
+		if (error instanceof JsonBodyError) {
+			return jsonError(error.status, error.message, request)
+		}
 		return jsonError(400, 'Invalid JSON body', request)
 	}
 	const boardId = typeof body.boardId === 'string' ? body.boardId.trim() : ''
@@ -779,13 +815,8 @@ async function handleClaim(
 
 	const authResult = await requireClerkWhiteboardAuth(request, env)
 	if (!authResult.ok) {
-		const headers = new Headers(authResult.response.headers)
-		Object.entries(corsHeaders(request)).forEach(([k, v]) => {
-			headers.set(k, v)
-		})
-		return new Response(authResult.response.body, {
-			status: authResult.response.status,
-			headers,
+		return withJsonHeaders(request, authResult.response, {
+			methods: 'GET, PUT, DELETE, POST, OPTIONS',
 		})
 	}
 
@@ -798,7 +829,12 @@ async function handleClaim(
 	if (!resolved.ok) return resolved.response
 
 	const destOwnerKey = resolved.destOwnerKey
-	const { moved } = await moveTempPrefixToOwner(env, boardId, destOwnerKey)
+	let moved: string[]
+	try {
+		moved = (await moveTempPrefixToOwner(env, boardId, destOwnerKey)).moved
+	} catch {
+		return jsonError(503, 'Could not claim temporary assets', request)
+	}
 	const stub = boardStub(env, boardId)
 	let rewrite: Awaited<
 		ReturnType<WhiteboardBoard['rewriteTempPlayerUrlsAfterClaim']>
@@ -830,14 +866,64 @@ async function handleExpireTemp(
 	if (request.method === 'OPTIONS') {
 		return new Response(null, {
 			status: 204,
-			headers: corsHeaders(request),
+			headers: jsonHeaders(request, {
+				methods: 'POST, OPTIONS',
+				maxAge: 86400,
+			}),
 		})
 	}
 	if (request.method !== 'POST') {
 		return jsonError(405, 'Method not allowed', request)
 	}
-	const deleted = await expireTempR2Objects(env)
-	return jsonOk(request, { ok: true, deleted })
+
+	const configuredSecret = env.WHITEBOARD_ADMIN_SECRET?.trim() || ''
+	if (!configuredSecret) {
+		return jsonError(503, 'Maintenance is not configured', request)
+	}
+	const authorization = request.headers.get('Authorization')?.trim() || ''
+	const presented = authorization.toLowerCase().startsWith('bearer ')
+		? authorization.slice(7).trim()
+		: ''
+	const expected = new TextEncoder().encode(configuredSecret)
+	const actual = new TextEncoder().encode(presented)
+	let mismatch = expected.byteLength ^ actual.byteLength
+	const compareLength = Math.max(expected.byteLength, actual.byteLength)
+	for (let index = 0; index < compareLength; index += 1) {
+		mismatch |= (actual[index] || 0) ^ (expected[index] || 0)
+	}
+	const authorized = mismatch === 0
+	if (!authorized) {
+		logWhiteboardEvent('maintenance_denied', {
+			method: request.method,
+			status: 401,
+		})
+		return jsonError(401, 'Unauthorized', request)
+	}
+
+	const cursor = new URL(request.url).searchParams.get('cursor')?.trim() || ''
+	if (cursor.length > 1024) {
+		return jsonError(400, 'Invalid maintenance cursor', request)
+	}
+	try {
+		const batch = await expireTempR2Batch(env, Date.now(), cursor || undefined)
+		logWhiteboardEvent('temp_expiry_batch', {
+			method: request.method,
+			count: batch.deleted,
+			limit: TEMP_EXPIRY_BATCH_LIMIT,
+		})
+		return jsonOk(request, {
+			ok: true,
+			deleted: batch.deleted,
+			nextCursor: batch.cursor,
+			limit: TEMP_EXPIRY_BATCH_LIMIT,
+		})
+	} catch {
+		logWhiteboardEvent('r2_maintenance_error', {
+			method: request.method,
+			status: 503,
+		})
+		return jsonError(503, 'Could not expire temporary assets', request)
+	}
 }
 
 type R2AssetObject = R2Object | R2ObjectBody | null
@@ -848,7 +934,6 @@ async function responseForR2Object(
 	object: R2AssetObject,
 	assetId: string,
 	servedOwnerKey: string | null,
-	servedKey: string,
 ): Promise<Response> {
 	if (object === null) {
 		return jsonError(404, 'Asset not found', request)
@@ -864,7 +949,6 @@ async function responseForR2Object(
 			? await readSavedToLibraryFlag(env, boardId)
 			: false
 		if (saved === false) {
-			await env.WHITEBOARD_ASSETS.delete(servedKey)
 			return jsonError(404, 'Asset expired', request)
 		}
 	}
@@ -957,18 +1041,26 @@ export async function handleAssetRequest(
 			return jsonError(405, 'Board-scoped asset writes are disabled', request)
 		}
 		const key = boardAssetR2Key(boardAsset.boardId, boardAsset.fileId)
-		const object = await env.WHITEBOARD_ASSETS.get(key, {
-			range: request.headers,
-			onlyIf: request.headers,
-		})
+		let object: R2AssetObject
+		try {
+			object = await env.WHITEBOARD_ASSETS.get(key, {
+				range: request.headers,
+				onlyIf: request.headers,
+			})
+		} catch {
+			logWhiteboardEvent('r2_read_error', {
+				method: request.method,
+				status: 503,
+			})
+			return jsonError(503, 'Asset storage is temporarily unavailable', request)
+		}
 		return responseForR2Object(
 			request,
 			env,
-			object,
-			boardAsset.fileId,
-			null,
-			key,
-		)
+				object,
+				boardAsset.fileId,
+				null,
+			)
 	}
 
 	const parsed = parseAssetPath(url.pathname)
@@ -1048,21 +1140,25 @@ export async function handleAssetRequest(
 			: isTempOwnerKey(ownerKey)
 				? 'temp'
 				: 'persistent'
-		await env.WHITEBOARD_ASSETS.put(key, body, {
-			httpMetadata: {
-				contentType,
-				cacheControl: assetCacheControl(kind),
-			},
-			customMetadata: {
-				ownerKey,
-				assetId,
-				kind,
-				createdAt: new Date().toISOString(),
-			},
-		})
-
-		if (kind === 'temp' && ctx) {
-			ctx.waitUntil(expireTempR2Objects(env).then(() => undefined))
+		try {
+			await env.WHITEBOARD_ASSETS.put(key, body, {
+				httpMetadata: {
+					contentType,
+					cacheControl: assetCacheControl(kind),
+				},
+				customMetadata: {
+					ownerKey,
+					assetId,
+					kind,
+					createdAt: new Date().toISOString(),
+				},
+			})
+		} catch {
+			logWhiteboardEvent('r2_write_error', {
+				method: request.method,
+				status: 503,
+			})
+			return jsonError(503, 'Asset storage is temporarily unavailable', request)
 		}
 
 		return jsonOk(
@@ -1087,17 +1183,24 @@ export async function handleAssetRequest(
 			null
 		const owners = assetOwnerKeysToTry(ownerKey, boardHint)
 		let servedOwnerKey = ownerKey
-		let servedKey = key
 		let object: R2Object | R2ObjectBody | null = null
 		for (const tryOwner of owners) {
 			const tryKey = r2ObjectKey(tryOwner, assetId)
-			const found = await env.WHITEBOARD_ASSETS.get(tryKey, {
-				range: request.headers,
-				onlyIf: request.headers,
-			})
+			let found: R2AssetObject
+			try {
+				found = await env.WHITEBOARD_ASSETS.get(tryKey, {
+					range: request.headers,
+					onlyIf: request.headers,
+				})
+			} catch {
+				logWhiteboardEvent('r2_read_error', {
+					method: request.method,
+					status: 503,
+				})
+				return jsonError(503, 'Asset storage is temporarily unavailable', request)
+			}
 			if (found !== null) {
 				servedOwnerKey = tryOwner
-				servedKey = tryKey
 				object = found
 				break
 			}
@@ -1108,7 +1211,6 @@ export async function handleAssetRequest(
 			object,
 			assetId,
 			servedOwnerKey,
-			servedKey,
 		)
 	}
 
@@ -1116,7 +1218,15 @@ export async function handleAssetRequest(
 		const writeDenied = await assertAssetWrite(request, env, ownerKey)
 		if (writeDenied) return writeDenied
 
-		await env.WHITEBOARD_ASSETS.delete(key)
+		try {
+			await env.WHITEBOARD_ASSETS.delete(key)
+		} catch {
+			logWhiteboardEvent('r2_delete_error', {
+				method: request.method,
+				status: 503,
+			})
+			return jsonError(503, 'Asset storage is temporarily unavailable', request)
+		}
 		return jsonOk(request, { ok: true })
 	}
 

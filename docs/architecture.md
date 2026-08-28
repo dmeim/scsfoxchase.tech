@@ -1,6 +1,6 @@
 # Architecture
 
-St. Cecilia Technology is an **Astro 7** site deployed as a **Cloudflare Worker** with static assets. Pages are prerendered HTML; the same Worker hosts live `/api/whiteboard/*` endpoints (Excalidraw WebSocket sync, R2 media, KV share codes, Clerk-backed library APIs).
+St. Cecilia Technology is an **Astro 7** site deployed as a **Cloudflare Worker** with static assets. Pages are prerendered HTML; the same Worker hosts live `/api/whiteboard/*` endpoints (Excalidraw WebSocket sync in Durable Object SQLite, D1 metadata, R2 previews/legacy media, KV share codes, Rate Limiting admission, and Clerk-backed library APIs).
 
 **Live domain:** `scsfoxchase.tech`  
 **Worker name:** `scsfoxchase-tech`  
@@ -24,8 +24,10 @@ flowchart TD
   Worker[src/worker.ts]
   API["/api/whiteboard/*"]
   DO[WhiteboardBoard Durable Object]
+  D1[D1 WHITEBOARD_LIBRARY metadata]
   R2[R2 WHITEBOARD_ASSETS]
   KV[KV WHITEBOARD_CODES]
+  RL[Rate Limiting WHITEBOARD_CONNECT_LIMITER]
   Assets[Astro handler + Workers Assets]
 
   Client --> SW
@@ -33,8 +35,10 @@ flowchart TD
   SW -->|"navigations + assets"| Worker
   Worker --> API
   API --> DO
+  API --> D1
   API --> R2
   API --> KV
+  API --> RL
   Worker --> Assets
 ```
 
@@ -46,8 +50,10 @@ Product resource family for whiteboards: **`scsfoxchase-tech_whiteboards`**.
 |---------|------|----------|---------|
 | `ASSETS` | Workers Assets | `./dist/client` | Prerendered pages and static files |
 | `WHITEBOARDS` | Durable Object | Class `WhiteboardBoard` (SQLite) | Per-board sync room; `idFromName(uuid)` |
-| `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` | Media blobs + cloud library JSON indexes |
+| `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` | Preview bytes + legacy media; historical library JSON source indexes retained read-only |
 | `WHITEBOARD_CODES` | KV | Share-code namespace | `code:{1A2B3C4D}` → board UUID (permanent; leftover `1A2B` still joins) |
+| `WHITEBOARD_LIBRARY` | D1 | Production `scsfoxchase-tech-whiteboard-library`; separate preview ID in config | Signed-in Library / Recents / Assets metadata only |
+| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | Simple 120 / 60-second policy | Admission before `WHITEBOARDS.get()`, keyed only by `CF-Connecting-IP` |
 
 **R2 naming:** Bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling keeps the underscore.
 
@@ -75,28 +81,29 @@ Board URLs use a path rewrite so one prerendered shell serves every UUID:
 | Path pattern | Module | Behavior |
 |--------------|--------|----------|
 | `/api/whiteboard/admin/wipe-storage` | `worker/adminRoutes.ts` | Bearer `WHITEBOARD_ADMIN_SECRET`; `deleteAll` on listed DO hex IDs |
-| `/api/whiteboard/library…` | `worker/libraryRoutes.ts` | Cloud board/asset indexes (Clerk session) |
+| `/api/whiteboard/library…` | `worker/libraryRoutes.ts` → D1 | Signed-in board/asset metadata (Clerk session); old R2 JSON is never rewritten |
 | `/api/whiteboard/join…` or `/api/whiteboard/boards/:uuid/code` | `worker/codeRoutes.ts` | Share-code resolve / mint-once / internal revoke (KV + DO) |
 | `/api/whiteboard/boards/:uuid/meta` | DO | Saved-to-library + Google Owner (24h TTL) |
 | `/api/whiteboard/boards/:uuid/participants/…` | `worker/participantRoutes.ts` | Per-session roles (Owner / Manager) |
 | `/api/whiteboard/boards/:uuid/force-follow` | `worker/forceFollowRoutes.ts` | Follow User / force-follow (camera lock) |
 | `/api/whiteboard/assets…` | `worker/assetRoutes.ts` | R2 PUT/GET/DELETE / claim |
-| `/api/whiteboard/connect/:uuid` | DO (`idFromName` → `stub.fetch`) | WebSocket upgrade → `WhiteboardBoard` |
+| `/api/whiteboard/connect/:uuid` | `worker/connectAdmission.ts`, then DO (`idFromName` → `stub.fetch`) | UUID/session validation and IP admission precede WebSocket upgrade → `WhiteboardBoard` |
 
-Connect requires a valid UUID and `Upgrade: websocket`; otherwise the Worker returns `400` or `426`. The connect query string is `sessionId` plus optional `displayName` / guest `userId`. Scratch host proof and Clerk JWT are first-message `wb:auth` (or `X-Board-Host` / Cookie), not the WebSocket URL.
+Connect requires a valid UUID, canonical UUID `sessionId`, and `Upgrade: websocket`; otherwise the Worker returns `400` or `426`. The edge gate admits 120 upgrades per trusted IP per 60 seconds; local/test fallback buckets expire and never exceed 4096 keys. The connect query string is `sessionId` plus optional `displayName` / guest `userId`. Scratch host proof and Clerk JWT are first-message `wb:auth` (or an existing-board `X-Board-Host` compatibility proof / share cookie), not the WebSocket URL. A header alone cannot initialize a random UUID.
 
 Everything else falls through to the Astro asset handler.
 
 ### Auth and ownership (whiteboard)
 
 - **Scratch (signed out create):** live Durable Object; ephemeral Owner via host secret; canvas files under `temp:{boardId}` (24h). Not in a library.
-- **Signed in (Google via Clerk):** owner key `google:{accountId}` (Google OAuth `sub` preferred, else Clerk user id); Recents / Library / Assets from R2 `library/{ownerKey}/boards.json` and `library/{ownerKey}/assets.json`. Signed-in create autosaves; that account is Owner.
+- **Signed in (Google via Clerk):** owner key `google:{accountId}` (Google OAuth `sub` preferred, else Clerk user id); Recents / Library / Assets from D1 `WHITEBOARD_LIBRARY`. Historical R2 `library/{ownerKey}/boards.json` and `assets.json` are read-only import sources. Signed-in create autosaves; that account is Owner.
 - Join by code/link/UUID works without an account. Share-code joiners land as **Editor**. UUID-only stays **Viewer**. **Group Edit** Off freezes Editors (view-only). Join does not write Recents.
 - UI: `@clerk/react` header island (`ClerkAuth.tsx`). Worker auth helpers live in `worker/clerkAuth.ts`. Canvas: `WhiteboardCanvas.tsx` (Excalidraw 0.18.1).
 
 ### Asset and share-code storage
 
 - R2 object keys for media: `assets/{ownerKey}/{assetId}` (`google:` when saved; `temp:{boardId}` when unsaved)
+- Board previews remain R2 objects; D1 stores only the preview reference and other library metadata. New canvas image/video insertion is disabled.
 - Share codes: KV `code:{CODE}` → board id (no TTL; 8-character digit-letter, leftover 4-character still joins); DO stores `meta:activeCode`. Share-code joiners land as Editor. Group Edit is a live draw gate. UUID-only stays Viewer. Library delete frees the KV key.
 - Same-origin video player: `/whiteboard-player` (Worker sets `X-Frame-Options: SAMEORIGIN`)
 
@@ -165,6 +172,9 @@ src/
     ├── assetRoutes.ts
     ├── codeRoutes.ts
     ├── libraryRoutes.ts
+    ├── libraryStore.ts       # D1 metadata + read-only R2 source import
+    ├── adminLibraryRoutes.ts # bounded scan/import/export operator surface
+    ├── connectAdmission.ts   # Rate Limiting + bounded local fallback
     ├── participantRoutes.ts
     ├── forceFollowRoutes.ts
     ├── clerkAuth.ts
@@ -185,6 +195,10 @@ src/
 ## Security and headers
 
 `public/_headers` is the sole source of security and cache headers (CSP, HSTS, X-Frame-Options, and related). CSP allows Clerk and Google OAuth hosts used by sign-in, same-origin Whiteboard WebSocket/assets/fonts, and YouTube/Vimeo `frame-src` for canvas embeds. See deployment docs for production checklist items.
+
+## Observability
+
+Wrangler observability is explicitly enabled with structured logs, `invocation_logs: false`, and a 5% production head sampling rate. The allow-listed logger records low-cardinality admission/auth transitions, throttles, scene rejection/persistence failures, and bounded D1/R2/KV storage failures. It excludes board/session IDs, IP addresses, URLs/paths, host secrets, JWTs, arbitrary exception text, and scene contents. It does not log pings or every scene update.
 
 ## Related docs
 

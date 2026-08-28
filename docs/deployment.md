@@ -1,6 +1,6 @@
 # Deployment
 
-St. Cecilia Technology (`scsfoxchase.tech`) is an Astro 7 site deployed as a **Cloudflare Worker** with static assets. Pages are prerendered; the Worker entry (`src/worker.ts`) serves those assets and hosts `/api/whiteboard/*` (Durable Objects, R2, KV).
+St. Cecilia Technology (`scsfoxchase.tech`) is an Astro 7 site deployed as a **Cloudflare Worker** with static assets. Pages are prerendered; the Worker entry (`src/worker.ts`) serves those assets and hosts `/api/whiteboard/*` (Durable Objects, D1 metadata, R2 previews/legacy media, KV, Rate Limiting, and Clerk).
 
 This is **not** a Cloudflare Pages project. Do not use an empty Pages build, publish directory `/`, or restore `cloudflare-pages.toml`.
 
@@ -18,6 +18,8 @@ For system layout and whiteboard APIs, see [architecture.md](./architecture.md) 
 | Live version | `GET /api/whiteboard/version` → `{ sha, builtAt }` |
 
 **GitHub Workers Builds on `main` is the single production deployer.** Manual `npx wrangler deploy` from a laptop is **discouraged**: Builds overwrites that version ~70 seconds later, silently replacing the Worker you just tested.
+
+The current documentation does not assert that production D1 migration, R2 backfill, or the cutover Worker deployment is complete. Apply and verify the production D1 schema before pushing the cutover commit; see [the operator runbook](./whiteboard/d1-library-operations.md).
 
 Before trusting any production observation, confirm `GET /api/whiteboard/version` matches the expected commit (`Cache-Control: no-store` — do not trust a cached copy).
 
@@ -85,6 +87,8 @@ Configured in `wrangler.jsonc`. Product resource family: **`scsfoxchase-tech_whi
 | `WHITEBOARDS` | Durable Object | Class `WhiteboardBoard` (SQLite); migration tag `whiteboard-v1` |
 | `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` |
 | `WHITEBOARD_CODES` | KV | Namespace `scsfoxchase-tech-whiteboard-codes` (share code → board id, permanent) |
+| `WHITEBOARD_LIBRARY` | D1 | `scsfoxchase-tech-whiteboard-library` in production; signed-in metadata only |
+| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | 120 admissions / 60 seconds per trusted `CF-Connecting-IP` |
 | `ASSETS` | Assets fetcher | Bound automatically from the assets directory |
 
 R2 bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling keeps the underscore.
@@ -103,6 +107,25 @@ npx wrangler kv namespace create scsfoxchase-tech-whiteboard-codes-preview
 ```
 
 First deploy after adding the Durable Object applies migration `whiteboard-v1` via `wrangler deploy`. No separate DO create command is required.
+
+## D1 migration order
+
+Production database name: `scsfoxchase-tech-whiteboard-library`. Preview uses the separate `preview_database_id` configured for the `WHITEBOARD_LIBRARY` binding; test workers use `scsfoxchase-tech-whiteboard-library-worker-tests` locally. Apply the additive migrations in order (`0000`, `0001`, `0002`) to local, then preview, then production. Production D1 must be migrated and verified before the cutover commit is pushed; this repository does not claim that production migration, backfill, or deployment is complete.
+
+```bash
+npx wrangler d1 migrations list WHITEBOARD_LIBRARY --local
+npx wrangler d1 migrations apply WHITEBOARD_LIBRARY --local
+npx wrangler d1 migrations list WHITEBOARD_LIBRARY --remote --preview
+npx wrangler d1 migrations apply WHITEBOARD_LIBRARY --remote --preview
+npx wrangler d1 migrations list WHITEBOARD_LIBRARY --remote
+npx wrangler d1 migrations apply WHITEBOARD_LIBRARY --remote
+```
+
+The apply command prompts for confirmation and captures a backup. Use [d1-library-operations.md](./whiteboard/d1-library-operations.md) for the read-only R2 scan, explicit import, resumable checkpoints, no-clobber D1 export, verification, and rollback procedure.
+
+## Observability
+
+Wrangler observability is enabled with structured logs, `invocation_logs: false`, and `head_sampling_rate: 0.05` in production. The allow-listed events cover connection admission/auth transitions, throttles, scene rejection/persistence failures, and bounded D1/R2/KV storage failures. Logs omit IDs, IPs, URLs/paths, credentials, arbitrary exceptions, and scene contents; ping and per-update success traffic is not logged.
 
 Whiteboard sync, assets, share codes, and cloud libraries are documented under [whiteboard/](./whiteboard/).
 

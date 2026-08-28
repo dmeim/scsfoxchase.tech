@@ -1,8 +1,9 @@
 /**
  * Cloud board / asset library client (Phase 3.1).
- * Indexes live in R2 under library/{ownerKey}/boards.json|assets.json
- * (same WHITEBOARD_ASSETS bucket as media binaries). Recents / Library /
- * Assets are signed-in cloud only — no localStorage board index.
+ * Library metadata lives in D1. Legacy R2 indexes under
+ * library/{ownerKey}/boards.json|assets.json are imported read-only by the
+ * server store. Recents / Library / Assets are signed-in cloud only — no
+ * localStorage board index.
  *
  * Save / claim lifts the Phase 2 24h scratch TTL via
  * GET/PATCH /api/whiteboard/boards/:uuid/meta (`savedToLibrary`).
@@ -78,6 +79,29 @@ export async function upsertCloudBoard(
 		body: JSON.stringify(entry),
 		keepalive: options.keepalive === true,
 	})
+	const body = await readJson<{ board: WhiteboardLibraryEntry }>(res)
+	return body.board
+}
+
+/**
+ * Update preview metadata for a board that is already in this owner's
+ * library. Unlike `upsertCloudBoard`, this endpoint never creates membership:
+ * a concurrent delete wins and is reported as `null`.
+ */
+export async function patchCloudBoardPreview(
+	boardId: string,
+	previewDataUrl: string,
+	options: { keepalive?: boolean } = {},
+): Promise<WhiteboardLibraryEntry | null> {
+	const res = await libraryFetch(
+		`/api/whiteboard/library/boards/${encodeURIComponent(boardId)}/preview`,
+		{
+			method: 'PATCH',
+			body: JSON.stringify({ previewDataUrl }),
+			keepalive: options.keepalive === true,
+		},
+	)
+	if (res.status === 404) return null
 	const body = await readJson<{ board: WhiteboardLibraryEntry }>(res)
 	return body.board
 }

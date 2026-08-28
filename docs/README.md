@@ -1,6 +1,6 @@
 # St. Cecilia Technology — Documentation
 
-> **Whiteboard rollback status (2026-08-27):** The post-`81242d2` R2 image-upload plan was abandoned and rolled back. New image/video insertion is temporarily disabled. Existing media remains readable from legacy `assets/{ownerKey}/{assetId}` objects and from read-only board-scoped `boards/{boardId}/assets/{fileId}` objects; board-scoped GET/HEAD works, while PUT/DELETE return 405. The live scene remains in Durable Object SQLite. See [sync-storage.md](./whiteboard/sync-storage.md) for the retained write/usage guards.
+> **Whiteboard storage boundary (2026-08-27):** Scenes remain in each board's Durable Object SQLite store. D1 is the signed-in Library / Recents / Assets metadata store. R2 stores previews, serves legacy media reads, and retains historical `library/{ownerKey}/boards.json` / `assets.json` source indexes for migration and recovery; normal library routes do not rewrite them. New image/video insertion remains disabled. Board-scoped compatibility GET/HEAD works; PUT/DELETE return 405. See [sync-storage.md](./whiteboard/sync-storage.md) and the [D1 operations runbook](./whiteboard/d1-library-operations.md).
 
 **scsfoxchase.tech** is a PWA dashboard and educational games catalog for St. Cecilia School. Students and teachers use it daily on desktop monitors, Dell Chromebooks, and iPads.
 
@@ -52,6 +52,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | [whiteboard/sync-storage.md](./whiteboard/sync-storage.md) | Durable Objects, R2 media, Excalidraw sync |
 | [whiteboard/r2-rollback-cloudflare-usage.md](./whiteboard/r2-rollback-cloudflare-usage.md) | R2 rollback, Cloudflare usage incident, retained safeguards, and operator runbook |
 | [whiteboard/auth-libraries.md](./whiteboard/auth-libraries.md) | Clerk auth, cloud-only library, scratch 24h TTL |
+| [whiteboard/d1-library-operations.md](./whiteboard/d1-library-operations.md) | D1 migration, R2 source scan/import, D1 export, verification, rollback |
 | [whiteboard/share-codes.md](./whiteboard/share-codes.md) | Share codes (KV + DO) |
 | [whiteboard/people-permissions.md](./whiteboard/people-permissions.md) | Owner / Manager / Editor / Viewer; Follow vs Follow User camera lock |
 
@@ -63,6 +64,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 - **Cloudflare Worker** `scsfoxchase-tech` — custom entry `src/worker.ts`
 - **React** islands (`@astrojs/react`) for Clerk header auth and the Whiteboard canvas
 - **Excalidraw 0.18.1** (MIT) on a Durable Object WebSocket — product name is Whiteboard; no tldraw license key
+- **Whiteboard storage:** scenes in DO SQLite; signed-in library metadata in D1; R2 previews, legacy media reads, and retained source indexes
 - **Node.js 22+** (`package.json` `engines`)
 
 ### Domain and deploy
@@ -77,7 +79,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | Concern | Location |
 |---------|----------|
 | **Static / prerendered site** | Astro pages → Worker Assets (`ASSETS` / `dist/client`) served via `@astrojs/cloudflare/handler` |
-| **Whiteboard APIs** | `/api/whiteboard/*` in `src/worker.ts` and `src/worker/` (DO, R2, KV, Clerk) |
+| **Whiteboard APIs** | `/api/whiteboard/*` in `src/worker.ts` and `src/worker/` (DO, D1, R2, KV, Rate Limiting, Clerk) |
 | **PWA** | `public/sw.js`, `public/manifest.json`, `/offline` |
 
 ### Primary routes
@@ -109,8 +111,8 @@ Whiteboard HTTP/WebSocket APIs (Worker, not prerendered pages):
 | `/api/whiteboard/boards/:uuid/force-follow` | PATCH Follow User / force-follow (Owner / Manager) |
 | `/api/whiteboard/boards/:uuid/assets/:fileId` | Read-only board-scoped R2 compatibility media (GET/HEAD; PUT/DELETE return 405) |
 | `/api/whiteboard/assets/:ownerKey/:assetId` | Legacy owner-key R2 media PUT/GET/DELETE |
-| `/api/whiteboard/library/boards` | Cloud board index (Clerk) |
-| `/api/whiteboard/library/assets` | Cloud asset index (Clerk) |
+| `/api/whiteboard/library/boards` | Signed-in D1 board metadata (Clerk) |
+| `/api/whiteboard/library/assets` | Signed-in D1 asset metadata (Clerk) |
 
 ### Local commands
 
@@ -121,7 +123,7 @@ npm run build     # → dist/client/
 npm run preview   # production build preview
 ```
 
-Production deploys run from GitHub Workers Builds on `main`, not from a laptop. See [deployment.md](./deployment.md).
+Production deploys run from GitHub Workers Builds on `main`, not from a laptop. Apply and verify production D1 migrations before pushing the cutover commit; use [deployment.md](./deployment.md) and the [D1 operations runbook](./whiteboard/d1-library-operations.md).
 
 ### Root companions (outside this tree)
 

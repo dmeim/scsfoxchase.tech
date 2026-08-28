@@ -10,6 +10,9 @@ declare module 'cloudflare:test' {
 		WHITEBOARDS: DurableObjectNamespace
 		WHITEBOARD_ASSETS: R2Bucket
 		WHITEBOARD_CODES: KVNamespace
+		WHITEBOARD_LIBRARY: D1Database
+		WHITEBOARD_CONNECT_LIMITER?: RateLimit
+		TEST_MIGRATIONS: Array<{ name: string; queries: string[] }>
 	}
 }
 
@@ -18,6 +21,9 @@ declare module 'cloudflare:workers' {
 		WHITEBOARDS: DurableObjectNamespace
 		WHITEBOARD_ASSETS: R2Bucket
 		WHITEBOARD_CODES: KVNamespace
+		WHITEBOARD_LIBRARY: D1Database
+		WHITEBOARD_CONNECT_LIMITER?: RateLimit
+		TEST_MIGRATIONS: Array<{ name: string; queries: string[] }>
 	}
 }
 

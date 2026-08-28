@@ -5,6 +5,14 @@
   // Ensure workers.dev route is published (DNS must resolve for preview)
   "workers_dev": true,
   "preview_urls": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.05,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
+  },
   // Custom entry: Astro handler + /api/whiteboard/* (Durable Objects)
   "main": "./src/worker.ts",
   // Astro emits client assets under dist/client/ (Worker code bundled by Cloudflare Vite plugin)
@@ -20,7 +28,7 @@
   // Binding WHITEBOARDS → Durable Object class WhiteboardBoard (SQLite-backed)
   // Binding WHITEBOARD_ASSETS → R2 bucket scsfoxchase-tech-whiteboards
   //   R2 bucket names cannot contain `_`; hyphenated name maps to the family.
-  //   Also stores Phase 4b cloud indexes: library/{ownerKey}/boards.json|assets.json
+  //   Historical read-only migration/recovery sources: library/{ownerKey}/boards.json|assets.json
   // Binding WHITEBOARD_CODES → KV share-code → boardId (permanent per board)
   // Clerk secrets (not in this file):
   //   npx wrangler secret put CLERK_SECRET_KEY
@@ -38,6 +46,16 @@
       }
     ]
   },
+  "ratelimits": [
+    {
+      "name": "WHITEBOARD_CONNECT_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    }
+  ],
   "migrations": [
     {
       "tag": "whiteboard-v1",
@@ -55,6 +73,19 @@
       "binding": "WHITEBOARD_CODES",
       "id": "4d5a29d9dfbf424f82e000571a8d917c",
       "preview_id": "ef457d2000b94d8faba302321df01faa"
+    }
+  ],
+  // D1 stores signed-in Whiteboard Library / Recents / Assets metadata only.
+  // Durable Object SQLite remains the scene store and R2 remains the media/
+  // preview store. Wrangler uses the preview database for remote dev so a
+  // preview session cannot accidentally write production library metadata.
+  "d1_databases": [
+    {
+      "binding": "WHITEBOARD_LIBRARY",
+      "database_name": "scsfoxchase-tech-whiteboard-library",
+      "database_id": "b291f64a-65d7-49cf-a96a-cb6787463d0a",
+      "preview_database_id": "7b476947-1004-41b5-8645-4d7645c6262e",
+      "migrations_dir": "./migrations"
     }
   ]
 }

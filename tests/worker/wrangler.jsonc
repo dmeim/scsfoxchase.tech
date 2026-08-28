@@ -3,6 +3,14 @@
 	"compatibility_date": "2026-07-14",
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "../../src/worker.ts",
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 0.05,
+		"logs": {
+			"enabled": true,
+			"invocation_logs": false
+		}
+	},
 	"durable_objects": {
 		"bindings": [
 			{
@@ -11,6 +19,16 @@
 			}
 		]
 	},
+	"ratelimits": [
+		{
+			"name": "WHITEBOARD_CONNECT_LIMITER",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 120,
+				"period": 60
+			}
+		}
+	],
 	"migrations": [
 		{
 			"tag": "whiteboard-v1",
@@ -27,6 +45,17 @@
 		{
 			"binding": "WHITEBOARD_CODES",
 			"id": "whiteboard-codes-worker-tests"
+		}
+	],
+	// Test workers use a local-only D1 database identity. It deliberately does
+	// not reuse either remote production or preview UUID.
+	"d1_databases": [
+		{
+			"binding": "WHITEBOARD_LIBRARY",
+			"database_name": "scsfoxchase-tech-whiteboard-library-worker-tests",
+			"database_id": "00000000-0000-4000-8000-000000000001",
+			"remote": false,
+			"migrations_dir": "../../migrations"
 		}
 	]
 }
