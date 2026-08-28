@@ -70,6 +70,36 @@ export const iconLogIn = svg(
   '<path d="m10 17 5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>'
 );
 
+/** Lucide SquarePlus — whiteboard hub create */
+export const iconSquarePlus = svg(
+  '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/><path d="M12 8v8"/>'
+);
+
+/** Lucide Bell — notification center */
+export const iconBell = svg(
+  '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>'
+);
+
+/** Lucide Trash2 — clear notifications */
+export const iconTrash2 = svg(
+  '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
+);
+
+/** Lucide CircleCheck — success notification */
+export const iconCircleCheck = svg(
+  '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'
+);
+
+/** Lucide TriangleAlert — warning notification */
+export const iconTriangleAlert = svg(
+  '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>'
+);
+
+/** Lucide CircleX — error notification */
+export const iconCircleX = svg(
+  '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'
+);
+
 /** Lucide LayoutFreeform — header Whiteboard */
 export const iconLayoutFreeform = svg(
   '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="4" rx="1"/><rect width="7" height="7" x="4" y="14" rx="1"/>'

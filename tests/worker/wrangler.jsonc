@@ -56,6 +56,13 @@
 			"database_id": "00000000-0000-4000-8000-000000000001",
 			"remote": false,
 			"migrations_dir": "../../migrations"
+		},
+		{
+			"binding": "NOTIFICATIONS",
+			"database_name": "scsfoxchase-tech-notifications-worker-tests",
+			"database_id": "00000000-0000-4000-8000-000000000002",
+			"remote": false,
+			"migrations_dir": "../../notification-migrations"
 		}
 	]
 }

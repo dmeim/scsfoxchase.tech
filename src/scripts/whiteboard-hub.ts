@@ -23,6 +23,7 @@ import {
   renameBoardActive,
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
+import { showToast } from './toasts';
 
 /** Four- or eight-character digit-letter code, `1A2B` or `1A2B3C4D`. */
 const HUB_SHARE_CODE_RE = /^([0-9][A-Za-z]){2}(([0-9][A-Za-z]){2})?$/;
@@ -218,9 +219,6 @@ const NOTE_SIGNED_OUT =
   'Create works without an account. That scratch board stays live if you refresh, but it is not in a library and is removed after 24 hours if it is never saved. Join by code or link also works signed out. Sign in with Google to Save and keep Recents, Library, and Assets.';
 const NOTE_SIGNED_IN =
   'New boards save to your Google library and you are Owner. A scratch board you created while signed out can be Saved from this account to claim Owner and lift the 24-hour limit. Leaving without Save means the board was never kept in your library — refresh does not erase it.';
-/** Joiners land as Viewer unless Group Edit is On (code join) or People Editor. UUID stays Viewer. */
-const JOIN_VIEW_ONLY_HINT =
-  'Join is view-only unless Group Edit is on, or you set Editor on People. UUID links stay Viewer.';
 
 function setHubNote(message: string) {
   const note = document.querySelector<HTMLElement>('[data-wb-hub-note]');
@@ -549,6 +547,7 @@ function initWhiteboardHub() {
   const createHint = root.querySelector<HTMLElement>('[data-wb-create-hint]');
   const joinForm = root.querySelector<HTMLFormElement>('[data-wb-join]');
   const joinInput = root.querySelector<HTMLInputElement>('[data-wb-join-input]');
+  const joinBtn = root.querySelector<HTMLButtonElement>('[data-wb-join-button]');
   const joinHint = root.querySelector<HTMLElement>('[data-wb-join-hint]');
 
   const setHint = (el: HTMLElement | null, message: string | null) => {
@@ -564,6 +563,13 @@ function initWhiteboardHub() {
 
   const showCreateHint = (message: string | null) => setHint(createHint, message);
   const showJoinHint = (message: string | null) => setHint(joinHint, message);
+
+  const openJoinInput = () => {
+    if (!joinInput) return;
+    joinInput.hidden = false;
+    joinBtn?.setAttribute('aria-expanded', 'true');
+    window.requestAnimationFrame(() => joinInput.focus());
+  };
 
   const showAuthPendingUi = () => {
     setCloudListsVisible(false);
@@ -590,21 +596,28 @@ function initWhiteboardHub() {
     })();
   });
 
-  joinInput?.addEventListener('focus', () => {
-    const current = joinHint?.textContent?.trim() ?? '';
-    if (!current || current === JOIN_VIEW_ONLY_HINT) {
-      showJoinHint(JOIN_VIEW_ONLY_HINT);
-    }
-  });
-
   joinForm?.addEventListener('submit', (event) => {
     event.preventDefault();
-    const parsed = parseHubJoinInput(joinInput?.value ?? '');
+
+    if (joinInput?.hidden) {
+      showJoinHint(null);
+      openJoinInput();
+      return;
+    }
+
+    const joinValue = joinInput?.value ?? '';
+    const parsed = parseHubJoinInput(joinValue);
 
     if (!parsed) {
-      showJoinHint(
-        'Enter a share code, paste a board link (/board/…), or a UUID. Treat share codes like passwords — do not project them where a hallway can see.',
-      );
+      showJoinHint(null);
+      showToast({
+        kind: 'warning',
+        icon: 'triangle-alert',
+        title: joinValue.trim() ? 'Check the board code' : 'Share code required',
+        description: joinValue.trim()
+          ? 'Enter a valid share code, board link, or UUID.'
+          : 'Enter a share code, board link, or UUID.',
+      });
       joinInput?.focus();
       return;
     }

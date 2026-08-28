@@ -60,6 +60,25 @@ const migrationsPath = resolve(
 	dirname(rootWranglerConfigPath),
 	configuredMigrationsDir,
 )
+const rootNotificationDatabase = rootD1Databases.find(
+	(database) =>
+		database &&
+		typeof database === 'object' &&
+		!Array.isArray(database) &&
+		(database as Record<string, unknown>).binding === 'NOTIFICATIONS',
+)
+const notificationMigrationsDir = rootNotificationDatabase &&
+	typeof rootNotificationDatabase === 'object' &&
+	!Array.isArray(rootNotificationDatabase)
+		? (rootNotificationDatabase as Record<string, unknown>).migrations_dir
+		: undefined
+if (typeof notificationMigrationsDir !== 'string' || !notificationMigrationsDir) {
+	throw new Error('wrangler.jsonc NOTIFICATIONS is missing migrations_dir')
+}
+const notificationMigrationsPath = resolve(
+	dirname(rootWranglerConfigPath),
+	notificationMigrationsDir,
+)
 
 export default defineConfig({
 	define: {
@@ -74,11 +93,15 @@ export default defineConfig({
 	plugins: [
 		cloudflareTest(async () => {
 			const migrations = await readD1Migrations(migrationsPath)
+			const notificationMigrations = await readD1Migrations(notificationMigrationsPath)
 
 			return {
 				wrangler: { configPath: wranglerConfigPath },
 				miniflare: {
-					bindings: { TEST_MIGRATIONS: migrations },
+					bindings: {
+						TEST_MIGRATIONS: migrations,
+						NOTIFICATION_MIGRATIONS: notificationMigrations,
+					},
 				},
 			}
 		}),

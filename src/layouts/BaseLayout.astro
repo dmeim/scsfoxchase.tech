@@ -2,8 +2,10 @@
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import DotWaveBackground from '../components/DotWaveBackground.astro';
+import ToastHost from '../components/ToastHost.astro';
 import '../styles/global.css';
 import '../styles/forms.css';
+import '../styles/notifications.css';
 
 interface Props {
   title: string;
@@ -53,6 +55,7 @@ const showDotWave =
   <body class:list={[bodyClass || false, showDotWave && 'has-dot-wave']}>
     {showDotWave && <DotWaveBackground />}
     <Header boardChrome={boardChrome} />
+    <ToastHost />
     <main>
       <slot />
     </main>
@@ -61,6 +64,7 @@ const showDotWave =
       import '../scripts/theme-toggle';
       import '../scripts/fullscreen-toggle';
       import '../scripts/whiteboard-menu';
+      import '../scripts/notifications';
     </script>
     <script>
       if ('serviceWorker' in navigator) {

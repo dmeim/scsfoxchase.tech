@@ -1,0 +1,74 @@
+---
+import { tempNotifications } from '../data/temp-notifications';
+import { iconTimes } from '../scripts/icons';
+---
+
+<div class="temp-notification-lab">
+  <section class="temp-notification-intro" aria-labelledby="temp-notification-title">
+    <p class="temp-notification-eyebrow">Component mockup</p>
+    <h2 id="temp-notification-title">Toast notifications</h2>
+    <p class="temp-notification-lede">
+      School-color status accents on a neutral Cream and Charcoal surface.
+      These four samples are pinned for comparison; live toasts would dismiss
+      after 10 seconds unless <code>persist: true</code> is passed.
+    </p>
+
+    <dl class="temp-notification-specs">
+      <div>
+        <dt>Content</dt>
+        <dd>Icon, title, subtitle, description</dd>
+      </div>
+      <div>
+        <dt>Behavior</dt>
+        <dd>Stacked, dismissible, persistent when requested</dd>
+      </div>
+      <div>
+        <dt>Notification center</dt>
+        <dd>Use the bell beside Sign in to preview</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="temp-toast-preview" aria-labelledby="temp-toast-preview-title">
+    <div class="temp-toast-preview-head">
+      <div>
+        <p class="temp-notification-eyebrow">Persistent preview</p>
+        <h3 id="temp-toast-preview-title">Toast stack</h3>
+      </div>
+      <span>4 notifications</span>
+    </div>
+
+    <div class="temp-toast-stack" aria-live="polite" data-temp-toast-stack>
+      {tempNotifications.map((notification) => (
+        <article
+          class:list={['temp-toast', `is-${notification.kind}`]}
+          data-temp-toast
+          data-notification-id={notification.id}
+          data-persist="true"
+        >
+          <span class="temp-toast-icon" set:html={notification.icon} />
+          <div class="temp-toast-copy">
+            <div class="temp-toast-title-row">
+              <h3>{notification.title}</h3>
+              <span class="temp-toast-kind">{notification.kind}</span>
+            </div>
+            <p class="temp-toast-subtitle">{notification.subtitle}</p>
+            <p class="temp-toast-description">{notification.description}</p>
+          </div>
+          <button
+            type="button"
+            class="temp-toast-close"
+            data-temp-toast-close
+            aria-label={`Close ${notification.title}`}
+          >
+            <span set:html={iconTimes} />
+          </button>
+        </article>
+      ))}
+    </div>
+  </section>
+</div>
+
+<script>
+  import '../scripts/temp-notifications';
+</script>

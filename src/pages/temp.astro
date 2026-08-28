@@ -1,15 +1,15 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
-import TempCardMockups from '../components/TempCardMockups.astro';
+import TempNotificationMockups from '../components/TempNotificationMockups.astro';
 import '../styles/temp.css';
 ---
-<BaseLayout title="Search Design Lab - St. Cecilia Technology" bodyClass="temp-mockup-page">
+<BaseLayout title="Notification Design Lab - St. Cecilia Technology" bodyClass="temp-notification-page">
   <meta
     slot="head"
     name="description"
-    content="Temporary design lab: seven interactive search-bar candidates for St. Cecilia Technology"
+    content="Temporary notification and toast design lab for St. Cecilia Technology"
   />
   <meta slot="head" name="robots" content="noindex, nofollow" />
-  <TempCardMockups />
+  <TempNotificationMockups />
 </BaseLayout>

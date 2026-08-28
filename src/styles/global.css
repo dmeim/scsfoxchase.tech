@@ -201,6 +201,15 @@ header h1 {
     justify-self: end;
 }
 
+/* Let the hydrated auth control participate directly in the single nav row. */
+.header-auth-item > astro-island {
+    display: contents;
+}
+
+.header-auth-item:has(.header-auth:empty) {
+    display: none;
+}
+
 .theme-toggle-host {
     display: inline-flex;
     align-items: center;

@@ -15,6 +15,9 @@
   },
   // Custom entry: Astro handler + /api/whiteboard/* (Durable Objects)
   "main": "./src/worker.ts",
+  "triggers": {
+    "crons": ["17 * * * *"]
+  },
   // Astro emits client assets under dist/client/ (Worker code bundled by Cloudflare Vite plugin)
   "assets": {
     "directory": "./dist/client",
@@ -86,6 +89,13 @@
       "database_id": "b291f64a-65d7-49cf-a96a-cb6787463d0a",
       "preview_database_id": "7b476947-1004-41b5-8645-4d7645c6262e",
       "migrations_dir": "./migrations"
+    },
+    {
+      "binding": "NOTIFICATIONS",
+      "database_name": "scsfoxchase-tech-notifications",
+      "database_id": "ba58b8e0-e88f-4803-ad51-3f257288fc50",
+      "preview_database_id": "7dd4b16c-95d8-49b8-b44b-24c3c119619e",
+      "migrations_dir": "./notification-migrations"
     }
   ]
 }

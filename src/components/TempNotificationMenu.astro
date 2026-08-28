@@ -1,0 +1,64 @@
+---
+import { tempNotifications } from '../data/temp-notifications';
+import { iconBell, iconTrash2, iconTimes } from '../scripts/icons';
+---
+
+<div class="temp-notification-center" data-temp-notification-center>
+  <button
+    type="button"
+    class="temp-notification-trigger"
+    data-temp-notification-trigger
+    aria-label="Open notifications, 4 unread"
+    aria-expanded="false"
+    aria-controls="temp-notification-panel"
+  >
+    <span class="temp-notification-trigger-icon" set:html={iconBell} />
+    <span class="temp-notification-badge" data-temp-notification-badge>4</span>
+  </button>
+
+  <section
+    class="temp-notification-panel"
+    id="temp-notification-panel"
+    data-temp-notification-panel
+    aria-labelledby="temp-notification-heading"
+    hidden
+  >
+    <header class="temp-notification-panel-head">
+      <h2 id="temp-notification-heading">Notifications</h2>
+      <button type="button" class="temp-notification-clear" data-temp-notification-clear>
+        <span set:html={iconTrash2} />
+        <span>Clear All</span>
+      </button>
+    </header>
+
+    <div class="temp-notification-list" data-temp-notification-list>
+      {tempNotifications.map((notification) => (
+        <article
+          class:list={['temp-notification-item', `is-${notification.kind}`]}
+          data-temp-notification-item
+          data-notification-id={notification.id}
+        >
+          <span class="temp-notification-item-icon" set:html={notification.icon} />
+          <div class="temp-notification-item-copy">
+            <h3>{notification.title}</h3>
+            <p class="temp-notification-item-subtitle">{notification.subtitle}</p>
+            <p class="temp-notification-item-description">{notification.description}</p>
+          </div>
+          <button
+            type="button"
+            class="temp-notification-dismiss"
+            data-temp-notification-dismiss
+            aria-label={`Dismiss ${notification.title}`}
+          >
+            <span set:html={iconTimes} />
+          </button>
+        </article>
+      ))}
+    </div>
+
+    <div class="temp-notification-empty" data-temp-notification-empty hidden>
+      <span set:html={iconBell} />
+      <p>You’re all caught up.</p>
+    </div>
+  </section>
+</div>

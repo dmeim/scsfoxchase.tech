@@ -20,6 +20,8 @@ import { handleLibraryRequest } from './worker/libraryRoutes'
 import { handleForceFollowRequest } from './worker/forceFollowRoutes'
 import { handleParticipantRequest } from './worker/participantRoutes'
 import { handleAdminRequest } from './worker/adminRoutes'
+import { handleNotificationRequest } from './worker/notificationRoutes'
+import { cleanupExpiredNotifications } from './worker/notificationStore'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
 import {
 	admitWhiteboardConnect,
@@ -56,6 +58,11 @@ export default {
 		ctx: ExecutionContext,
 	): Promise<Response> {
 		const url = new URL(request.url)
+
+		if (url.pathname.startsWith('/api/notifications')) {
+			const notificationResponse = await handleNotificationRequest(request, env)
+			if (notificationResponse) return notificationResponse
+		}
 
 		// Disambiguates the deployed Workers Build from a local preview upload.
 		if (url.pathname === '/api/whiteboard/version') {
@@ -235,5 +242,19 @@ export default {
 
 		// Prerendered pages + static assets via Astro Cloudflare handler
 		return handle(request, env, ctx)
+	},
+	async scheduled(
+		_controller: ScheduledController,
+		env: Env,
+		_ctx: ExecutionContext,
+	): Promise<void> {
+		try {
+			await cleanupExpiredNotifications(env)
+		} catch (error) {
+			console.error(JSON.stringify({
+				event: 'notification_cleanup_failed',
+				error: error instanceof Error ? error.message : 'Unknown error',
+			}))
+		}
 	},
 } satisfies ExportedHandler<Env>

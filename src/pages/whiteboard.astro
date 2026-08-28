@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { iconLogIn, iconSquarePlus } from '../scripts/icons';
 import '../styles/whiteboard.css';
 ---
 <BaseLayout title="Whiteboard - St. Cecilia Technology" bodyClass="whiteboard-hub-page">
@@ -12,42 +13,56 @@ import '../styles/whiteboard.css';
 
   <section class="wb-hub" data-wb-hub>
     <div class="wb-hub-shell">
-      <h2 class="wb-hub-title">Whiteboard</h2>
+      <div class="wb-hub-heading">
+        <h2 class="wb-hub-title">Whiteboard</h2>
+
+        <div class="wb-actions">
+          <form class="wb-join" data-wb-join>
+            <div class="wb-join-fields">
+              <div class="wb-join-row">
+                <label class="visually-hidden" for="wb-join-input">Join whiteboard</label>
+                <input
+                  id="wb-join-input"
+                  class="wb-join-input"
+                  type="text"
+                  name="join"
+                  data-wb-join-input
+                  placeholder="Share code, board link, or UUID"
+                  autocomplete="off"
+                  spellcheck="false"
+                  maxlength="200"
+                  hidden
+                />
+                <button
+                  type="submit"
+                  class="wb-join-btn"
+                  data-wb-join-button
+                  aria-controls="wb-join-input"
+                  aria-expanded="false"
+                >
+                  <span class="wb-action-icon" set:html={iconLogIn} />
+                  <span>Join</span>
+                </button>
+              </div>
+              <p class="wb-join-hint" data-wb-join-hint hidden></p>
+            </div>
+          </form>
+
+          <div class="wb-create">
+            <button type="button" class="wb-create-btn" data-wb-create>
+              <span class="wb-action-icon" set:html={iconSquarePlus} />
+              <span>Create</span>
+            </button>
+            <p class="wb-join-hint" data-wb-create-hint hidden></p>
+          </div>
+        </div>
+      </div>
+
       <p class="wb-hub-lede">
         Create a board for class or group work, or join with a share code, link,
         or UUID. Sign in with Google to save boards to your library and reopen
         them on any Chromebook.
       </p>
-
-      <div class="wb-actions">
-        <div class="wb-create">
-          <button type="button" class="wb-create-btn" data-wb-create>
-            Create a new whiteboard
-          </button>
-          <p class="wb-join-hint" data-wb-create-hint hidden></p>
-        </div>
-
-        <form class="wb-join" data-wb-join>
-          <div class="wb-join-fields">
-            <div class="wb-join-row">
-              <label class="visually-hidden" for="wb-join-input">Join whiteboard</label>
-              <input
-                id="wb-join-input"
-                class="wb-join-input"
-                type="text"
-                name="join"
-                data-wb-join-input
-                placeholder="Share code, board link, or UUID"
-                autocomplete="off"
-                spellcheck="false"
-                maxlength="200"
-              />
-              <button type="submit" class="wb-join-btn">Join</button>
-            </div>
-            <p class="wb-join-hint" data-wb-join-hint hidden></p>
-          </div>
-        </form>
-      </div>
 
       <div data-wb-cloud-lists hidden>
         <section class="wb-section" aria-labelledby="wb-recents-heading">

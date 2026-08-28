@@ -1,5 +1,7 @@
 ---
 import ClerkAuth from './ClerkAuth';
+import TempNotificationMenu from './TempNotificationMenu.astro';
+import NotificationCenter from './NotificationCenter.astro';
 import {
   iconHouse,
   iconGamepad2,
@@ -10,6 +12,7 @@ import {
   iconPencil,
   iconClipboard,
   iconInfo,
+  iconLogIn,
 } from '../scripts/icons';
 
 interface Props {
@@ -18,6 +21,7 @@ interface Props {
 
 const { boardChrome = false } = Astro.props;
 const pathname = Astro.url.pathname;
+const notificationDemo = pathname === '/temp';
 const homeActive = pathname === '/' || pathname === '';
 const gamesActive = pathname === '/games' || pathname.startsWith('/games/');
 const helpActive =
@@ -294,8 +298,8 @@ const helpActive =
       )}
     </div>
 
-    <div class="header-right">
-      <nav>
+    <div class:list={['header-right', notificationDemo && 'header-right--notification-demo']}>
+      <nav aria-label="Primary">
         <ul>
           <li>
             <a href="/" class:list={[{ active: homeActive }]}>
@@ -315,11 +319,23 @@ const helpActive =
               Help
             </a>
           </li>
+          <li>
+            {notificationDemo ? <TempNotificationMenu /> : <NotificationCenter />}
+          </li>
+          <li class="header-auth-item">
+            {notificationDemo ? (
+              <span class="header-auth-btn temp-demo-auth-chip" aria-label="Sign in preview">
+                <span class="header-chip-icon" set:html={iconLogIn} />
+                Sign in
+              </span>
+            ) : (
+              <ClerkAuth client:only="react">
+                <div class="header-auth" slot="fallback" aria-hidden="true"></div>
+              </ClerkAuth>
+            )}
+          </li>
         </ul>
       </nav>
-      <ClerkAuth client:only="react">
-        <div class="header-auth" slot="fallback" aria-hidden="true"></div>
-      </ClerkAuth>
     </div>
   </div>
 </header>
