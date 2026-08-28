@@ -1,13 +1,5 @@
 /* Games catalog layout (/games). Legacy catalog styles live with /oldgames. */
 
-.games-section.newgames-layout {
-    background: #fff;
-}
-
-[data-theme="dark"] .games-section.newgames-layout {
-    background: #000;
-}
-
 .newgames-layout .container {
     max-width: 1600px;
 }
@@ -360,7 +352,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
-    background: none;
+    background: transparent;
     border: none;
     font-family: inherit;
     width: 100%;

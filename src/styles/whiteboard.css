@@ -96,10 +96,11 @@ body.whiteboard-hub-page {
 }
 
 .wb-join {
+  --wb-join-input-width: 211px;
   display: flex;
   flex: none;
   min-width: 0;
-  max-width: calc(clamp(220px, 26vw, 360px) + 94px);
+  max-width: calc(var(--wb-join-input-width) + 94px);
   gap: 6px;
   align-items: stretch;
 }
@@ -120,11 +121,12 @@ body.whiteboard-hub-page {
 }
 
 .wb-join-field {
+  flex: 0 0 var(--wb-join-input-width);
   min-width: 0;
 }
 
 .wb-join-input {
-  width: clamp(220px, 26vw, 360px);
+  width: 100%;
   min-width: 0;
   height: 40px;
   padding: 0 14px;
