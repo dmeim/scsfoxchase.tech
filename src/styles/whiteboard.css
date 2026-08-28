@@ -632,6 +632,119 @@ body.board-page > main {
   inset: 0;
 }
 
+/* Brand the stock Excalidraw UI without changing drawing colors. Keep the
+   larger selected/hover surfaces translucent so green and yellow stay soft. */
+body.board-page .excalidraw {
+  --color-primary: #125f31;
+  --color-primary-darker: #0f512a;
+  --color-primary-darkest: #0a4020;
+  --color-primary-light: rgba(18, 95, 49, 0.12);
+  --color-primary-light-darker: rgba(18, 95, 49, 0.18);
+  --color-primary-hover: #0f512a;
+  --color-brand-hover: #125f31;
+  --color-brand-active: #0a4020;
+  --color-surface-primary-container: rgba(18, 95, 49, 0.14);
+  --color-on-primary-container: #0a4020;
+  --button-hover-bg: rgba(246, 215, 36, 0.14);
+  --button-active-bg: rgba(18, 95, 49, 0.18);
+  --button-active-border: rgba(18, 95, 49, 0.55);
+  --focus-highlight-color: rgba(18, 95, 49, 0.38);
+  --select-highlight-color: #125f31;
+  --wb-excalidraw-control-bg: rgba(18, 95, 49, 0.08);
+  --wb-excalidraw-control-border: rgba(18, 95, 49, 0.18);
+  --wb-excalidraw-control-color: #0a4020;
+}
+
+body.board-page .excalidraw.theme--dark {
+  --color-primary: #78bd90;
+  --color-primary-darker: #90cba4;
+  --color-primary-darkest: #addabe;
+  --color-primary-light: rgba(18, 95, 49, 0.34);
+  --color-primary-light-darker: rgba(18, 95, 49, 0.42);
+  --color-primary-hover: #90cba4;
+  --color-brand-hover: #90cba4;
+  --color-brand-active: #addabe;
+  --color-surface-primary-container: rgba(18, 95, 49, 0.38);
+  --color-on-primary-container: #e2f4e8;
+  --button-hover-bg: rgba(246, 215, 36, 0.12);
+  --button-active-bg: rgba(18, 95, 49, 0.42);
+  --button-active-border: rgba(246, 215, 36, 0.55);
+  --focus-highlight-color: rgba(246, 215, 36, 0.55);
+  --select-highlight-color: #78bd90;
+  --wb-excalidraw-control-bg: rgba(18, 95, 49, 0.28);
+  --wb-excalidraw-control-border: rgba(120, 189, 144, 0.28);
+  --wb-excalidraw-control-color: #e2f4e8;
+}
+
+/* The main-menu and canvas-action controls use their own stock gray surfaces
+   instead of the shared toolbar variables, so carry the same brand treatment
+   through those controls explicitly. */
+body.board-page .excalidraw .main-menu-trigger,
+body.board-page .excalidraw .help-icon,
+body.board-page .excalidraw .zoom-button,
+body.board-page .excalidraw .undo-redo-buttons button {
+  --icon-fill-color: var(--wb-excalidraw-control-color);
+  color: var(--wb-excalidraw-control-color);
+}
+
+body.board-page .excalidraw .main-menu-trigger,
+body.board-page .excalidraw .help-icon {
+  background-color: var(--wb-excalidraw-control-bg);
+  box-shadow: 0 0 0 1px var(--wb-excalidraw-control-border);
+}
+
+body.board-page .excalidraw .main-menu-trigger:hover,
+body.board-page .excalidraw .help-icon:hover {
+  background-color: var(--button-hover-bg);
+}
+
+body.board-page .excalidraw .main-menu-trigger:active,
+body.board-page .excalidraw .help-icon:active {
+  background-color: var(--button-active-bg);
+  box-shadow: 0 0 0 1px var(--button-active-border);
+}
+
+body.board-page .excalidraw .zoom-actions,
+body.board-page .excalidraw .undo-redo-buttons {
+  --text-primary-color: var(--wb-excalidraw-control-color);
+  background-color: var(--wb-excalidraw-control-bg);
+  box-shadow: 0 0 0 1px var(--wb-excalidraw-control-border);
+}
+
+body.board-page .excalidraw .zoom-button,
+body.board-page .excalidraw .undo-redo-buttons button {
+  background-color: var(--wb-excalidraw-control-bg) !important;
+}
+
+body.board-page .excalidraw .zoom-button:hover:not(:disabled),
+body.board-page .excalidraw .undo-redo-buttons button:hover:not(:disabled) {
+  background-color: var(--button-hover-bg) !important;
+}
+
+body.board-page .excalidraw .zoom-button:active:not(:disabled),
+body.board-page .excalidraw .undo-redo-buttons button:active:not(:disabled) {
+  background-color: var(--button-active-bg) !important;
+}
+
+body.board-page .excalidraw .HelpDialog__btn,
+body.board-page .excalidraw.theme--dark .HelpDialog__btn {
+  --background: var(--wb-excalidraw-control-bg);
+  --icon-fill-color: var(--wb-excalidraw-control-color);
+  color: var(--wb-excalidraw-control-color);
+  border-color: var(--wb-excalidraw-control-border);
+}
+
+body.board-page .excalidraw .HelpDialog__btn:hover,
+body.board-page .excalidraw.theme--dark .HelpDialog__btn:hover {
+  --background: var(--button-hover-bg);
+}
+
+body.board-page .excalidraw .HelpDialog__btn:active,
+body.board-page .excalidraw.theme--dark .HelpDialog__btn:active {
+  --background: var(--button-active-bg);
+  border-color: var(--button-active-border);
+}
+
 /* Stock Excalidraw shape library fetches json.excalidraw.com (blocked by CSP).
    Hide the trigger and panel; do not allowlist that CDN. */
 body.board-page .excalidraw .sidebar-trigger,
