@@ -3,24 +3,37 @@ export const prerender = true;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
 import {
+  ActionMenu,
+  ActionTile,
+  Badge,
+  Button,
+  ChipGroup,
+  ChoiceGroup,
+  Dialog,
+  IconButton,
+  MediaCard,
+  SearchField,
+  SelectMenu,
+  TextareaField,
+  TextField,
+  ToastExample,
+  Toggle,
+  type ChoiceOption,
+  type MenuGroup,
+  type SelectOption,
+} from '../components/ui';
+import {
   iconBookOpenText,
-  iconChevronDown,
-  iconCircleCheck,
-  iconCircleX,
   iconClipboard,
   iconEye,
   iconGamepad2,
-  iconInfo,
   iconLayoutFreeform,
   iconLoaderCircle,
   iconPencil,
   iconQrCode,
-  iconSearch,
   iconSquarePlus,
   iconSquareX,
-  iconTimes,
   iconTrash2,
-  iconTriangleAlert,
 } from '../scripts/icons';
 import '../styles/ui.css';
 
@@ -35,6 +48,53 @@ const sections = [
   ['inputs-controls', 'Inputs & Controls'],
   ['feedback', 'Feedback'],
   ['menus-dialogs', 'Menus & Dialogs'],
+];
+
+const roleOptions: SelectOption[] = [
+  { label: 'Viewer', value: 'viewer' },
+  { label: 'Editor', value: 'editor' },
+  { label: 'Manager', value: 'manager' },
+];
+
+const categoryOptions: SelectOption[] = [
+  { label: 'Math', value: 'math' },
+  { label: 'Reading', value: 'reading' },
+  { label: 'Typing', value: 'typing' },
+  { label: 'Creative', value: 'creative' },
+];
+
+const gradeChoices: ChoiceOption[] = [
+  { label: 'Primary', value: 'primary', description: 'Grades 1–3' },
+  { label: 'Intermediate', value: 'intermediate', description: 'Grades 4–5' },
+  { label: 'Middle', value: 'middle', description: 'Grades 6–8' },
+  { label: 'Staff', value: 'staff', description: 'Faculty tools' },
+];
+
+const sharingChoices: ChoiceOption[] = [
+  { label: 'Private', value: 'private', description: 'Only you can open this board.' },
+  { label: 'Class link', value: 'class-link', description: 'Anyone with the link can view.' },
+  { label: 'Group edit', value: 'group-edit', description: 'Editors can draw when enabled.' },
+];
+
+const boardMenuGroups: MenuGroup[] = [
+  {
+    label: 'Board',
+    items: [
+      { label: 'Rename', value: 'rename', icon: iconPencil, tone: 'green' },
+      { label: 'Duplicate', value: 'duplicate', icon: iconClipboard, tone: 'blue' },
+    ],
+  },
+  {
+    label: 'Access',
+    items: [
+      { label: 'Manage access', value: 'manage-access', icon: iconEye, tone: 'charcoal' },
+      { label: 'Copy link', value: 'copy-link', icon: iconClipboard, tone: 'yellow' },
+    ],
+  },
+  {
+    label: 'Danger zone',
+    items: [{ label: 'Delete', value: 'delete', icon: iconTrash2, tone: 'red' }],
+  },
 ];
 ---
 
@@ -71,7 +131,7 @@ const sections = [
             the existing site.
           </p>
         </div>
-        <span class="ui-status-badge"><span></span> Draft · ready to refine</span>
+        <span class="ui-status-badge"><span></span> Reusable · ready to migrate</span>
       </header>
 
       <section id="colors" class="ui-library-section" aria-labelledby="colors-title">
@@ -172,12 +232,12 @@ const sections = [
         </div>
         <article class="ui-preview-card">
           <div class="ui-component-row">
-            <button class="ui-button ui-button--primary" type="button"><span class="ui-button-icon" set:html={iconSquarePlus}></span>Create</button>
-            <button class="ui-button ui-button--danger" type="button"><span class="ui-button-icon" set:html={iconTrash2}></span>Delete</button>
-            <button class="ui-button ui-button--ghost" type="button"><span class="ui-button-icon" set:html={iconSquareX}></span>Cancel</button>
-            <button class="ui-button ui-button--outline" type="button"><span class="ui-button-icon" set:html={iconBookOpenText}></span>Guide</button>
-            <button class="ui-button ui-button--glass" type="button"><span class="ui-button-icon" set:html={iconLayoutFreeform}></span>Whiteboard</button>
-            <button class="ui-button ui-button--secondary" type="button"><span class="ui-button-icon" set:html={iconQrCode}></span>Scan</button>
+            <Button icon={iconSquarePlus}>Create</Button>
+            <Button variant="danger" icon={iconTrash2}>Delete</Button>
+            <Button variant="ghost" icon={iconSquareX}>Cancel</Button>
+            <Button variant="outline" icon={iconBookOpenText}>Guide</Button>
+            <Button variant="glass" icon={iconLayoutFreeform}>Whiteboard</Button>
+            <Button variant="secondary" icon={iconQrCode}>Scan</Button>
           </div>
         </article>
       </section>
@@ -189,9 +249,9 @@ const sections = [
         </div>
         <article class="ui-preview-card">
           <div class="ui-component-row ui-component-row--end">
-            <button class="ui-button ui-button--primary ui-button--small" type="button"><span class="ui-button-icon" set:html={iconSquarePlus}></span>Small</button>
-            <button class="ui-button ui-button--primary" type="button"><span class="ui-button-icon" set:html={iconSquarePlus}></span>Default</button>
-            <button class="ui-button ui-button--primary ui-button--large" type="button"><span class="ui-button-icon" set:html={iconSquarePlus}></span>Large</button>
+            <Button size="small" icon={iconSquarePlus}>Small</Button>
+            <Button icon={iconSquarePlus}>Default</Button>
+            <Button size="large" icon={iconSquarePlus}>Large</Button>
           </div>
         </article>
       </section>
@@ -203,11 +263,11 @@ const sections = [
         </div>
         <article class="ui-preview-card">
           <div class="ui-component-row">
-            <button class="ui-button ui-button--primary is-focus-demo" type="button">Focused</button>
-            <button class="ui-button ui-button--primary" type="button" aria-busy="true"><span class="ui-spinner" aria-hidden="true"></span>Loading</button>
-            <button class="ui-button ui-button--primary" type="button" disabled>Disabled</button>
-            <button class="ui-icon-button" type="button" aria-label="Edit"><span set:html={iconPencil}></span></button>
-            <button class="ui-button ui-button--outline" type="button"><span class="ui-button-icon" set:html={iconPencil}></span>Edit</button>
+            <Button class="is-focus-demo">Focused</Button>
+            <Button loading>Loading</Button>
+            <Button disabled>Disabled</Button>
+            <IconButton icon={iconPencil} label="Edit" />
+            <Button variant="outline" icon={iconPencil}>Edit</Button>
           </div>
         </article>
       </section>
@@ -219,38 +279,30 @@ const sections = [
         </div>
 
         <div class="ui-card-showcase">
-          <a class="ui-card ui-card--tile" href="#cards">
-            <span class="ui-card-icon ui-card-icon--large" set:html={iconGamepad2}></span>
-            <strong>Action Tile</strong>
-            <small>Lucide icon, title, and a short description.</small>
-          </a>
+          <ActionTile
+            href="#cards"
+            icon={iconGamepad2}
+            title="Action Tile"
+            description="Lucide icon, title, and a short description."
+          />
 
-          <article class="ui-card ui-card--media">
-            <img class="ui-media-image" src="/images/quick-draw.jpg" alt="Quick, Draw game preview" />
-            <div class="ui-card-body">
-              <h3>Single-image media card</h3>
-              <p>A fixed 16:9 image with title, description, and badges.</p>
-              <div class="ui-chip-row"><span class="ui-badge ui-badge--normal">Grades 3–8</span><span class="ui-badge ui-badge--info">Creative</span></div>
-            </div>
-          </article>
+          <MediaCard
+            title="Single-image media card"
+            description="A fixed 16:9 image with title, description, and badges."
+            images={[{ src: '/images/quick-draw.jpg', alt: 'Quick, Draw game preview' }]}
+            badges={[{ label: 'Grades 3–8' }, { label: 'Creative', tone: 'info' }]}
+          />
 
-          <article class="ui-card ui-card--media" data-ui-media-carousel>
-            <div class="ui-media-carousel" aria-label="Featured game previews">
-              <img data-ui-carousel-slide src="/images/chrome-music-lab.jpg" alt="Chrome Music Lab preview" />
-              <img data-ui-carousel-slide src="/images/excalidraw.jpg" alt="Excalidraw preview" hidden />
-              <img data-ui-carousel-slide src="/images/kleki.png" alt="Kleki painting preview" hidden />
-              <div class="ui-carousel-controls">
-                <button type="button" data-ui-carousel-prev aria-label="Previous image">‹</button>
-                <span data-ui-carousel-status>1 / 3</span>
-                <button type="button" data-ui-carousel-next aria-label="Next image">›</button>
-              </div>
-            </div>
-            <div class="ui-card-body">
-              <h3>Timed carousel media card</h3>
-              <p>Advances automatically and also supports previous and next controls.</p>
-              <div class="ui-chip-row"><span class="ui-badge ui-badge--normal">Featured</span><span class="ui-badge ui-badge--warning">3 slides</span></div>
-            </div>
-          </article>
+          <MediaCard
+            title="Timed carousel media card"
+            description="Advances automatically and also supports previous and next controls."
+            images={[
+              { src: '/images/chrome-music-lab.jpg', alt: 'Chrome Music Lab preview' },
+              { src: '/images/excalidraw.jpg', alt: 'Excalidraw preview' },
+              { src: '/images/kleki.png', alt: 'Kleki painting preview' },
+            ]}
+            badges={[{ label: 'Featured' }, { label: '3 slides', tone: 'warning' }]}
+          />
         </div>
       </section>
 
@@ -262,20 +314,15 @@ const sections = [
         <div class="ui-preview-grid">
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Filter chips</h3><span>Interactive</span></div>
-            <div class="ui-chip-row" data-ui-chip-group>
-              <button class="ui-chip ui-chip--filter is-selected" type="button" aria-pressed="true">All</button>
-              <button class="ui-chip ui-chip--filter" type="button" aria-pressed="false">Math</button>
-              <button class="ui-chip ui-chip--filter" type="button" aria-pressed="false">Reading</button>
-              <button class="ui-chip ui-chip--filter" type="button" aria-pressed="false">Typing</button>
-            </div>
+            <ChipGroup options={['All', 'Math', 'Reading', 'Typing']} selected="All" ariaLabel="Filter subjects" />
           </article>
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Status badges</h3><span>Read-only</span></div>
             <div class="ui-chip-row">
-              <span class="ui-badge ui-badge--normal">Normal</span>
-              <span class="ui-badge ui-badge--warning">Warning</span>
-              <span class="ui-badge ui-badge--info">Info</span>
-              <span class="ui-badge ui-badge--error">Error</span>
+              <Badge>Normal</Badge>
+              <Badge tone="warning">Warning</Badge>
+              <Badge tone="info">Info</Badge>
+              <Badge tone="error">Error</Badge>
             </div>
           </article>
         </div>
@@ -291,67 +338,43 @@ const sections = [
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Text fields</h3><span>Short + long</span></div>
             <div class="ui-form-stack">
-              <label class="ui-field"><span>Board name</span><small>Short, single-line response.</small><input type="text" placeholder="Enter a name" /></label>
-              <label class="ui-field"><span>Description</span><small>Long, paragraph-style response.</small><textarea rows="5" placeholder="Add a description"></textarea></label>
+              <TextField label="Board name" description="Short, single-line response." placeholder="Enter a name" />
+              <TextareaField label="Description" description="Long, paragraph-style response." placeholder="Add a description" />
             </div>
           </article>
 
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Search</h3><span>Pill control</span></div>
-            <label class="ui-search-field"><span set:html={iconSearch}></span><input type="search" placeholder="Search the library…" aria-label="Search the library" /></label>
+            <SearchField label="Search the library" placeholder="Search the library…" />
             <div class="ui-preview-card-head ui-preview-card-head--sub"><h3>Toggle</h3><span>Boolean control</span></div>
-            <label class="ui-switch-row">
-              <span><strong>Group edit</strong><small>Allow editors to draw on this board.</small></span>
-              <input type="checkbox" role="switch" checked />
-            </label>
+            <Toggle label="Group edit" description="Allow editors to draw on this board." checked />
           </article>
 
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Single-select dropdown</h3><span>Radio selection</span></div>
-            <details class="ui-select-menu" data-ui-single-select>
-              <summary class="ui-control-trigger"><span data-ui-single-label>Editor</span><span set:html={iconChevronDown}></span></summary>
-              <div class="ui-select-panel">
-                <label><input type="radio" name="access-role" value="Viewer" />Viewer</label>
-                <label><input type="radio" name="access-role" value="Editor" checked />Editor</label>
-                <label><input type="radio" name="access-role" value="Manager" />Manager</label>
-              </div>
-            </details>
+            <SelectMenu options={roleOptions} selected="editor" name="access-role" label="Access role" />
           </article>
 
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Multi-select dropdown</h3><span>Checkboxes + badges</span></div>
-            <details class="ui-select-menu" data-ui-multi-select>
-              <summary class="ui-control-trigger"><span data-ui-multi-summary>2 selected</span><span set:html={iconChevronDown}></span></summary>
-              <div class="ui-select-panel">
-                <label><input type="checkbox" value="Math" checked />Math</label>
-                <label><input type="checkbox" value="Reading" checked />Reading</label>
-                <label><input type="checkbox" value="Typing" />Typing</label>
-                <label><input type="checkbox" value="Creative" />Creative</label>
-              </div>
-            </details>
-            <div class="ui-selected-badges" data-ui-selected-badges aria-live="polite">
-              <span class="ui-badge ui-badge--info">Math</span><span class="ui-badge ui-badge--info">Reading</span>
-            </div>
+            <SelectMenu
+              options={categoryOptions}
+              selected={['math', 'reading']}
+              name="categories"
+              label="Categories"
+              multiple
+            />
           </article>
         </div>
 
         <div class="ui-preview-grid">
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Multiple-choice grid</h3><span>Visual options</span></div>
-            <div class="ui-choice-grid">
-              <label><input type="radio" name="grade-band" checked /><span><strong>Primary</strong><small>Grades 1–3</small></span></label>
-              <label><input type="radio" name="grade-band" /><span><strong>Intermediate</strong><small>Grades 4–5</small></span></label>
-              <label><input type="radio" name="grade-band" /><span><strong>Middle</strong><small>Grades 6–8</small></span></label>
-              <label><input type="radio" name="grade-band" /><span><strong>Staff</strong><small>Faculty tools</small></span></label>
-            </div>
+            <ChoiceGroup options={gradeChoices} name="grade-band" selected="primary" layout="grid" ariaLabel="Grade band" />
           </article>
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Multiple-choice list</h3><span>Text-heavy options</span></div>
-            <div class="ui-choice-list">
-              <label><input type="radio" name="sharing" checked /><span><strong>Private</strong><small>Only you can open this board.</small></span></label>
-              <label><input type="radio" name="sharing" /><span><strong>Class link</strong><small>Anyone with the link can view.</small></span></label>
-              <label><input type="radio" name="sharing" /><span><strong>Group edit</strong><small>Editors can draw when enabled.</small></span></label>
-            </div>
+            <ChoiceGroup options={sharingChoices} name="sharing" selected="private" ariaLabel="Sharing setting" />
           </article>
         </div>
       </section>
@@ -365,21 +388,21 @@ const sections = [
           <div class="ui-preview-card-head"><h3>Default toast variants</h3><span>Production styles</span></div>
           <div class="ui-toast-demo-layout">
             <div class="ui-toast-stack" aria-label="Toast examples">
-              <article class="toast is-success"><span class="toast-icon" set:html={iconCircleCheck}></span><div class="toast-copy"><p class="toast-title">Whiteboard saved</p><p class="toast-subtitle">Available everywhere</p><p class="toast-description">This board is ready on any Chromebook.</p></div><button class="toast-close" type="button" data-ui-static-toast-close aria-label="Dismiss notification"><span set:html={iconTimes}></span></button></article>
-              <article class="toast is-warning"><span class="toast-icon" set:html={iconTriangleAlert}></span><div class="toast-copy"><p class="toast-title">Scratch board not saved</p><p class="toast-subtitle">Removed after 24 hours</p></div><button class="toast-close" type="button" data-ui-static-toast-close aria-label="Dismiss notification"><span set:html={iconTimes}></span></button></article>
-              <article class="toast is-info"><span class="toast-icon" set:html={iconInfo}></span><div class="toast-copy"><p class="toast-title">Group Edit is off</p><p class="toast-subtitle">Guests are view-only</p></div><button class="toast-close" type="button" data-ui-static-toast-close aria-label="Dismiss notification"><span set:html={iconTimes}></span></button></article>
-              <article class="toast is-error"><span class="toast-icon" set:html={iconCircleX}></span><div class="toast-copy"><p class="toast-title">Share code required</p><p class="toast-subtitle">Couldn’t join the board</p></div><button class="toast-close" type="button" data-ui-static-toast-close aria-label="Dismiss notification"><span set:html={iconTimes}></span></button></article>
-              <article class="toast is-loading"><span class="toast-icon" set:html={iconLoaderCircle}></span><div class="toast-copy"><p class="toast-title">Loading device record</p><p class="toast-subtitle">This may take a moment</p></div><button class="toast-close" type="button" data-ui-static-toast-close aria-label="Dismiss notification"><span set:html={iconTimes}></span></button></article>
+              <ToastExample kind="success" title="Whiteboard saved" subtitle="Available everywhere" description="This board is ready on any Chromebook." />
+              <ToastExample kind="warning" title="Scratch board not saved" subtitle="Removed after 24 hours" />
+              <ToastExample kind="info" title="Group Edit is off" subtitle="Guests are view-only" />
+              <ToastExample kind="error" title="Share code required" subtitle="Couldn’t join the board" />
+              <ToastExample kind="loading" title="Loading device record" subtitle="This may take a moment" />
             </div>
             <div class="ui-toast-controls">
               <h3>Try a live toast</h3>
               <p>Live examples use the same global toast host as the rest of the site.</p>
               <div class="ui-component-row">
-                <button class="ui-button ui-button--primary ui-button--small" type="button" data-ui-toast="success">Success</button>
-                <button class="ui-button ui-button--secondary ui-button--small" type="button" data-ui-toast="warning">Warning</button>
-                <button class="ui-button ui-button--outline ui-button--small" type="button" data-ui-toast="info">Info</button>
-                <button class="ui-button ui-button--danger ui-button--small" type="button" data-ui-toast="error">Error</button>
-                <button class="ui-button ui-button--outline ui-button--small" type="button" data-ui-toast="loading"><span class="ui-button-icon" set:html={iconLoaderCircle}></span>Loading</button>
+                <Button size="small" data-ui-toast="success">Success</Button>
+                <Button variant="secondary" size="small" data-ui-toast="warning">Warning</Button>
+                <Button variant="outline" size="small" data-ui-toast="info">Info</Button>
+                <Button variant="danger" size="small" data-ui-toast="error">Error</Button>
+                <Button variant="outline" size="small" icon={iconLoaderCircle} data-ui-toast="loading">Loading</Button>
               </div>
             </div>
           </div>
@@ -394,128 +417,31 @@ const sections = [
         <div class="ui-preview-grid">
           <article class="ui-preview-card ui-preview-card--overflow">
             <div class="ui-preview-card-head"><h3>Grouped action menu</h3><span>Icon + name + color</span></div>
-            <details class="ui-menu-demo ui-action-menu">
-              <summary class="ui-button ui-button--outline"><span class="ui-button-icon" set:html={iconLayoutFreeform}></span>Board actions<span class="ui-button-icon ui-menu-chevron" set:html={iconChevronDown}></span></summary>
-              <div class="ui-menu-panel ui-menu-panel--grouped">
-                <div class="ui-menu-group">
-                  <p>Board</p>
-                  <button class="is-green" type="button"><span set:html={iconPencil}></span>Rename</button>
-                  <button class="is-blue" type="button"><span set:html={iconClipboard}></span>Duplicate</button>
-                </div>
-                <div class="ui-menu-group">
-                  <p>Access</p>
-                  <button class="is-charcoal" type="button"><span set:html={iconEye}></span>Manage access</button>
-                  <button class="is-yellow" type="button"><span set:html={iconClipboard}></span>Copy link</button>
-                </div>
-                <div class="ui-menu-group">
-                  <p>Danger zone</p>
-                  <button class="is-red" type="button"><span set:html={iconTrash2}></span>Delete</button>
-                </div>
-              </div>
-            </details>
+            <ActionMenu label="Board actions" icon={iconLayoutFreeform} groups={boardMenuGroups} />
           </article>
 
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Dialog</h3><span>Composable content</span></div>
             <p class="ui-demo-copy">Subtitle, title, description, shared buttons, and a default corner close control.</p>
-            <button class="ui-button ui-button--primary" type="button" data-ui-dialog-open>Open dialog</button>
+            <Button data-ui-dialog-open="delete-board-dialog">Open dialog</Button>
           </article>
         </div>
       </section>
     </div>
   </div>
 
-  <dialog class="ui-dialog" data-ui-dialog aria-labelledby="ui-dialog-title">
-    <div class="ui-dialog-head">
-      <div><p class="ui-eyebrow">Delete board</p><h2 id="ui-dialog-title">Delete this board?</h2></div>
-      <button class="ui-icon-button" type="button" data-ui-dialog-close aria-label="Close dialog"><span set:html={iconTimes}></span></button>
-    </div>
-    <p>This removes the board from the library and frees its share code. This action cannot be undone.</p>
-    <div class="ui-dialog-actions">
-      <button class="ui-button ui-button--ghost" type="button" data-ui-dialog-close><span class="ui-button-icon" set:html={iconSquareX}></span>Cancel</button>
-      <button class="ui-button ui-button--danger" type="button"><span class="ui-button-icon" set:html={iconTrash2}></span>Delete</button>
-    </div>
-  </dialog>
+  <Dialog
+    id="delete-board-dialog"
+    eyebrow="Delete board"
+    title="Delete this board?"
+    description="This removes the board from the library and frees its share code. This action cannot be undone."
+  >
+    <Button slot="actions" variant="ghost" icon={iconSquareX} data-ui-dialog-close>Cancel</Button>
+    <Button slot="actions" variant="danger" icon={iconTrash2}>Delete</Button>
+  </Dialog>
 
   <script>
     import { showToast } from '../scripts/toasts';
-
-    const dialog = document.querySelector<HTMLDialogElement>('[data-ui-dialog]');
-    document.querySelector('[data-ui-dialog-open]')?.addEventListener('click', () => dialog?.showModal());
-    document.querySelectorAll('[data-ui-dialog-close]').forEach((button) => button.addEventListener('click', () => dialog?.close()));
-    dialog?.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
-
-    document.querySelectorAll('[data-ui-chip-group]').forEach((group) => {
-      group.querySelectorAll<HTMLButtonElement>('.ui-chip--filter').forEach((chip) => {
-        chip.addEventListener('click', () => {
-          group.querySelectorAll<HTMLButtonElement>('.ui-chip--filter').forEach((item) => {
-            const selected = item === chip;
-            item.classList.toggle('is-selected', selected);
-            item.setAttribute('aria-pressed', String(selected));
-          });
-        });
-      });
-    });
-
-    document.querySelectorAll<HTMLDetailsElement>('[data-ui-single-select]').forEach((menu) => {
-      const output = menu.querySelector<HTMLElement>('[data-ui-single-label]');
-      menu.querySelectorAll<HTMLInputElement>('input[type="radio"]').forEach((input) => {
-        input.addEventListener('change', () => {
-          if (input.checked && output) output.textContent = input.value;
-          window.setTimeout(() => { menu.open = false; }, 0);
-        });
-      });
-    });
-
-    document.querySelectorAll<HTMLDetailsElement>('[data-ui-multi-select]').forEach((menu) => {
-      const output = menu.querySelector<HTMLElement>('[data-ui-multi-summary]');
-      const badges = menu.parentElement?.querySelector<HTMLElement>('[data-ui-selected-badges]');
-      const inputs = [...menu.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
-      const render = () => {
-        const selected = inputs.filter((input) => input.checked);
-        if (output) output.textContent = selected.length === 0 ? 'Choose categories' : `${selected.length} selected`;
-        if (badges) {
-          badges.replaceChildren(...selected.map((input) => {
-            const badge = document.createElement('span');
-            badge.className = 'ui-badge ui-badge--info';
-            badge.textContent = input.value;
-            return badge;
-          }));
-        }
-      };
-      inputs.forEach((input) => input.addEventListener('change', render));
-      render();
-    });
-
-    document.querySelectorAll<HTMLElement>('[data-ui-media-carousel]').forEach((root) => {
-      const slides = [...root.querySelectorAll<HTMLImageElement>('[data-ui-carousel-slide]')];
-      const status = root.querySelector<HTMLElement>('[data-ui-carousel-status]');
-      let index = 0;
-      let timer: number | undefined;
-      const paint = () => {
-        slides.forEach((slide, slideIndex) => { slide.hidden = slideIndex !== index; });
-        if (status) status.textContent = `${index + 1} / ${slides.length}`;
-      };
-      const advance = (direction: number) => {
-        index = (index + direction + slides.length) % slides.length;
-        paint();
-      };
-      const stop = () => { if (timer) window.clearInterval(timer); timer = undefined; };
-      const start = () => {
-        stop();
-        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          timer = window.setInterval(() => advance(1), 4000);
-        }
-      };
-      root.querySelector('[data-ui-carousel-prev]')?.addEventListener('click', () => { advance(-1); start(); });
-      root.querySelector('[data-ui-carousel-next]')?.addEventListener('click', () => { advance(1); start(); });
-      root.addEventListener('mouseenter', stop);
-      root.addEventListener('mouseleave', start);
-      root.addEventListener('focusin', stop);
-      root.addEventListener('focusout', (event) => { if (!root.contains(event.relatedTarget as Node | null)) start(); });
-      paint();
-      start();
-    });
 
     const toastExamples = {
       success: { kind: 'success', icon: 'circle-check', title: 'Whiteboard saved', subtitle: 'Available everywhere' },
@@ -530,12 +456,6 @@ const sections = [
         const example = toastExamples[key];
         if (example) showToast(example);
       });
-    });
-    document.querySelectorAll('[data-ui-static-toast-close]').forEach((button) => {
-      button.addEventListener('click', () => button.closest('.toast')?.remove());
-    });
-    document.querySelectorAll<HTMLDetailsElement>('.ui-action-menu').forEach((menu) => {
-      menu.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => { menu.open = false; }));
     });
   </script>
 </BaseLayout>

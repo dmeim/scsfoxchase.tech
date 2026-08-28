@@ -1,0 +1,57 @@
+---
+import {
+  iconCircleCheck,
+  iconCircleX,
+  iconInfo,
+  iconLoaderCircle,
+  iconTimes,
+  iconTriangleAlert,
+} from '../../scripts/icons';
+import type { ToastKind } from '../../lib/notifications';
+
+interface Props {
+  kind: ToastKind;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  dismissible?: boolean;
+  class?: string;
+}
+
+const {
+  kind,
+  title,
+  subtitle,
+  description,
+  dismissible = true,
+  class: className,
+} = Astro.props;
+const icons = {
+  success: iconCircleCheck,
+  warning: iconTriangleAlert,
+  info: iconInfo,
+  error: iconCircleX,
+  loading: iconLoaderCircle,
+} satisfies Record<ToastKind, string>;
+---
+
+<article class:list={['toast', `is-${kind}`, className]} data-ui-toast-example>
+  <span class="toast-icon" set:html={icons[kind]}></span>
+  <div class="toast-copy">
+    <p class="toast-title">{title}</p>
+    {subtitle && <p class="toast-subtitle">{subtitle}</p>}
+    {description && <p class="toast-description">{description}</p>}
+  </div>
+  {dismissible && (
+    <button class="toast-close" type="button" data-ui-toast-example-close aria-label="Dismiss notification">
+      <span set:html={iconTimes}></span>
+    </button>
+  )}
+</article>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-ui-toast-example-close]:not([data-ui-ready])').forEach((button) => {
+    button.dataset.uiReady = 'true';
+    button.addEventListener('click', () => button.closest('[data-ui-toast-example]')?.remove());
+  });
+</script>

@@ -1,0 +1,40 @@
+---
+import type { ComponentSize } from './types';
+import './styles.css';
+
+interface Props {
+  label: string;
+  icon: string;
+  size?: ComponentSize;
+  href?: string;
+  type?: 'button' | 'submit' | 'reset';
+  disabled?: boolean;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  label,
+  icon,
+  size = 'default',
+  href,
+  type = 'button',
+  disabled = false,
+  class: className,
+  ...rest
+} = Astro.props;
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  class:list={['ui-icon-button', size !== 'default' && `ui-icon-button--${size}`, className]}
+  href={href}
+  type={href ? undefined : type}
+  disabled={href ? undefined : disabled}
+  aria-disabled={href && disabled ? 'true' : undefined}
+  aria-label={label}
+  title={label}
+  {...rest}
+>
+  <span set:html={icon}></span>
+</Tag>

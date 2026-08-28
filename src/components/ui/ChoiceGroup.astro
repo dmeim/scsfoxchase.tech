@@ -1,0 +1,40 @@
+---
+import type { ChoiceOption } from './types';
+import './styles.css';
+
+interface Props {
+  options: ChoiceOption[];
+  name: string;
+  selected?: string;
+  layout?: 'grid' | 'list';
+  ariaLabel?: string;
+  required?: boolean;
+  class?: string;
+}
+
+const {
+  options,
+  name,
+  selected,
+  layout = 'list',
+  ariaLabel = 'Choose one option',
+  required = false,
+  class: className,
+} = Astro.props;
+---
+
+<div class:list={[layout === 'grid' ? 'ui-choice-grid' : 'ui-choice-list', className]} role="radiogroup" aria-label={ariaLabel}>
+  {options.map((option) => (
+    <label>
+      <input
+        type="radio"
+        name={name}
+        value={option.value}
+        checked={option.value === selected}
+        disabled={option.disabled}
+        required={required}
+      />
+      <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
+    </label>
+  ))}
+</div>

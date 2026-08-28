@@ -1,0 +1,49 @@
+---
+import { iconTimes } from '../../scripts/icons';
+import IconButton from './IconButton.astro';
+import './styles.css';
+
+interface Props {
+  id: string;
+  title: string;
+  eyebrow?: string;
+  description?: string;
+  closeLabel?: string;
+  class?: string;
+}
+
+const {
+  id,
+  title,
+  eyebrow,
+  description,
+  closeLabel = 'Close dialog',
+  class: className,
+} = Astro.props;
+const titleId = `${id}-title`;
+---
+
+<dialog id={id} class:list={['ui-dialog', className]} data-ui-dialog aria-labelledby={titleId}>
+  <div class="ui-dialog-head">
+    <div>{eyebrow && <p class="ui-dialog-eyebrow">{eyebrow}</p>}<h2 id={titleId}>{title}</h2></div>
+    <IconButton icon={iconTimes} label={closeLabel} data-ui-dialog-close />
+  </div>
+  {description && <p class="ui-dialog-description">{description}</p>}
+  <slot />
+  <div class="ui-dialog-actions"><slot name="actions" /></div>
+</dialog>
+
+<script>
+  document.querySelectorAll<HTMLDialogElement>('[data-ui-dialog]:not([data-ui-ready])').forEach((dialog) => {
+    dialog.dataset.uiReady = 'true';
+    document.querySelectorAll<HTMLElement>(`[data-ui-dialog-open="${CSS.escape(dialog.id)}"]`).forEach((trigger) => {
+      trigger.addEventListener('click', () => dialog.showModal());
+    });
+    dialog.querySelectorAll<HTMLElement>('[data-ui-dialog-close]').forEach((button) => {
+      button.addEventListener('click', () => dialog.close());
+    });
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+  });
+</script>

@@ -1,0 +1,31 @@
+---
+import './styles.css';
+
+interface Props {
+  label: string;
+  description?: string;
+  name?: string;
+  type?: 'text' | 'email' | 'password' | 'url' | 'tel' | 'number';
+  value?: string | number;
+  placeholder?: string;
+  autocomplete?: string;
+  required?: boolean;
+  disabled?: boolean;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  label,
+  description,
+  type = 'text',
+  class: className,
+  ...inputProps
+} = Astro.props;
+---
+
+<label class:list={['ui-field', className]}>
+  <span>{label}</span>
+  {description && <small>{description}</small>}
+  <input type={type} {...inputProps} />
+</label>

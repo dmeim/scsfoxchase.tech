@@ -1,0 +1,27 @@
+---
+import { iconSearch } from '../../scripts/icons';
+import './styles.css';
+
+interface Props {
+  label: string;
+  name?: string;
+  value?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  icon?: string;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  label,
+  icon = iconSearch,
+  class: className,
+  ...inputProps
+} = Astro.props;
+---
+
+<label class:list={['ui-search-field', className]}>
+  <span set:html={icon}></span>
+  <input type="search" aria-label={label} {...inputProps} />
+</label>

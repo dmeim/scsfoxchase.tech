@@ -1,0 +1,78 @@
+---
+import { iconChevronDown } from '../../scripts/icons';
+import type { ButtonVariant, MenuGroup } from './types';
+import './styles.css';
+
+interface Props {
+  label: string;
+  groups: MenuGroup[];
+  icon?: string;
+  variant?: ButtonVariant;
+  align?: 'left' | 'right';
+  class?: string;
+}
+
+const {
+  label,
+  groups,
+  icon,
+  variant = 'outline',
+  align = 'left',
+  class: className,
+} = Astro.props;
+---
+
+<details class:list={['ui-menu-demo', 'ui-action-menu', align === 'right' && 'ui-menu-demo--right', className]} data-ui-action-menu>
+  <summary class:list={['ui-button', `ui-button--${variant}`]}>
+    {icon && <span class="ui-button-icon" set:html={icon}></span>}
+    {label}
+    <span class="ui-button-icon ui-menu-chevron" set:html={iconChevronDown}></span>
+  </summary>
+  <div class="ui-menu-panel" role="menu">
+    {groups.map((group) => (
+      <div class="ui-menu-group">
+        {group.label && <p>{group.label}</p>}
+        {group.items.map((item) => item.href ? (
+          <a
+            class:list={[item.tone && `is-${item.tone}`]}
+            href={item.href}
+            role="menuitem"
+            data-ui-menu-value={item.value}
+            aria-disabled={item.disabled ? 'true' : undefined}
+          >
+            {item.icon && <span set:html={item.icon}></span>}{item.label}
+          </a>
+        ) : (
+          <button
+            class:list={[item.tone && `is-${item.tone}`]}
+            type="button"
+            role="menuitem"
+            data-ui-menu-value={item.value}
+            disabled={item.disabled}
+          >
+            {item.icon && <span set:html={item.icon}></span>}{item.label}
+          </button>
+        ))}
+      </div>
+    ))}
+  </div>
+</details>
+
+<script>
+  document.querySelectorAll<HTMLDetailsElement>('[data-ui-action-menu]:not([data-ui-ready])').forEach((menu) => {
+    menu.dataset.uiReady = 'true';
+    menu.querySelectorAll<HTMLElement>('[data-ui-menu-value]').forEach((item) => {
+      item.addEventListener('click', (event) => {
+        if (item.getAttribute('aria-disabled') === 'true') {
+          event.preventDefault();
+          return;
+        }
+        menu.dispatchEvent(new CustomEvent('ui:menu-select', {
+          bubbles: true,
+          detail: { value: item.dataset.uiMenuValue },
+        }));
+        menu.open = false;
+      });
+    });
+  });
+</script>

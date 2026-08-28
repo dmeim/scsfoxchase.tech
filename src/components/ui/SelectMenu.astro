@@ -1,0 +1,96 @@
+---
+import { iconChevronDown } from '../../scripts/icons';
+import Badge from './Badge.astro';
+import type { SelectOption } from './types';
+import './styles.css';
+
+interface Props {
+  options: SelectOption[];
+  selected?: string | string[];
+  multiple?: boolean;
+  name?: string;
+  label?: string;
+  placeholder?: string;
+  showBadges?: boolean;
+  class?: string;
+}
+
+const {
+  options,
+  selected,
+  multiple = false,
+  name = 'selection',
+  label = multiple ? 'Choose options' : 'Choose an option',
+  placeholder = multiple ? 'Choose options' : 'Choose an option',
+  showBadges = multiple,
+  class: className,
+} = Astro.props;
+const selectedValues = new Set(Array.isArray(selected) ? selected : selected ? [selected] : []);
+const selectedOptions = options.filter((option) => selectedValues.has(option.value));
+const summary = multiple
+  ? selectedOptions.length > 0 ? `${selectedOptions.length} selected` : placeholder
+  : selectedOptions[0]?.label ?? placeholder;
+---
+
+<div class:list={['ui-select-shell', className]} data-ui-select-shell>
+  <details class="ui-select-menu" data-ui-select data-ui-select-mode={multiple ? 'multiple' : 'single'}>
+    <summary class="ui-control-trigger" aria-label={label}>
+      <span data-ui-select-summary>{summary}</span>
+      <span set:html={iconChevronDown}></span>
+    </summary>
+    <div class="ui-select-panel">
+      {options.map((option) => (
+        <label>
+          <input
+            type={multiple ? 'checkbox' : 'radio'}
+            name={name}
+            value={option.value}
+            checked={selectedValues.has(option.value)}
+            disabled={option.disabled}
+          />
+          {option.label}
+        </label>
+      ))}
+    </div>
+  </details>
+  {multiple && showBadges && (
+    <div class="ui-selected-badges" data-ui-select-badges aria-live="polite">
+      {selectedOptions.map((option) => <Badge tone="info" data-ui-select-badge={option.value}>{option.label}</Badge>)}
+    </div>
+  )}
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-ui-select-shell]:not([data-ui-ready])').forEach((shell) => {
+    shell.dataset.uiReady = 'true';
+    const menu = shell.querySelector<HTMLDetailsElement>('[data-ui-select]');
+    const summary = shell.querySelector<HTMLElement>('[data-ui-select-summary]');
+    const badges = shell.querySelector<HTMLElement>('[data-ui-select-badges]');
+    if (!menu || !summary) return;
+    const multiple = menu.dataset.uiSelectMode === 'multiple';
+    const inputs = [...menu.querySelectorAll<HTMLInputElement>('input')];
+    const render = () => {
+      const selected = inputs.filter((input) => input.checked);
+      summary.textContent = multiple
+        ? selected.length > 0 ? `${selected.length} selected` : 'Choose options'
+        : selected[0]?.parentElement?.textContent?.trim() || 'Choose an option';
+      if (badges) {
+        badges.replaceChildren(...selected.map((input) => {
+          const badge = document.createElement('span');
+          badge.className = 'ui-badge ui-badge--info';
+          badge.dataset.uiSelectBadge = input.value;
+          badge.textContent = input.parentElement?.textContent?.trim() || input.value;
+          return badge;
+        }));
+      }
+      shell.dispatchEvent(new CustomEvent('ui:change', {
+        bubbles: true,
+        detail: { value: multiple ? selected.map((input) => input.value) : selected[0]?.value },
+      }));
+    };
+    inputs.forEach((input) => input.addEventListener('change', () => {
+      render();
+      if (!multiple) window.setTimeout(() => { menu.open = false; }, 0);
+    }));
+  });
+</script>

@@ -1,0 +1,53 @@
+---
+import './styles.css';
+
+type ChipOption = string | { label: string; value: string };
+
+interface Props {
+  options: ChipOption[];
+  selected?: string;
+  name?: string;
+  ariaLabel?: string;
+  class?: string;
+}
+
+const {
+  options,
+  selected = typeof options[0] === 'string' ? options[0] : options[0]?.value,
+  name,
+  ariaLabel = 'Filters',
+  class: className,
+} = Astro.props;
+const normalized = options.map((option) => typeof option === 'string' ? { label: option, value: option } : option);
+---
+
+<div class:list={['ui-chip-row', className]} data-ui-chip-group role="group" aria-label={ariaLabel}>
+  {normalized.map((option) => (
+    <button
+      class:list={['ui-chip', 'ui-chip--filter', option.value === selected && 'is-selected']}
+      type="button"
+      data-ui-chip-value={option.value}
+      aria-pressed={option.value === selected ? 'true' : 'false'}
+    >{option.label}</button>
+  ))}
+  {name && <input type="hidden" name={name} value={selected} data-ui-chip-input />}
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-ui-chip-group]:not([data-ui-ready])').forEach((group) => {
+    group.dataset.uiReady = 'true';
+    const hiddenInput = group.querySelector<HTMLInputElement>('[data-ui-chip-input]');
+    group.querySelectorAll<HTMLButtonElement>('[data-ui-chip-value]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        group.querySelectorAll<HTMLButtonElement>('[data-ui-chip-value]').forEach((item) => {
+          const selected = item === chip;
+          item.classList.toggle('is-selected', selected);
+          item.setAttribute('aria-pressed', String(selected));
+        });
+        const value = chip.dataset.uiChipValue ?? '';
+        if (hiddenInput) hiddenInput.value = value;
+        group.dispatchEvent(new CustomEvent('ui:change', { bubbles: true, detail: { value } }));
+      });
+    });
+  });
+</script>

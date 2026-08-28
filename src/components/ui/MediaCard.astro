@@ -1,0 +1,115 @@
+---
+import Badge from './Badge.astro';
+import type { BadgeItem, MediaImage } from './types';
+import './styles.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  images: MediaImage[];
+  badges?: BadgeItem[];
+  href?: string;
+  interval?: number;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  title,
+  description,
+  images,
+  badges = [],
+  href,
+  interval = 4000,
+  class: className,
+  ...rest
+} = Astro.props;
+const hasCarousel = images.length > 1;
+const ContentTag = href ? 'a' : 'article';
+---
+
+<ContentTag
+  class:list={['ui-card', 'ui-card--media', className]}
+  href={href}
+  data-ui-media-carousel={hasCarousel ? '' : undefined}
+  data-ui-carousel-interval={hasCarousel ? interval : undefined}
+  {...rest}
+>
+  {hasCarousel ? (
+    <div class="ui-media-carousel" aria-label={`${title} images`}>
+      {images.map((image, index) => (
+        <img
+          data-ui-carousel-slide
+          src={image.src}
+          alt={image.alt}
+          hidden={index !== 0}
+          loading={index === 0 ? 'eager' : 'lazy'}
+        />
+      ))}
+      <div class="ui-carousel-controls">
+        <button type="button" data-ui-carousel-prev aria-label="Previous image">‹</button>
+        <span data-ui-carousel-status aria-live="polite">1 / {images.length}</span>
+        <button type="button" data-ui-carousel-next aria-label="Next image">›</button>
+      </div>
+    </div>
+  ) : images[0] ? (
+    <img class="ui-media-image" src={images[0].src} alt={images[0].alt} loading="lazy" />
+  ) : null}
+  <div class="ui-card-body">
+    <h3>{title}</h3>
+    {description && <p>{description}</p>}
+    {badges.length > 0 && (
+      <div class="ui-chip-row">
+        {badges.map((badge) => <Badge tone={badge.tone}>{badge.label}</Badge>)}
+      </div>
+    )}
+    <slot />
+  </div>
+</ContentTag>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-ui-media-carousel]:not([data-ui-ready])').forEach((root) => {
+    root.dataset.uiReady = 'true';
+    const slides = [...root.querySelectorAll<HTMLImageElement>('[data-ui-carousel-slide]')];
+    const status = root.querySelector<HTMLElement>('[data-ui-carousel-status]');
+    const interval = Math.max(1500, Number(root.dataset.uiCarouselInterval) || 4000);
+    let index = 0;
+    let timer: number | undefined;
+    const paint = () => {
+      slides.forEach((slide, slideIndex) => { slide.hidden = slideIndex !== index; });
+      if (status) status.textContent = `${index + 1} / ${slides.length}`;
+    };
+    const advance = (direction: number) => {
+      index = (index + direction + slides.length) % slides.length;
+      paint();
+    };
+    const stop = () => {
+      if (timer) window.clearInterval(timer);
+      timer = undefined;
+    };
+    const start = () => {
+      stop();
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        timer = window.setInterval(() => advance(1), interval);
+      }
+    };
+    root.querySelector('[data-ui-carousel-prev]')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      advance(-1);
+      start();
+    });
+    root.querySelector('[data-ui-carousel-next]')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      advance(1);
+      start();
+    });
+    root.addEventListener('mouseenter', stop);
+    root.addEventListener('mouseleave', start);
+    root.addEventListener('focusin', stop);
+    root.addEventListener('focusout', (event) => {
+      if (!root.contains(event.relatedTarget as Node | null)) start();
+    });
+    paint();
+    start();
+  });
+</script>

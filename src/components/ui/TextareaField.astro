@@ -1,0 +1,31 @@
+---
+import './styles.css';
+
+interface Props {
+  label: string;
+  description?: string;
+  name?: string;
+  value?: string;
+  placeholder?: string;
+  rows?: number;
+  required?: boolean;
+  disabled?: boolean;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  label,
+  description,
+  value,
+  rows = 5,
+  class: className,
+  ...textareaProps
+} = Astro.props;
+---
+
+<label class:list={['ui-field', className]}>
+  <span>{label}</span>
+  {description && <small>{description}</small>}
+  <textarea rows={rows} {...textareaProps}>{value}</textarea>
+</label>

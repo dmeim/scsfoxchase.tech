@@ -1,0 +1,35 @@
+---
+import './styles.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  icon: string;
+  href?: string;
+  type?: 'button' | 'submit' | 'reset';
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  title,
+  description,
+  icon,
+  href,
+  type = 'button',
+  class: className,
+  ...rest
+} = Astro.props;
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  class:list={['ui-card', 'ui-card--tile', className]}
+  href={href}
+  type={href ? undefined : type}
+  {...rest}
+>
+  <span class="ui-card-icon ui-card-icon--large" set:html={icon}></span>
+  <strong>{title}</strong>
+  {description && <small>{description}</small>}
+</Tag>

@@ -1,0 +1,52 @@
+---
+import type { ButtonVariant, ComponentSize } from './types';
+import './styles.css';
+
+interface Props {
+  variant?: ButtonVariant;
+  size?: ComponentSize;
+  href?: string;
+  type?: 'button' | 'submit' | 'reset';
+  icon?: string;
+  iconAfter?: string;
+  loading?: boolean;
+  disabled?: boolean;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  variant = 'primary',
+  size = 'default',
+  href,
+  type = 'button',
+  icon,
+  iconAfter,
+  loading = false,
+  disabled = false,
+  class: className,
+  ...rest
+} = Astro.props;
+const Tag = href ? 'a' : 'button';
+const isDisabled = disabled || loading;
+---
+
+<Tag
+  class:list={[
+    'ui-button',
+    `ui-button--${variant}`,
+    size !== 'default' && `ui-button--${size}`,
+    className,
+  ]}
+  href={href}
+  type={href ? undefined : type}
+  disabled={href ? undefined : isDisabled}
+  aria-disabled={href && isDisabled ? 'true' : undefined}
+  aria-busy={loading ? 'true' : undefined}
+  tabindex={href && isDisabled ? -1 : undefined}
+  {...rest}
+>
+  {loading ? <span class="ui-spinner" aria-hidden="true"></span> : icon ? <span class="ui-button-icon" set:html={icon}></span> : null}
+  <slot />
+  {iconAfter && <span class="ui-button-icon" set:html={iconAfter}></span>}
+</Tag>

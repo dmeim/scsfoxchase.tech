@@ -1,0 +1,21 @@
+---
+import './styles.css';
+
+interface Props {
+  label: string;
+  description?: string;
+  name?: string;
+  value?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  class?: string;
+  [key: string]: any;
+}
+
+const { label, description, class: className, ...inputProps } = Astro.props;
+---
+
+<label class:list={['ui-switch-row', className]}>
+  <span><strong>{label}</strong>{description && <small>{description}</small>}</span>
+  <input type="checkbox" role="switch" {...inputProps} />
+</label>
