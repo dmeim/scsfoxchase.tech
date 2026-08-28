@@ -1,20 +1,22 @@
 ---
 import { iconBell, iconTrash2 } from '../scripts/icons';
+import { Badge, Button, Card, IconButton } from './ui';
 ---
 <div class="notification-center" data-notification-center>
-  <button
-    type="button"
+  <IconButton
+    icon={iconBell}
+    label="Notifications"
+    size="small"
     class="notification-trigger"
     data-notification-trigger
-    aria-label="Notifications"
     aria-haspopup="dialog"
     aria-expanded="false"
     aria-controls="notification-center-panel"
   >
-    <span class="notification-trigger-icon" set:html={iconBell} />
-    <span class="notification-badge" data-notification-badge hidden>0</span>
-  </button>
-  <section
+    <Badge tone="error" class="notification-badge" data-notification-badge hidden>0</Badge>
+  </IconButton>
+  <Card
+    as="section"
     class="notification-panel"
     id="notification-center-panel"
     data-notification-panel
@@ -24,12 +26,9 @@ import { iconBell, iconTrash2 } from '../scripts/icons';
   >
     <div class="notification-panel-head">
       <h2>Notifications</h2>
-      <button type="button" class="notification-clear" data-notification-clear disabled>
-        <span set:html={iconTrash2} />
-        Clear All
-      </button>
+      <Button type="button" variant="ghost" size="small" class="notification-clear" data-notification-clear disabled icon={iconTrash2}>Clear All</Button>
     </div>
     <ul class="notification-list" data-notification-list hidden></ul>
     <p class="notification-empty" data-notification-empty>No notifications yet.</p>
-  </section>
+  </Card>
 </div>

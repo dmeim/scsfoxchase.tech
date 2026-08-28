@@ -1,4 +1,6 @@
 ---
+import { Button, Card, IconButton, SearchField } from './ui';
+import { iconChevronDown, iconSearch, iconTimes } from '../scripts/icons';
 interface SearchOption {
   label: string;
   icon: string;
@@ -47,19 +49,21 @@ const defaultOption = searchGroups[0].options[0];
   <div class="container">
     <form class="google-search-bar smart-search-bar smart-search-unified" data-smart-search>
       <div class="smart-search-picker">
-        <button type="button" class="smart-search-toggle" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a search destination">
+        <Button type="button" variant="ghost" size="small" class="smart-search-toggle" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a search destination">
           <img src={defaultOption.icon} alt="" class="smart-search-icon" />
           <span class="smart-search-label">{defaultOption.label}</span>
-          <svg class="smart-search-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
-        </button>
-        <div class="smart-search-menu" role="listbox" aria-label="Search destinations">
+          <span class="smart-search-chevron" set:html={iconChevronDown}></span>
+        </Button>
+        <Card class="smart-search-menu" role="listbox" aria-label="Search destinations">
           <div class="smart-search-menu-columns">
             {searchGroups.map((group, groupIndex) => (
               <div class="smart-search-menu-group" role="group" aria-labelledby={`home-search-group-${groupIndex}`}>
                 <p id={`home-search-group-${groupIndex}`}>{group.label}</p>
                 {group.options.map((option, optionIndex) => (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="small"
                     role="option"
                     class:list={['smart-search-option', groupIndex === 0 && optionIndex === 0 && 'active']}
                     aria-selected={groupIndex === 0 && optionIndex === 0 ? 'true' : 'false'}
@@ -71,17 +75,17 @@ const defaultOption = searchGroups[0].options[0];
                     <img src={option.icon} alt="" />
                     <span>{option.label}</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
-                  </button>
+                  </Button>
                 ))}
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
       <span class="smart-search-separator" aria-hidden="true"></span>
-      <input type="search" name="q" placeholder={defaultOption.placeholder} class="google-search-input smart-search-input" aria-label="Search the selected destination" autocomplete="off" />
-      <button type="button" class="google-search-clear smart-search-clear" data-smart-search-clear aria-label="Clear search"><img src="/images/x.svg" alt="" /></button>
-      <button type="submit" class="google-search-btn smart-search-submit" aria-label="Search selected destination"><img src="/images/search.png" alt="" /></button>
+      <SearchField label="Search the selected destination" icon="" name="q" placeholder={defaultOption.placeholder} class="smart-search-field" inputClass="google-search-input smart-search-input" autocomplete="off" />
+      <IconButton icon={iconTimes} label="Clear search" size="small" class="google-search-clear smart-search-clear" data-smart-search-clear />
+      <IconButton icon={iconSearch} label="Search selected destination" size="small" type="submit" class="google-search-btn smart-search-submit" />
     </form>
   </div>
 </section>

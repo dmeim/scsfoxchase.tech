@@ -1,53 +1,74 @@
 ---
+import type { ChipOption as SharedChipOption } from './types';
 import './styles.css';
 
-type ChipOption = string | { label: string; value: string };
+type ChipOption = string | SharedChipOption;
 
 interface Props {
   options: ChipOption[];
-  selected?: string;
+  selected?: string | string[];
+  multiple?: boolean;
   name?: string;
   ariaLabel?: string;
+  chipClass?: string;
   class?: string;
+  [key: string]: any;
 }
 
 const {
   options,
-  selected = typeof options[0] === 'string' ? options[0] : options[0]?.value,
+  selected,
+  multiple = false,
   name,
   ariaLabel = 'Filters',
+  chipClass,
   class: className,
+  ...rest
 } = Astro.props;
 const normalized = options.map((option) => typeof option === 'string' ? { label: option, value: option } : option);
+const defaultSelected = selected ?? (multiple ? [] : normalized[0]?.value);
+const selectedValues = new Set(Array.isArray(defaultSelected) ? defaultSelected : defaultSelected ? [defaultSelected] : []);
 ---
 
-<div class:list={['ui-chip-row', className]} data-ui-chip-group role="group" aria-label={ariaLabel}>
+<div class:list={['ui-chip-row', className]} data-ui-chip-group data-ui-chip-multiple={multiple ? 'true' : 'false'} role="group" aria-label={ariaLabel} {...rest}>
   {normalized.map((option) => (
     <button
-      class:list={['ui-chip', 'ui-chip--filter', option.value === selected && 'is-selected']}
+      class:list={['ui-chip', 'ui-chip--filter', chipClass, selectedValues.has(option.value) && 'is-selected']}
       type="button"
       data-ui-chip-value={option.value}
-      aria-pressed={option.value === selected ? 'true' : 'false'}
+      aria-pressed={selectedValues.has(option.value) ? 'true' : 'false'}
+      disabled={option.disabled}
     >{option.label}</button>
   ))}
-  {name && <input type="hidden" name={name} value={selected} data-ui-chip-input />}
+  {name && !multiple && <input type="hidden" name={name} value={[...selectedValues][0] ?? ''} data-ui-chip-input />}
 </div>
 
 <script>
   document.querySelectorAll<HTMLElement>('[data-ui-chip-group]:not([data-ui-ready])').forEach((group) => {
     group.dataset.uiReady = 'true';
     const hiddenInput = group.querySelector<HTMLInputElement>('[data-ui-chip-input]');
-    group.querySelectorAll<HTMLButtonElement>('[data-ui-chip-value]').forEach((chip) => {
-      chip.addEventListener('click', () => {
+    group.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const chip = target.closest<HTMLButtonElement>('[data-ui-chip-value]');
+      if (!chip || !group.contains(chip) || chip.disabled) return;
+      const multiple = group.dataset.uiChipMultiple === 'true';
+      if (multiple) {
+        const selected = chip.getAttribute('aria-pressed') !== 'true';
+        chip.classList.toggle('is-selected', selected);
+        chip.setAttribute('aria-pressed', String(selected));
+      } else {
         group.querySelectorAll<HTMLButtonElement>('[data-ui-chip-value]').forEach((item) => {
           const selected = item === chip;
           item.classList.toggle('is-selected', selected);
           item.setAttribute('aria-pressed', String(selected));
         });
-        const value = chip.dataset.uiChipValue ?? '';
-        if (hiddenInput) hiddenInput.value = value;
-        group.dispatchEvent(new CustomEvent('ui:change', { bubbles: true, detail: { value } }));
-      });
+      }
+      const selected = [...group.querySelectorAll<HTMLButtonElement>('[data-ui-chip-value][aria-pressed="true"]')]
+        .map((item) => item.dataset.uiChipValue ?? '');
+      const value = multiple ? selected : selected[0] ?? '';
+      if (hiddenInput && typeof value === 'string') hiddenInput.value = value;
+      group.dispatchEvent(new CustomEvent('ui:change', { bubbles: true, detail: { value } }));
     });
   });
 </script>

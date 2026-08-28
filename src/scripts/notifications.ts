@@ -12,6 +12,7 @@ import {
 } from '../lib/notifications';
 import { iconTimes } from './icons';
 import { notificationIconMarkup, showToast } from './toasts';
+import { uiClassNames } from '../components/ui/dom';
 
 const STORAGE_KEY = 'scsfoxchase.notifications.v1';
 const MAX_LOCAL_NOTIFICATIONS = 100;
@@ -129,7 +130,7 @@ function render(): void {
 
       const dismiss = document.createElement('button');
       dismiss.type = 'button';
-      dismiss.className = 'notification-dismiss';
+      dismiss.className = uiClassNames.iconButton('small', 'notification-dismiss');
       dismiss.dataset.notificationDismiss = item.id;
       dismiss.setAttribute('aria-label', `Dismiss ${item.title}`);
       dismiss.innerHTML = iconTimes;

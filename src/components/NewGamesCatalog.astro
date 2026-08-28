@@ -1,6 +1,9 @@
 ---
 import { getCollection } from 'astro:content';
 import trending from '../data/trending.json';
+import { ChipGroup, IconButton, ProgressTabs, SearchField } from './ui';
+import { iconChevronLeft, iconChevronRight } from '../scripts/icons';
+import GameDetailDialog from './GameDetailDialog.astro';
 
 const games = (await getCollection('games')).map((entry) => entry.data);
 const trendingIds = trending as string[];
@@ -12,6 +15,13 @@ const trendingGames = trendingIds
 
 const featured = trendingGames[0];
 const heroPayload = JSON.stringify(trendingGames);
+const gradeOptions = Array.from({ length: 8 }, (_, index) => ({ label: String(index + 1), value: String(index + 1) }));
+const primaryCategories = [...new Set(games.flatMap((game) => game.primaryCategories || []))]
+  .sort()
+  .map((value) => ({ label: value, value }));
+const secondaryCategories = [...new Set(games.flatMap((game) => game.secondaryCategories || game.categories || []))]
+  .sort()
+  .map((value) => ({ label: value, value }));
 ---
 
 <section class="games-section newgames-layout">
@@ -19,30 +29,18 @@ const heroPayload = JSON.stringify(trendingGames);
     <div class="newgames-split">
       <aside class="newgames-sidebar" aria-label="Game filters">
         <div class="filter-container">
-          <div class="search-bar">
-            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" id="game-search" placeholder={`Search All ${games.length} Games...`} autocomplete="off" />
-          </div>
+          <SearchField type="text" id="game-search" label="Search games" placeholder={`Search All ${games.length} Games...`} class="search-bar" autocomplete="off" />
           <div class="filter-group">
             <span class="filter-group-label">Grade</span>
-            <div class="filter-chips-row" id="grade-chips">
-              <span class="filter-chip" data-grade="1">1</span>
-              <span class="filter-chip" data-grade="2">2</span>
-              <span class="filter-chip" data-grade="3">3</span>
-              <span class="filter-chip" data-grade="4">4</span>
-              <span class="filter-chip" data-grade="5">5</span>
-              <span class="filter-chip" data-grade="6">6</span>
-              <span class="filter-chip" data-grade="7">7</span>
-              <span class="filter-chip" data-grade="8">8</span>
-            </div>
+            <ChipGroup id="grade-chips" class="filter-chips-row" chipClass="filter-chip" options={gradeOptions} selected={[]} multiple ariaLabel="Filter by grade" />
           </div>
           <div class="filter-group">
             <span class="filter-group-label">Type</span>
-            <div class="filter-chips-row" id="primary-category-chips"></div>
+            <ChipGroup id="primary-category-chips" class="filter-chips-row" chipClass="filter-chip" options={primaryCategories} selected={[]} multiple ariaLabel="Filter by type" />
           </div>
           <div class="filter-group">
             <span class="filter-group-label">Genre</span>
-            <div class="filter-chips-row" id="secondary-category-chips"></div>
+            <ChipGroup id="secondary-category-chips" class="filter-chips-row" chipClass="filter-chip" options={secondaryCategories} selected={[]} multiple ariaLabel="Filter by genre" />
           </div>
         </div>
       </aside>
@@ -70,10 +68,18 @@ const heroPayload = JSON.stringify(trendingGames);
               </a>
               <div class="ng-hero-pager">
                 <div class="ng-hero-pager-btns">
-                  <button type="button" data-ng-hero-prev aria-label="Previous">‹</button>
-                  <button type="button" data-ng-hero-next aria-label="Next">›</button>
+                  <IconButton icon={iconChevronLeft} label="Previous" size="small" data-ng-hero-prev />
+                  <IconButton icon={iconChevronRight} label="Next" size="small" data-ng-hero-next />
                 </div>
-                <div class="ng-hero-progress" data-ng-hero-progress role="tablist" aria-label="Trending slides"></div>
+                <ProgressTabs
+                  options={trendingGames.map((game) => ({ label: `Show ${game.name}`, value: game.id }))}
+                  selected={featured.id}
+                  ariaLabel="Trending slides"
+                  class="ng-hero-progress"
+                  tabClass="ng-hero-progress-seg"
+                  fillClass="ng-hero-progress-fill"
+                  data-ng-hero-progress
+                />
               </div>
             </section>
           ) : null
@@ -89,6 +95,8 @@ const heroPayload = JSON.stringify(trendingGames);
     </div>
   </div>
 </section>
+
+<GameDetailDialog />
 
 <script type="application/json" id="games-catalog-data" set:html={catalogPayload} />
 <script type="application/json" id="ng-hero-data" set:html={heroPayload} />
@@ -129,28 +137,17 @@ const heroPayload = JSON.stringify(trendingGames);
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     if (progress) {
-      progress.innerHTML = '';
       progress.style.setProperty('--ng-hero-autoplay', `${AUTO_MS}ms`);
       if (heroGames.length <= 1) {
         progress.hidden = true;
       } else {
-        heroGames.forEach((g, i) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'ng-hero-progress-seg';
-          btn.setAttribute('role', 'tab');
-          btn.setAttribute('aria-label', `Show ${g.name}`);
-          const fill = document.createElement('span');
-          fill.className = 'ng-hero-progress-fill';
-          fill.setAttribute('aria-hidden', 'true');
-          btn.appendChild(fill);
+        progress.querySelectorAll<HTMLButtonElement>('[data-ui-progress-tab]').forEach((btn, i) => {
           btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             go(i);
             restart();
           });
-          progress.appendChild(btn);
         });
       }
     }
@@ -169,6 +166,8 @@ const heroPayload = JSON.stringify(trendingGames);
         const fill = seg.querySelector<HTMLElement>('.ng-hero-progress-fill');
         const active = i === index;
         seg.classList.toggle('is-active', active);
+        seg.setAttribute('aria-selected', String(active));
+        seg.tabIndex = active ? 0 : -1;
         if (active) seg.setAttribute('aria-current', 'true');
         else seg.removeAttribute('aria-current');
         // Reset fill so only the current segment restarts its animation.

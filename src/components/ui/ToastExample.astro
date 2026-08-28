@@ -8,6 +8,7 @@ import {
   iconTriangleAlert,
 } from '../../scripts/icons';
 import type { ToastKind } from '../../lib/notifications';
+import IconButton from './IconButton.astro';
 
 interface Props {
   kind: ToastKind;
@@ -16,6 +17,7 @@ interface Props {
   description?: string;
   dismissible?: boolean;
   class?: string;
+  [key: string]: any;
 }
 
 const {
@@ -25,6 +27,7 @@ const {
   description,
   dismissible = true,
   class: className,
+  ...rest
 } = Astro.props;
 const icons = {
   success: iconCircleCheck,
@@ -35,7 +38,7 @@ const icons = {
 } satisfies Record<ToastKind, string>;
 ---
 
-<article class:list={['toast', `is-${kind}`, className]} data-ui-toast-example>
+<article class:list={['toast', `is-${kind}`, className]} data-ui-toast-example {...rest}>
   <span class="toast-icon" set:html={icons[kind]}></span>
   <div class="toast-copy">
     <p class="toast-title">{title}</p>
@@ -43,9 +46,7 @@ const icons = {
     {description && <p class="toast-description">{description}</p>}
   </div>
   {dismissible && (
-    <button class="toast-close" type="button" data-ui-toast-example-close aria-label="Dismiss notification">
-      <span set:html={iconTimes}></span>
-    </button>
+    <IconButton class="toast-close" size="small" icon={iconTimes} label="Dismiss notification" data-ui-toast-example-close />
   )}
 </article>
 

@@ -5,6 +5,7 @@ import {
   iconKeyRound,
 } from '../scripts/icons';
 import { forms, formHref, type FormEntry } from '../data/forms';
+import { ActionTile } from './ui';
 
 interface Props {
   entries?: FormEntry[];
@@ -23,10 +24,14 @@ const icons = {
   <div class="forms-grid">
     {
       entries.map((form) => (
-        <a href={formHref(form.slug)} class="forms-tile">
-          <span class="forms-tile-icon" set:html={icons[form.icon]} />
-          <span class="forms-tile-label">{form.label}</span>
-        </a>
+        <ActionTile
+          href={formHref(form.slug)}
+          class="forms-tile"
+          iconClass="forms-tile-icon"
+          titleClass="forms-tile-label"
+          icon={icons[form.icon]}
+          title={form.label}
+        />
       ))
     }
   </div>

@@ -1,17 +1,27 @@
 ---
 import { getCollection } from 'astro:content';
 import trending from '../data/trending.json';
+import { ChipGroup, IconButton, ProgressTabs, SearchField } from './ui';
+import { iconChevronLeft, iconChevronRight } from '../scripts/icons';
 
 const games = (await getCollection('games')).map((entry) => entry.data);
 const trendingIds = trending as string[];
 const catalogPayload = JSON.stringify({ games, trendingIds });
+const trendingGames = trendingIds
+  .map((id) => games.find((game) => game.id === id))
+  .filter((game): game is (typeof games)[number] => Boolean(game));
+const gradeOptions = Array.from({ length: 8 }, (_, index) => ({ label: String(index + 1), value: String(index + 1) }));
+const primaryCategories = [...new Set(games.flatMap((game) => game.primaryCategories || []))]
+  .sort()
+  .map((value) => ({ label: value, value }));
+const secondaryCategories = [...new Set(games.flatMap((game) => game.secondaryCategories || game.categories || []))]
+  .sort()
+  .map((value) => ({ label: value, value }));
 ---
 
 <section class="hero-carousel">
   <div class="carousel-container">
-    <button class="carousel-button prev" aria-label="Previous slide">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.25em" height="1.25em" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-    </button>
+    <IconButton icon={iconChevronLeft} label="Previous slide" class="carousel-button prev" />
     <div class="carousel-track-container">
       <ul class="carousel-track" id="trending-carousel">
         <li class="carousel-slide loading">
@@ -20,10 +30,14 @@ const catalogPayload = JSON.stringify({ games, trendingIds });
         </li>
       </ul>
     </div>
-    <button class="carousel-button next" aria-label="Next slide">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.25em" height="1.25em" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-    </button>
-    <div class="carousel-nav"></div>
+    <IconButton icon={iconChevronRight} label="Next slide" class="carousel-button next" />
+    <ProgressTabs
+      options={trendingGames.map((game) => ({ label: `Show ${game.name}`, value: game.id }))}
+      selected={trendingGames[0]?.id}
+      ariaLabel="Trending slides"
+      class="carousel-nav"
+      tabClass="carousel-indicator"
+    />
   </div>
 </section>
 
@@ -31,31 +45,19 @@ const catalogPayload = JSON.stringify({ games, trendingIds });
   <div class="container">
     <div class="filter-container">
       <div class="search-grade-row">
-        <div class="search-bar">
-          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" id="game-search" placeholder={`Search All ${games.length} Games...`} autocomplete="off" />
-        </div>
+        <SearchField type="text" id="game-search" label="Search games" placeholder={`Search All ${games.length} Games...`} class="search-bar" autocomplete="off" />
         <div class="filter-group filter-group-inline">
           <span class="filter-group-label">Grade</span>
-          <div class="filter-chips-row" id="grade-chips">
-            <span class="filter-chip" data-grade="1">1</span>
-            <span class="filter-chip" data-grade="2">2</span>
-            <span class="filter-chip" data-grade="3">3</span>
-            <span class="filter-chip" data-grade="4">4</span>
-            <span class="filter-chip" data-grade="5">5</span>
-            <span class="filter-chip" data-grade="6">6</span>
-            <span class="filter-chip" data-grade="7">7</span>
-            <span class="filter-chip" data-grade="8">8</span>
-          </div>
+          <ChipGroup id="grade-chips" class="filter-chips-row" chipClass="filter-chip" options={gradeOptions} selected={[]} multiple ariaLabel="Filter by grade" />
         </div>
       </div>
       <div class="filter-group">
         <span class="filter-group-label">Type</span>
-        <div class="filter-chips-row" id="primary-category-chips"></div>
+        <ChipGroup id="primary-category-chips" class="filter-chips-row" chipClass="filter-chip" options={primaryCategories} selected={[]} multiple ariaLabel="Filter by type" />
       </div>
       <div class="filter-group">
         <span class="filter-group-label">Genre</span>
-        <div class="filter-chips-row" id="secondary-category-chips"></div>
+        <ChipGroup id="secondary-category-chips" class="filter-chips-row" chipClass="filter-chip" options={secondaryCategories} selected={[]} multiple ariaLabel="Filter by genre" />
       </div>
     </div>
 

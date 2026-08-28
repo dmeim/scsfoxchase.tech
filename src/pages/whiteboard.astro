@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { Button, Feedback, TextField } from '../components/ui';
 import { iconLogIn, iconSquarePlus } from '../scripts/icons';
 import '../styles/whiteboard.css';
 ---
@@ -20,11 +21,13 @@ import '../styles/whiteboard.css';
           <form class="wb-join" data-wb-join>
             <div class="wb-join-fields">
               <div class="wb-join-row">
-                <label class="visually-hidden" for="wb-join-input">Join whiteboard</label>
-                <input
+                <TextField
+                  label="Join whiteboard"
+                  labelHidden
+                  wrapperHidden
                   id="wb-join-input"
-                  class="wb-join-input"
-                  type="text"
+                  class="wb-join-field"
+                  inputClass="wb-join-input"
                   name="join"
                   data-wb-join-input
                   placeholder="Share code, board link, or UUID"
@@ -33,27 +36,25 @@ import '../styles/whiteboard.css';
                   maxlength="200"
                   hidden
                 />
-                <button
+                <Button
                   type="submit"
+                  variant="outline"
                   class="wb-join-btn"
                   data-wb-join-button
                   aria-controls="wb-join-input"
                   aria-expanded="false"
+                  icon={iconLogIn}
                 >
-                  <span class="wb-action-icon" set:html={iconLogIn} />
-                  <span>Join</span>
-                </button>
+                  Join
+                </Button>
               </div>
-              <p class="wb-join-hint" data-wb-join-hint hidden></p>
+              <Feedback tone="info" class="wb-join-hint" data-wb-join-hint hidden />
             </div>
           </form>
 
           <div class="wb-create">
-            <button type="button" class="wb-create-btn" data-wb-create>
-              <span class="wb-action-icon" set:html={iconSquarePlus} />
-              <span>Create</span>
-            </button>
-            <p class="wb-join-hint" data-wb-create-hint hidden></p>
+            <Button type="button" class="wb-create-btn" data-wb-create icon={iconSquarePlus}>Create</Button>
+            <Feedback tone="error" class="wb-join-hint" data-wb-create-hint hidden />
           </div>
         </div>
       </div>

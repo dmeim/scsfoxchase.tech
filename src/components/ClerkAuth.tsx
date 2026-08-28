@@ -29,6 +29,7 @@ import {
 	setSessionTokenGetter,
 } from '../lib/whiteboard-identity'
 import { iconLogIn } from '../scripts/icons'
+import { ReactButton } from './ui/ReactButton'
 
 const publishableKey = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY as
 	| string
@@ -114,15 +115,17 @@ function ClerkAuthInner() {
 				<AuthReadyOnClerkFailed onFailed={markUnavailable} />
 			</ClerkFailed>
 			{signInUnavailable ? (
-				<button
+				<ReactButton
 					type="button"
+					variant="glass"
+					size="small"
 					className="header-auth-btn"
 					disabled
 					title="Sign in unavailable"
 					aria-label="Sign in unavailable"
 				>
 					<SignInLabel />
-				</button>
+				</ReactButton>
 			) : showUserButton ? (
 				<UserButton
 					appearance={{
@@ -134,15 +137,17 @@ function ClerkAuthInner() {
 				/>
 			) : (
 				<SignInButton mode="modal">
-					<button
+					<ReactButton
 						type="button"
+						variant="glass"
+						size="small"
 						className="header-auth-btn"
 						disabled={!isLoaded}
 						aria-busy={!isLoaded || undefined}
 						aria-label={isLoaded ? 'Sign in' : 'Sign in loading'}
 					>
 						<SignInLabel />
-					</button>
+					</ReactButton>
 				</SignInButton>
 			)}
 		</div>

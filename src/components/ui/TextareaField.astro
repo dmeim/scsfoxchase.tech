@@ -10,6 +10,8 @@ interface Props {
   rows?: number;
   required?: boolean;
   disabled?: boolean;
+  labelHidden?: boolean;
+  textareaClass?: string;
   class?: string;
   [key: string]: any;
 }
@@ -19,13 +21,15 @@ const {
   description,
   value,
   rows = 5,
+  labelHidden = false,
+  textareaClass,
   class: className,
   ...textareaProps
 } = Astro.props;
 ---
 
-<label class:list={['ui-field', className]}>
+<label class:list={['ui-field', labelHidden && 'ui-field--label-hidden', className]}>
   <span>{label}</span>
   {description && <small>{description}</small>}
-  <textarea rows={rows} {...textareaProps}>{value}</textarea>
+  <textarea class:list={['ui-field-control', textareaClass]} rows={rows} {...textareaProps}>{value}</textarea>
 </label>

@@ -93,6 +93,10 @@ body.asset-lookup-page {
     gap: 12px;
 }
 
+.asset-serial-field {
+    min-width: 0;
+}
+
 .asset-serial-input {
     width: 100%;
     border: 2px solid var(--border-color);
@@ -122,9 +126,9 @@ body.asset-lookup-page {
     box-shadow: 0 0 0 3px rgba(18, 95, 49, 0.14);
 }
 
-.btn.asset-lookup-button,
-.btn.asset-scan-button,
-.btn.asset-print-button {
+.ui-button.asset-lookup-button,
+.ui-button.asset-scan-button,
+.ui-button.asset-print-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -134,41 +138,41 @@ body.asset-lookup-page {
     padding: 13px 22px;
 }
 
-.btn.asset-lookup-button svg,
-.btn.asset-scan-button svg,
-.btn.asset-print-button svg,
+.ui-button.asset-lookup-button svg,
+.ui-button.asset-scan-button svg,
+.ui-button.asset-print-button svg,
 .asset-scanner-close svg {
     width: 1em;
     height: 1em;
     flex-shrink: 0;
 }
 
-.btn.asset-print-button {
+.ui-button.asset-print-button {
     min-width: 160px;
 }
 
 /* Higher specificity than .btn so yellow wins in production CSS order. */
-.btn.asset-scan-button {
+.ui-button.asset-scan-button {
     background: var(--secondary-color);
     background-color: var(--secondary-color);
     color: #333;
 }
 
-.btn.asset-scan-button:hover {
+.ui-button.asset-scan-button:hover {
     background: var(--primary-color);
     background-color: var(--primary-color);
     color: var(--light-text);
 }
 
-.btn.asset-lookup-button[disabled],
-.btn.asset-scan-button[disabled],
-.btn.asset-print-button[disabled] {
+.ui-button.asset-lookup-button[disabled],
+.ui-button.asset-scan-button[disabled],
+.ui-button.asset-print-button[disabled] {
     cursor: not-allowed;
     opacity: 0.55;
 }
 
 /* Keep loading Lookup green so the white spinner stays visible on hover. */
-.btn.asset-lookup-button[disabled]:hover {
+.ui-button.asset-lookup-button[disabled]:hover {
     background-color: var(--primary-color);
     color: var(--light-text);
 }
@@ -236,7 +240,7 @@ body.asset-lookup-page {
 }
 
 /* Primary-green button: green spinner is invisible unless hovered yellow. */
-.btn.asset-lookup-button .asset-loading-spinner {
+.ui-button.asset-lookup-button .asset-loading-spinner {
     border-color: rgba(255, 255, 255, 0.28);
     border-top-color: #fff;
 }
@@ -549,19 +553,21 @@ body.asset-scanner-open {
     overflow: hidden;
 }
 
-.asset-scanner-modal[hidden] {
+.asset-scanner-modal:not([open]) {
     display: none;
 }
 
 .asset-scanner-modal {
     position: fixed;
-    inset: 0;
+    inset: auto;
     z-index: 500;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.72);
+    display: block;
+    margin: auto;
     padding: 18px;
+}
+
+.asset-scanner-modal::backdrop {
+    background: rgba(0, 0, 0, 0.72);
 }
 
 .asset-scanner-dialog {
@@ -684,13 +690,13 @@ body.asset-scanner-open {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .asset-serial-input {
+    .asset-serial-field {
         grid-column: 1 / -1;
     }
 
-    .btn.asset-lookup-button,
-    .btn.asset-scan-button,
-    .btn.asset-print-button {
+    .ui-button.asset-lookup-button,
+    .ui-button.asset-scan-button,
+    .ui-button.asset-print-button {
         width: 100%;
         min-width: 0;
         padding-left: 10px;

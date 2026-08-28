@@ -24,6 +24,7 @@ import {
   type WhiteboardLibraryEntry,
 } from './whiteboard-library';
 import { showToast } from './toasts';
+import { uiClassNames } from '../components/ui/dom';
 
 /** Four- or eight-character digit-letter code, `1A2B` or `1A2B3C4D`. */
 const HUB_SHARE_CODE_RE = /^([0-9][A-Za-z]){2}(([0-9][A-Za-z]){2})?$/;
@@ -55,7 +56,7 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
     : `<div class="wb-card-preview-placeholder" aria-hidden="true"></div>`;
 
   return `
-    <article class="wb-card" data-wb-card data-wb-id="${idAttr}">
+    <article class="${uiClassNames.card('wb-card')}" data-wb-card data-wb-id="${idAttr}">
       <a class="wb-card-link" href="${href}">
         <div class="wb-card-preview">${preview}</div>
         <div class="wb-card-meta">
@@ -66,7 +67,7 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
       <div class="wb-card-menu" data-wb-card-menu>
         <button
           type="button"
-          class="wb-card-menu-toggle"
+          class="${uiClassNames.iconButton('small', 'wb-card-menu-toggle')}"
           data-wb-card-menu-toggle
           aria-label="Board options"
           aria-expanded="false"
@@ -74,18 +75,18 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
         >
           <span class="wb-card-menu-dots" aria-hidden="true"></span>
         </button>
-        <div class="wb-card-menu-panel" data-wb-card-menu-panel hidden>
+        <div class="${uiClassNames.card('wb-card-menu-panel')}" data-wb-card-menu-panel hidden>
           <div class="wb-card-menu-actions" data-wb-card-menu-actions>
-            <button type="button" class="wb-card-menu-item" data-wb-card-rename>
+            <button type="button" class="${uiClassNames.button('ghost', 'small', 'wb-card-menu-item')}" data-wb-card-rename>
               Rename
             </button>
-            <button type="button" class="wb-card-menu-item wb-card-menu-item--danger" data-wb-card-delete>
+            <button type="button" class="${uiClassNames.button('danger', 'small', 'wb-card-menu-item wb-card-menu-item--danger')}" data-wb-card-delete>
               Delete
             </button>
           </div>
           <form class="wb-card-rename" data-wb-card-rename-ui hidden>
             <input
-              class="wb-card-rename-input"
+              class="${uiClassNames.fieldControl('wb-card-rename-input')}"
               type="text"
               name="title"
               data-wb-card-rename-input
@@ -95,15 +96,15 @@ function cardHtml(entry: WhiteboardLibraryEntry): string {
               spellcheck="false"
               aria-label="Board name"
             />
-            <button type="submit" class="wb-card-rename-save" data-wb-card-rename-save>
+            <button type="submit" class="${uiClassNames.button('primary', 'small', 'wb-card-rename-save')}" data-wb-card-rename-save>
               Save
             </button>
           </form>
           <div class="wb-card-confirm" data-wb-card-delete-ui hidden>
             <p class="wb-card-confirm-text">Are you sure?</p>
             <div class="wb-card-confirm-actions">
-              <button type="button" class="wb-card-confirm-yes" data-wb-card-delete-yes>Yes</button>
-              <button type="button" class="wb-card-confirm-no" data-wb-card-delete-no>No</button>
+              <button type="button" class="${uiClassNames.button('danger', 'small', 'wb-card-confirm-yes')}" data-wb-card-delete-yes>Yes</button>
+              <button type="button" class="${uiClassNames.button('ghost', 'small', 'wb-card-confirm-no')}" data-wb-card-delete-no>No</button>
             </div>
           </div>
         </div>
@@ -129,7 +130,7 @@ function assetCardHtml(entry: WhiteboardAssetEntry): string {
        </div>`;
 
   return `
-    <article class="wb-card wb-card--asset" data-wb-asset-card data-wb-asset-id="${idAttr}">
+    <article class="${uiClassNames.card('wb-card wb-card--asset')}" data-wb-asset-card data-wb-asset-id="${idAttr}">
       <div class="wb-card-link wb-card-link--static">
         <div class="wb-card-preview">${preview}</div>
         <div class="wb-card-meta">
@@ -140,7 +141,7 @@ function assetCardHtml(entry: WhiteboardAssetEntry): string {
       <div class="wb-card-menu" data-wb-card-menu>
         <button
           type="button"
-          class="wb-card-menu-toggle"
+          class="${uiClassNames.iconButton('small', 'wb-card-menu-toggle')}"
           data-wb-card-menu-toggle
           aria-label="Asset options"
           aria-expanded="false"
@@ -148,18 +149,18 @@ function assetCardHtml(entry: WhiteboardAssetEntry): string {
         >
           <span class="wb-card-menu-dots" aria-hidden="true"></span>
         </button>
-        <div class="wb-card-menu-panel" data-wb-card-menu-panel hidden>
+        <div class="${uiClassNames.card('wb-card-menu-panel')}" data-wb-card-menu-panel hidden>
           <div class="wb-card-menu-actions" data-wb-card-menu-actions>
-            <button type="button" class="wb-card-menu-item" data-wb-card-rename>
+            <button type="button" class="${uiClassNames.button('ghost', 'small', 'wb-card-menu-item')}" data-wb-card-rename>
               Rename
             </button>
-            <button type="button" class="wb-card-menu-item wb-card-menu-item--danger" data-wb-card-delete>
+            <button type="button" class="${uiClassNames.button('danger', 'small', 'wb-card-menu-item wb-card-menu-item--danger')}" data-wb-card-delete>
               Delete
             </button>
           </div>
           <form class="wb-card-rename" data-wb-card-rename-ui hidden>
             <input
-              class="wb-card-rename-input"
+              class="${uiClassNames.fieldControl('wb-card-rename-input')}"
               type="text"
               name="title"
               data-wb-card-rename-input
@@ -169,15 +170,15 @@ function assetCardHtml(entry: WhiteboardAssetEntry): string {
               spellcheck="false"
               aria-label="Asset name"
             />
-            <button type="submit" class="wb-card-rename-save" data-wb-card-rename-save>
+            <button type="submit" class="${uiClassNames.button('primary', 'small', 'wb-card-rename-save')}" data-wb-card-rename-save>
               Save
             </button>
           </form>
           <div class="wb-card-confirm" data-wb-card-delete-ui hidden>
             <p class="wb-card-confirm-text">Are you sure?</p>
             <div class="wb-card-confirm-actions">
-              <button type="button" class="wb-card-confirm-yes" data-wb-card-delete-yes>Yes</button>
-              <button type="button" class="wb-card-confirm-no" data-wb-card-delete-no>No</button>
+              <button type="button" class="${uiClassNames.button('danger', 'small', 'wb-card-confirm-yes')}" data-wb-card-delete-yes>Yes</button>
+              <button type="button" class="${uiClassNames.button('ghost', 'small', 'wb-card-confirm-no')}" data-wb-card-delete-no>No</button>
             </div>
           </div>
         </div>
@@ -567,6 +568,8 @@ function initWhiteboardHub() {
   const openJoinInput = () => {
     if (!joinInput) return;
     joinInput.hidden = false;
+    const field = joinInput.closest<HTMLElement>('.ui-field');
+    if (field) field.hidden = false;
     joinBtn?.setAttribute('aria-expanded', 'true');
     window.requestAnimationFrame(() => joinInput.focus());
   };

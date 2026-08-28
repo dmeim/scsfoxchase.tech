@@ -639,6 +639,18 @@ body.ui-page main {
   align-items: stretch;
 }
 
+.ui-demo-generic-card {
+  min-height: 210px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 20px;
+}
+
+.ui-feedback-examples {
+  margin-top: 18px;
+}
+
 .ui-card {
   min-width: 0;
   color: var(--text-color);

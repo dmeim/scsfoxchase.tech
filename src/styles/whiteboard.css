@@ -119,6 +119,10 @@ body.whiteboard-hub-page {
   justify-content: flex-end;
 }
 
+.wb-join-field {
+  min-width: 0;
+}
+
 .wb-join-input {
   width: clamp(220px, 26vw, 360px);
   min-width: 0;
@@ -662,6 +666,7 @@ body.board-page .excalidraw .sidebar {
   }
 
   .wb-join-fields,
+  .wb-join-field,
   .wb-join-input {
     width: 100%;
   }

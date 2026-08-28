@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { Button, Card } from '../components/ui';
 import { iconWifiOff, iconSpace, iconArrowBigUp } from '../scripts/icons';
 ---
 <BaseLayout title="Offline - St. Cecilia Technology">
@@ -23,27 +24,25 @@ import { iconWifiOff, iconSpace, iconArrowBigUp } from '../scripts/icons';
     <div class="offline-dino" aria-label="Offline runner game">
       <canvas id="offline-dino-canvas" width="800" height="300"></canvas>
       <ul class="offline-dino-controls" aria-label="Game controls">
-        <li class="offline-chip">
+        <Card as="li" class="offline-chip">
           <span class="offline-chip-title">
             <span class="offline-chip-icon" set:html={iconSpace}></span>
             <span class="offline-chip-key">Space</span>
           </span>
           <span class="offline-chip-desc">Jump · quick short · hold tall</span>
-        </li>
-        <li class="offline-chip">
+        </Card>
+        <Card as="li" class="offline-chip">
           <span class="offline-chip-title">
             <span class="offline-chip-icon" set:html={iconArrowBigUp}></span>
             <span class="offline-chip-key">Shift</span>
           </span>
           <span class="offline-chip-desc">Slam down</span>
-        </li>
+        </Card>
       </ul>
     </div>
 
     <div class="offline-actions">
-      <button class="btn" id="refresh-btn" type="button">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.36"/><polyline points="21 3 21 9 15 9"/></svg> Try Again
-      </button>
+      <Button id="refresh-btn" type="button">Try Again</Button>
     </div>
   </section>
 </BaseLayout>
@@ -176,7 +175,7 @@ import { iconWifiOff, iconSpace, iconArrowBigUp } from '../scripts/icons';
     flex-wrap: wrap;
   }
 
-  .offline-actions .btn {
+  .offline-actions .ui-button {
     display: inline-flex;
     align-items: center;
     gap: 0.4em;

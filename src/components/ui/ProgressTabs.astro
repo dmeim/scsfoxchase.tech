@@ -1,0 +1,82 @@
+---
+import type { SelectOption } from './types';
+import './styles.css';
+
+interface Props {
+  options: SelectOption[];
+  selected?: string;
+  ariaLabel: string;
+  tabClass?: string;
+  fillClass?: string;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  options,
+  selected = options[0]?.value,
+  ariaLabel,
+  tabClass,
+  fillClass,
+  class: className,
+  ...rest
+} = Astro.props;
+---
+
+<div class:list={['ui-progress-tabs', className]} role="tablist" aria-label={ariaLabel} data-ui-progress-tabs {...rest}>
+  {options.map((option) => {
+    const active = option.value === selected;
+    return (
+      <button
+        type="button"
+        class:list={['ui-progress-tab', tabClass, active && 'is-active']}
+        role="tab"
+        aria-label={option.label}
+        aria-selected={String(active)}
+        tabindex={active ? 0 : -1}
+        data-ui-progress-tab={option.value}
+        disabled={option.disabled}
+      >
+        {fillClass && <span class:list={['ui-progress-tab-fill', fillClass]} aria-hidden="true"></span>}
+      </button>
+    );
+  })}
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-ui-progress-tabs]:not([data-ui-ready])').forEach((group) => {
+    group.dataset.uiReady = 'true';
+    const tabs = () => [...group.querySelectorAll<HTMLButtonElement>('[data-ui-progress-tab]:not(:disabled)')];
+    const select = (tab: HTMLButtonElement) => {
+      tabs().forEach((item) => {
+        const active = item === tab;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-selected', String(active));
+        item.tabIndex = active ? 0 : -1;
+      });
+      group.dispatchEvent(new CustomEvent('ui:change', {
+        bubbles: true,
+        detail: { value: tab.dataset.uiProgressTab ?? '' },
+      }));
+    };
+    group.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const tab = target.closest<HTMLButtonElement>('[data-ui-progress-tab]');
+      if (tab && group.contains(tab) && !tab.disabled) select(tab);
+    });
+    group.addEventListener('keydown', (event) => {
+      if (!(event instanceof KeyboardEvent) || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      const items = tabs();
+      const current = items.findIndex((item) => item.getAttribute('aria-selected') === 'true');
+      if (current < 0) return;
+      event.preventDefault();
+      const delta = event.key === 'ArrowRight' ? 1 : -1;
+      const next = items[(current + delta + items.length) % items.length];
+      if (next) {
+        select(next);
+        next.focus();
+      }
+    });
+  });
+</script>

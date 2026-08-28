@@ -1,0 +1,28 @@
+---
+import './styles.css';
+
+interface Props {
+  as?: 'article' | 'section' | 'div' | 'li';
+  href?: string;
+  interactive?: boolean;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  as = 'div',
+  href,
+  interactive = Boolean(href),
+  class: className,
+  ...rest
+} = Astro.props;
+const Tag = href ? 'a' : as;
+---
+
+<Tag
+  class:list={['ui-card', interactive && 'ui-card--interactive', className]}
+  href={href}
+  {...rest}
+>
+  <slot />
+</Tag>

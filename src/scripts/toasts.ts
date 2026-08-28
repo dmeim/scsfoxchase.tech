@@ -15,6 +15,7 @@ import {
   type ToastIcon,
   type ToastInput,
 } from '../lib/notifications';
+import { uiClassNames } from '../components/ui/dom';
 
 const DEFAULT_DURATION_MS = 10_000;
 
@@ -79,7 +80,7 @@ export function showToast(input: ToastInput): string | null {
 
   const close = document.createElement('button');
   close.type = 'button';
-  close.className = 'toast-close';
+  close.className = uiClassNames.iconButton('small', 'toast-close');
   close.setAttribute('aria-label', 'Dismiss notification');
   close.innerHTML = iconTimes;
   close.addEventListener('click', () => dismissToast(id));

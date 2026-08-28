@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Badge, Button, Card } from '../../components/ui';
 import { iconBookOpenText, iconMessageCircleQuestion } from '../../scripts/icons';
 import { getCollection, render } from 'astro:content';
 import type { GetStaticPaths } from 'astro';
@@ -32,12 +33,12 @@ function sourceFavicon(url?: string): string | null {
 
   <article class="guide-page" aria-labelledby="guide-title">
     <div class="container form-shell guide-layout">
-      <div class="form-panel guide-title-card">
+      <Card class="form-panel guide-title-card">
         <h2 id="guide-title">{title}</h2>
         <p class="guide-description">{description}</p>
-      </div>
+      </Card>
 
-      <div class="form-panel guide-body-card">
+      <Card class="form-panel guide-body-card">
         <div class="guide-body">
           <Content />
         </div>
@@ -53,7 +54,7 @@ function sourceFavicon(url?: string): string | null {
                   return (
                     <li id={`source-${source.id}`}>
                       {source.url ? (
-                        <a
+                        <Badge
                           href={source.url}
                           class="guide-source-chip"
                           target="_blank"
@@ -74,12 +75,12 @@ function sourceFavicon(url?: string): string | null {
                             <span class="guide-source-favicon guide-source-favicon--fallback" aria-hidden="true" />
                           )}
                           <span class="guide-source-chip-label">{source.title}</span>
-                        </a>
+                        </Badge>
                       ) : (
-                        <span class="guide-source-chip" title={tip}>
+                        <Badge class="guide-source-chip" title={tip}>
                           <span class="guide-source-favicon guide-source-favicon--fallback" aria-hidden="true" />
                           <span class="guide-source-chip-label">{source.title}</span>
-                        </span>
+                        </Badge>
                       )}
                     </li>
                   );
@@ -90,16 +91,10 @@ function sourceFavicon(url?: string): string | null {
         }
 
         <div class="guide-actions">
-          <a href="/guides" class="page-nav-btn">
-            <span class="page-nav-btn-icon" set:html={iconBookOpenText} />
-            Back to Guides
-          </a>
-          <a href="/help" class="page-nav-btn">
-            <span class="page-nav-btn-icon" set:html={iconMessageCircleQuestion} />
-            Back to Help
-          </a>
+          <Button href="/guides" variant="outline" class="page-nav-btn" icon={iconBookOpenText}>Back to Guides</Button>
+          <Button href="/help" variant="outline" class="page-nav-btn" icon={iconMessageCircleQuestion}>Back to Help</Button>
         </div>
-      </div>
+      </Card>
     </div>
   </article>
 </BaseLayout>

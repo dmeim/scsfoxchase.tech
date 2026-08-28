@@ -42,7 +42,6 @@ export class Carousel {
 
     this.track.innerHTML = '';
     this.slides = [];
-    this.navContainer.innerHTML = '';
     this.currentIndex = 0;
 
     if (!items || items.length === 0) {
@@ -56,13 +55,8 @@ export class Carousel {
       this.track!.appendChild(slide);
       this.slides.push(slide);
 
-      const indicator = document.createElement('div');
-      indicator.classList.add('carousel-indicator');
-      if (index === 0) indicator.classList.add('active');
-      indicator.dataset.index = String(index);
-      this.navContainer!.appendChild(indicator);
-
-      indicator.addEventListener('click', () => {
+      const indicator = this.navContainer.querySelectorAll<HTMLButtonElement>('[data-ui-progress-tab]')[index];
+      indicator?.addEventListener('click', () => {
         this.goToSlide(index);
         this.resetAutoPlay();
       });
@@ -214,11 +208,11 @@ export class Carousel {
 
     const indicators = this.navContainer.querySelectorAll('.carousel-indicator');
     indicators.forEach((indicator, index) => {
-      if (index === this.currentIndex) {
-        indicator.classList.add('active');
-      } else {
-        indicator.classList.remove('active');
-      }
+      const active = index === this.currentIndex;
+      indicator.classList.toggle('active', active);
+      indicator.classList.toggle('is-active', active);
+      indicator.setAttribute('aria-selected', String(active));
+      (indicator as HTMLElement).tabIndex = active ? 0 : -1;
     });
   }
 }

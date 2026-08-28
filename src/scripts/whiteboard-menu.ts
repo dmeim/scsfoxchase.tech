@@ -14,6 +14,7 @@ import {
 } from '../lib/whiteboard-participants'
 import { assignableRolesFor } from '../lib/whiteboard-sync'
 import { iconEye, iconEyeOff } from './icons'
+import { uiClassNames } from '../components/ui/dom'
 import {
   getEntryActive,
   getHostSecret,
@@ -539,7 +540,7 @@ function initWhiteboardMenu() {
       let roleControl: HTMLElement
       if (canManageRoles && boardId) {
         const select = document.createElement('select')
-        select.className = 'whiteboard-people-role'
+        select.className = uiClassNames.fieldControl('whiteboard-people-role')
         select.setAttribute('aria-label', `Role for ${label}`)
         select.disabled = roleBusy
 
@@ -601,14 +602,14 @@ function initWhiteboardMenu() {
         roleControl = select
       } else {
         const badge = document.createElement('span')
-        badge.className = 'whiteboard-people-role-label'
+        badge.className = uiClassNames.badge('info', 'whiteboard-people-role-label')
         badge.textContent = roleLabel(person.role)
         roleControl = badge
       }
 
       const followBtn = document.createElement('button')
       followBtn.type = 'button'
-      followBtn.className = 'whiteboard-people-eye'
+      followBtn.className = uiClassNames.iconButton('small', 'whiteboard-people-eye')
       const canFollow = Boolean(person.userId) && !isSelf && !eyesLocked
       const isFollowing = Boolean(
         person.userId && followingUserId && followingUserId === person.userId,

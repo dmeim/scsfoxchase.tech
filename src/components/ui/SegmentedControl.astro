@@ -1,0 +1,71 @@
+---
+import type { SegmentedOption } from './types';
+import './styles.css';
+
+interface Props {
+  options: SegmentedOption[];
+  selected?: string;
+  name?: string;
+  ariaLabel: string;
+  optionClass?: string;
+  class?: string;
+  [key: string]: any;
+}
+
+const { options, selected = options[0]?.value, name, ariaLabel, optionClass, class: className, ...rest } = Astro.props;
+---
+
+<div class:list={['ui-segmented', className]} role="radiogroup" aria-label={ariaLabel} data-ui-segmented {...rest}>
+  {options.map((option) => (
+    <button
+      type="button"
+      class:list={['ui-segmented-option', optionClass]}
+      role="radio"
+      aria-label={option.label}
+      aria-checked={option.value === selected ? 'true' : 'false'}
+      tabindex={option.value === selected ? 0 : -1}
+      data-ui-segmented-value={option.value}
+      disabled={option.disabled}
+    >
+      {option.icon ? <span set:html={option.icon}></span> : option.label}
+    </button>
+  ))}
+  {name && <input type="hidden" name={name} value={selected} data-ui-segmented-input />}
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-ui-segmented]:not([data-ui-ready])').forEach((group) => {
+    group.dataset.uiReady = 'true';
+    const input = group.querySelector<HTMLInputElement>('[data-ui-segmented-input]');
+    const options = () => [...group.querySelectorAll<HTMLButtonElement>('[data-ui-segmented-value]:not(:disabled)')];
+    const select = (button: HTMLButtonElement) => {
+      options().forEach((option) => {
+        const active = option === button;
+        option.setAttribute('aria-checked', String(active));
+        option.tabIndex = active ? 0 : -1;
+      });
+      const value = button.dataset.uiSegmentedValue ?? '';
+      if (input) input.value = value;
+      group.dispatchEvent(new CustomEvent('ui:change', { bubbles: true, detail: { value } }));
+    };
+    group.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest<HTMLButtonElement>('[data-ui-segmented-value]');
+      if (button && group.contains(button) && !button.disabled) select(button);
+    });
+    group.addEventListener('keydown', (event) => {
+      if (!(event instanceof KeyboardEvent) || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      const items = options();
+      const current = items.findIndex((item) => item.getAttribute('aria-checked') === 'true');
+      if (current < 0) return;
+      event.preventDefault();
+      const delta = event.key === 'ArrowRight' ? 1 : -1;
+      const next = items[(current + delta + items.length) % items.length];
+      if (next) {
+        select(next);
+        next.focus();
+      }
+    });
+  });
+</script>

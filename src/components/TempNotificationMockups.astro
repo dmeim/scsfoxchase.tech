@@ -1,6 +1,6 @@
 ---
 import { tempNotifications } from '../data/temp-notifications';
-import { iconTimes } from '../scripts/icons';
+import { ToastExample } from './ui';
 ---
 
 <div class="temp-notification-lab">
@@ -40,30 +40,16 @@ import { iconTimes } from '../scripts/icons';
 
     <div class="temp-toast-stack" aria-live="polite" data-temp-toast-stack>
       {tempNotifications.map((notification) => (
-        <article
-          class:list={['temp-toast', `is-${notification.kind}`]}
+        <ToastExample
+          kind={notification.kind}
+          title={notification.title}
+          subtitle={notification.subtitle}
+          description={notification.description}
+          class="temp-toast"
           data-temp-toast
           data-notification-id={notification.id}
           data-persist="true"
-        >
-          <span class="temp-toast-icon" set:html={notification.icon} />
-          <div class="temp-toast-copy">
-            <div class="temp-toast-title-row">
-              <h3>{notification.title}</h3>
-              <span class="temp-toast-kind">{notification.kind}</span>
-            </div>
-            <p class="temp-toast-subtitle">{notification.subtitle}</p>
-            <p class="temp-toast-description">{notification.description}</p>
-          </div>
-          <button
-            type="button"
-            class="temp-toast-close"
-            data-temp-toast-close
-            aria-label={`Close ${notification.title}`}
-          >
-            <span set:html={iconTimes} />
-          </button>
-        </article>
+        />
       ))}
     </div>
   </section>

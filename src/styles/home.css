@@ -62,6 +62,14 @@
 
 /* /newhome workflow concept */
 .newhome-groups { padding: clamp(10px, 1.8vw, 26px) 0; }
+.smart-search-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
 .newhome-workflow-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

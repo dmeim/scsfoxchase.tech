@@ -1,6 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Button } from '../../components/ui';
 import { iconForm } from '../../scripts/icons';
 ---
 <BaseLayout title="General Technology Help - St. Cecilia Technology" bodyClass="forms-page">
@@ -13,10 +14,7 @@ import { iconForm } from '../../scripts/icons';
     <div class="container form-shell">
       <h2>General Technology Help</h2>
       <p>This form is coming soon.</p>
-      <a href="/forms" class="page-nav-btn">
-        <span class="page-nav-btn-icon" set:html={iconForm} />
-        Back to Forms
-      </a>
+      <Button href="/forms" variant="outline" class="page-nav-btn" icon={iconForm}>Back to Forms</Button>
     </div>
   </section>
 </BaseLayout>

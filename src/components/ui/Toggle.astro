@@ -16,6 +16,6 @@ const { label, description, class: className, ...inputProps } = Astro.props;
 ---
 
 <label class:list={['ui-switch-row', className]}>
-  <span><strong>{label}</strong>{description && <small>{description}</small>}</span>
+  <span><strong>{label}</strong>{description && <small>{description}</small>}<slot name="state" /></span>
   <input type="checkbox" role="switch" {...inputProps} />
 </label>

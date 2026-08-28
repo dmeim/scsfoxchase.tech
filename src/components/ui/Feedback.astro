@@ -1,0 +1,49 @@
+---
+import {
+  iconCircleCheck,
+  iconCircleX,
+  iconInfo,
+  iconLoaderCircle,
+  iconTriangleAlert,
+} from '../../scripts/icons';
+import type { FeedbackTone } from './types';
+import './styles.css';
+
+interface Props {
+  tone?: FeedbackTone;
+  title?: string;
+  icon?: string;
+  live?: 'off' | 'polite' | 'assertive';
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  tone = 'info',
+  title,
+  icon,
+  live = tone === 'error' ? 'assertive' : 'polite',
+  class: className,
+  ...rest
+} = Astro.props;
+const icons = {
+  success: iconCircleCheck,
+  warning: iconTriangleAlert,
+  info: iconInfo,
+  error: iconCircleX,
+  loading: iconLoaderCircle,
+} satisfies Record<FeedbackTone, string>;
+---
+
+<div
+  class:list={['ui-feedback', `ui-feedback--${tone}`, className]}
+  role={tone === 'error' ? 'alert' : 'status'}
+  aria-live={live}
+  {...rest}
+>
+  <span class="ui-feedback-icon" set:html={icon ?? icons[tone]}></span>
+  <div class="ui-feedback-copy">
+    {title && <strong>{title}</strong>}
+    <slot />
+  </div>
+</div>

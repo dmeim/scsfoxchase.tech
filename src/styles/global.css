@@ -959,6 +959,15 @@ a.whiteboard-toggle:hover {
     clip: rect(0 0 0 0);
 }
 
+.whiteboard-switch.ui-switch-row input {
+    position: static;
+    opacity: 1;
+    width: 42px;
+    height: 24px;
+    overflow: visible;
+    clip: auto;
+}
+
 .whiteboard-switch-track {
     position: relative;
     width: 40px;
@@ -1479,6 +1488,13 @@ nav ul li a:hover,
 
 .theme-toggle-option[aria-checked="true"] {
     opacity: 1;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+}
+
+[data-theme="dark"] .theme-toggle-option[aria-checked="true"] {
+    background: rgba(255, 255, 255, 0.14);
 }
 
 .theme-toggle-option:focus-visible {

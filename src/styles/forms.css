@@ -137,6 +137,16 @@ body.help-page main .container.form-shell {
   transition: var(--transition);
 }
 
+.ui-card--tile.forms-tile {
+  min-height: clamp(120px, 16vh, 160px);
+}
+
+.forms-tile .ui-card-icon {
+  width: auto;
+  height: auto;
+  background: transparent;
+}
+
 [data-theme="dark"] .forms-tile {
   background: rgba(45, 45, 45, 0.58);
 }
@@ -518,7 +528,7 @@ a.guide-source-chip:hover {
   margin-top: 4px;
 }
 
-.btn.form-submit {
+.ui-button.form-submit {
   min-width: 120px;
   padding: 10px 22px;
 }

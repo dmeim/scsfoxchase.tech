@@ -1,9 +1,8 @@
-// Ported from js/theme-toggle.js — ESM, localStorage key + data-theme behavior
-import { createElement, Moon, Sun, SunMoon } from 'lucide';
+// Theme preference behavior for the shared SegmentedControl rendered by Header.astro.
 
 type ThemePreference = 'light' | 'dark' | 'system';
 
-function isThemePreference(value: string | null): value is ThemePreference {
+function isThemePreference(value: unknown): value is ThemePreference {
   return value === 'light' || value === 'dark' || value === 'system';
 }
 
@@ -20,7 +19,6 @@ class ThemeToggle {
   }
 
   init() {
-    this.createThemeToggle();
     this.applyPreference(this.preference);
     this.setupEventListeners();
   }
@@ -35,67 +33,13 @@ class ThemeToggle {
     return preference === 'system' ? this.getSystemTheme() : preference;
   }
 
-  iconEl(Icon: typeof Sun, id: string): SVGElement {
-    return createElement(Icon, {
-      id,
-      'aria-hidden': 'true',
-      width: '1em',
-      height: '1em',
-    });
-  }
-
-  createThemeToggle() {
-    const host =
-      document.getElementById('theme-toggle-host') ??
-      document.querySelector('.header-right');
-    if (!host) return;
-
-    if (document.getElementById('theme-toggle')) return;
-
-    const group = document.createElement('div');
-    group.className = 'theme-toggle';
-    group.id = 'theme-toggle';
-    group.setAttribute('role', 'radiogroup');
-    group.setAttribute('aria-label', 'Color theme');
-
-    const thumb = document.createElement('span');
-    thumb.className = 'theme-toggle-thumb';
-    thumb.setAttribute('aria-hidden', 'true');
-    group.appendChild(thumb);
-
-    const options: { preference: ThemePreference; label: string; Icon: typeof Sun }[] = [
-      { preference: 'light', label: 'Light', Icon: Sun },
-      { preference: 'system', label: 'System', Icon: SunMoon },
-      { preference: 'dark', label: 'Dark', Icon: Moon },
-    ];
-
-    for (const { preference, label, Icon } of options) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'theme-toggle-option';
-      btn.dataset.themeOption = preference;
-      btn.setAttribute('role', 'radio');
-      btn.setAttribute('aria-label', label);
-      btn.replaceChildren(this.iconEl(Icon, `theme-icon-${preference}`));
-      group.appendChild(btn);
-    }
-
-    host.appendChild(group);
-    this.syncOptionState();
-  }
-
   setupEventListeners() {
     const group = document.getElementById('theme-toggle');
     if (!group) return;
 
-    group.addEventListener('click', (event) => {
-      const target = event.target as HTMLElement | null;
-      const option = target?.closest<HTMLElement>('[data-theme-option]');
-      if (!option || !group.contains(option)) return;
-
-      const next = option.dataset.themeOption;
+    group.addEventListener('ui:change', (event) => {
+      const next = (event as CustomEvent<{ value?: string }>).detail?.value;
       if (!isThemePreference(next)) return;
-
       this.setPreference(next);
     });
 
@@ -126,8 +70,8 @@ class ThemeToggle {
   }
 
   syncOptionState() {
-    document.querySelectorAll<HTMLElement>('[data-theme-option]').forEach((btn) => {
-      const selected = btn.dataset.themeOption === this.preference;
+    document.querySelectorAll<HTMLElement>('#theme-toggle [data-ui-segmented-value]').forEach((btn) => {
+      const selected = btn.dataset.uiSegmentedValue === this.preference;
       btn.setAttribute('aria-checked', selected ? 'true' : 'false');
       btn.tabIndex = selected ? 0 : -1;
     });

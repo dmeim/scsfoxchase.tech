@@ -1,0 +1,35 @@
+---
+import { Button, Dialog } from './ui';
+---
+
+<Dialog
+  id="game-detail-modal"
+  title="Game details"
+  class="game-detail-modal game-detail-dialog"
+  headerClass="game-detail-dialog-head"
+  closeButtonClass="game-detail-close"
+  closeLabel="Close game details"
+>
+  <div class="game-detail-body">
+    <Button type="button" variant="ghost" class="game-detail-image-btn" aria-label="Play game">
+      <img class="game-detail-image" alt="" />
+    </Button>
+    <h2 class="game-detail-title" data-game-detail-title>Game details</h2>
+    <div class="game-detail-chips">
+      <div class="game-detail-chip-column" data-chip-column="grade">
+        <div class="game-card-badge-label">Grade</div>
+        <div class="ui-chip-row chip-row chip-row-grades"></div>
+      </div>
+      <div class="game-detail-chip-column" data-chip-column="type">
+        <div class="game-card-badge-label">Type</div>
+        <div class="ui-chip-row chip-row chip-row-primary"></div>
+      </div>
+      <div class="game-detail-chip-column" data-chip-column="genre">
+        <div class="game-card-badge-label">Genre</div>
+        <div class="ui-chip-row chip-row chip-row-secondary"></div>
+      </div>
+    </div>
+    <div class="game-detail-description"><p></p></div>
+    <Button type="button" class="game-detail-play">Play</Button>
+  </div>
+</Dialog>

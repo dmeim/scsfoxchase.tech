@@ -1,0 +1,39 @@
+---
+import type { SelectOption } from './types';
+import './styles.css';
+
+interface Props {
+  label: string;
+  options: SelectOption[];
+  name?: string;
+  value?: string;
+  description?: string;
+  labelHidden?: boolean;
+  selectClass?: string;
+  class?: string;
+  [key: string]: any;
+}
+
+const {
+  label,
+  options,
+  value,
+  description,
+  labelHidden = false,
+  selectClass,
+  class: className,
+  ...selectProps
+} = Astro.props;
+---
+
+<label class:list={['ui-field', labelHidden && 'ui-field--label-hidden', className]}>
+  <span>{label}</span>
+  {description && <small>{description}</small>}
+  <select class:list={['ui-field-control', selectClass]} {...selectProps}>
+    {options.map((option) => (
+      <option value={option.value} selected={option.value === value} disabled={option.disabled}>
+        {option.label}
+      </option>
+    ))}
+  </select>
+</label>

@@ -1,4 +1,5 @@
 ---
+import { ActionTile, Button } from './ui';
 interface Props {
   title: string;
   viewAllHref?: string;
@@ -31,9 +32,7 @@ const {
         {showTitle ? <h2 class="help-section-title">{title}</h2> : <span />}
         {
           viewAllHref && (
-            <a href={viewAllHref} class="help-view-all">
-              {viewAllLabel}
-            </a>
+            <Button href={viewAllHref} variant="ghost" size="small" class="help-view-all">{viewAllLabel}</Button>
           )
         }
       </div>
@@ -46,10 +45,14 @@ const {
     ) : (
       <div class="forms-grid">
         {tiles.map((tile) => (
-          <a href={tile.href} class="forms-tile">
-            <span class="forms-tile-icon" set:html={tile.iconHtml} />
-            <span class="forms-tile-label">{tile.label}</span>
-          </a>
+          <ActionTile
+            href={tile.href}
+            class="forms-tile"
+            iconClass="forms-tile-icon"
+            titleClass="forms-tile-label"
+            icon={tile.iconHtml}
+            title={tile.label}
+          />
         ))}
       </div>
     )

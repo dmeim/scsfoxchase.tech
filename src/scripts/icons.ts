@@ -40,6 +40,9 @@ export const iconChevronDown = svg(
   '<path d="m6 9 6 6 6-6"/>'
 );
 
+export const iconChevronLeft = svg('<path d="m15 18-6-6 6-6"/>');
+export const iconChevronRight = svg('<path d="m9 18 6-6-6-6"/>');
+
 /** Lucide Gamepad2 — forms: Request A Game */
 export const iconGamepad2 = svg(
   '<line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/>'
@@ -128,6 +131,19 @@ export const iconMaximize2 = svg(
 /** Lucide Minimize2 — header exit full screen */
 export const iconMinimize2 = svg(
   '<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>'
+);
+
+/** Lucide Sun, SunMoon, and Moon — theme preference. */
+export const iconSun = svg(
+  '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>'
+);
+
+export const iconMoon = svg(
+  '<path d="M20.985 12.486A9 9 0 1 1 11.514 3.015c.36-.01.53.427.326.724a6 6 0 0 0 8.421 8.421c.297-.204.735-.034.724.326"/>'
+);
+
+export const iconSunMoon = svg(
+  '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M2 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M20 12h2"/><path d="M16 12a4 4 0 0 1-4 4V8a4 4 0 0 1 4 4"/>'
 );
 
 /** Lucide WifiOff — offline page title */

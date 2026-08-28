@@ -11,6 +11,9 @@ interface Props {
   autocomplete?: string;
   required?: boolean;
   disabled?: boolean;
+  labelHidden?: boolean;
+  inputClass?: string;
+  wrapperHidden?: boolean;
   class?: string;
   [key: string]: any;
 }
@@ -19,13 +22,16 @@ const {
   label,
   description,
   type = 'text',
+  labelHidden = false,
+  inputClass,
+  wrapperHidden = false,
   class: className,
   ...inputProps
 } = Astro.props;
 ---
 
-<label class:list={['ui-field', className]}>
+<label class:list={['ui-field', labelHidden && 'ui-field--label-hidden', className]} hidden={wrapperHidden}>
   <span>{label}</span>
   {description && <small>{description}</small>}
-  <input type={type} {...inputProps} />
+  <input class:list={['ui-field-control', inputClass]} type={type} {...inputProps} />
 </label>

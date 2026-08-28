@@ -9,6 +9,10 @@ interface Props {
   eyebrow?: string;
   description?: string;
   closeLabel?: string;
+  closeButtonId?: string;
+  closeButtonClass?: string;
+  headerClass?: string;
+  actionsClass?: string;
   class?: string;
 }
 
@@ -18,19 +22,23 @@ const {
   eyebrow,
   description,
   closeLabel = 'Close dialog',
+  closeButtonId,
+  closeButtonClass,
+  headerClass,
+  actionsClass,
   class: className,
 } = Astro.props;
 const titleId = `${id}-title`;
 ---
 
 <dialog id={id} class:list={['ui-dialog', className]} data-ui-dialog aria-labelledby={titleId}>
-  <div class="ui-dialog-head">
+  <div class:list={['ui-dialog-head', headerClass]}>
     <div>{eyebrow && <p class="ui-dialog-eyebrow">{eyebrow}</p>}<h2 id={titleId}>{title}</h2></div>
-    <IconButton icon={iconTimes} label={closeLabel} data-ui-dialog-close />
+    <IconButton id={closeButtonId} class={closeButtonClass} icon={iconTimes} label={closeLabel} data-ui-dialog-close />
   </div>
   {description && <p class="ui-dialog-description">{description}</p>}
   <slot />
-  <div class="ui-dialog-actions"><slot name="actions" /></div>
+  <div class:list={['ui-dialog-actions', actionsClass]}><slot name="actions" /></div>
 </dialog>
 
 <script>

@@ -1,7 +1,8 @@
 ---
 export const prerender = true;
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { iconPrint, iconQrCode, iconSearch, iconTimes } from '../scripts/icons';
+import { Button, Card, Dialog, Feedback, TextField } from '../components/ui';
+import { iconPrint, iconQrCode, iconSearch } from '../scripts/icons';
 import '../styles/inventory.css';
 ---
 <BaseLayout title="Inventory Lookup | St. Cecilia Technology" bodyClass="asset-lookup-page">
@@ -15,7 +16,7 @@ import '../styles/inventory.css';
   <div class="asset-main">
     <section class="asset-lookup-section" aria-labelledby="asset-lookup-title">
       <div class="container asset-shell">
-        <div class="asset-lookup-panel">
+        <Card class="asset-lookup-panel">
           <div class="asset-title-row">
             <div>
               <h2 id="asset-lookup-title">Inventory Report</h2>
@@ -26,70 +27,53 @@ import '../styles/inventory.css';
 
           <form id="assetLookupForm" class="asset-search-form" novalidate>
             <div class="asset-search-controls">
-              <input
+              <TextField
+                label="Serial Number / Service Tag"
+                labelHidden
                 id="assetSerialInput"
-                class="asset-serial-input"
-                type="text"
+                class="asset-serial-field"
+                inputClass="asset-serial-input"
                 name="serial"
                 placeholder="Example: ABC123XYZ"
-                aria-label="Serial Number / Service Tag"
                 autocomplete="off"
                 autocapitalize="characters"
                 spellcheck="false"
                 required
               />
-              <button id="assetLookupButton" class="btn asset-lookup-button" type="submit">
-                <Fragment set:html={iconSearch} />
-                <span>Lookup</span>
-              </button>
-              <button id="assetScanButton" class="btn asset-scan-button" type="button">
-                <Fragment set:html={iconQrCode} />
-                <span>Scan QR</span>
-              </button>
-              <button id="assetPrintButton" class="btn asset-print-button" type="button" disabled>
-                <Fragment set:html={iconPrint} />
-                <span>Print Report</span>
-              </button>
+              <Button id="assetLookupButton" class="asset-lookup-button" type="submit" icon={iconSearch}>Lookup</Button>
+              <Button id="assetScanButton" class="asset-scan-button" type="button" variant="secondary" icon={iconQrCode}>Scan QR</Button>
+              <Button id="assetPrintButton" class="asset-print-button" type="button" variant="outline" icon={iconPrint} disabled>Print Report</Button>
             </div>
           </form>
 
-          <p id="assetConfigNotice" class="asset-config-notice" hidden></p>
-        </div>
+          <Feedback id="assetConfigNotice" tone="info" class="asset-config-notice" hidden />
+        </Card>
 
-        <div id="assetMessage" class="asset-message" role="status" aria-live="polite" hidden></div>
+        <Feedback id="assetMessage" class="asset-message" hidden />
         <div id="assetResult" class="asset-result" aria-live="polite" hidden></div>
       </div>
     </section>
   </div>
 
-  <div id="assetScannerModal" class="asset-scanner-modal" hidden>
-    <div
-      class="asset-scanner-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="assetScannerTitle"
-      aria-describedby="assetScannerStatus"
-    >
-      <div class="asset-scanner-header">
-        <div>
-          <h2 id="assetScannerTitle">Scan Device QR Code</h2>
-          <p>Point the camera at the asset tag. The serial will fill in automatically.</p>
-        </div>
-        <button id="assetScannerClose" class="asset-scanner-close" type="button" aria-label="Close scanner">
-          <Fragment set:html={iconTimes} />
-        </button>
-      </div>
+  <Dialog
+    id="assetScannerModal"
+    class="asset-scanner-modal asset-scanner-dialog"
+    headerClass="asset-scanner-header"
+    actionsClass="asset-scanner-actions"
+    closeButtonId="assetScannerClose"
+    closeButtonClass="asset-scanner-close"
+    closeLabel="Close scanner"
+    title="Scan Device QR Code"
+    description="Point the camera at the asset tag. The serial will fill in automatically."
+  >
       <div class="asset-scanner-video-wrap">
         <video id="assetScannerVideo" class="asset-scanner-video" playsinline autoplay muted></video>
         <div class="asset-scanner-target" aria-hidden="true"></div>
       </div>
       <canvas id="assetScannerCanvas" hidden></canvas>
-      <p id="assetScannerStatus" class="asset-scanner-status" role="status" aria-live="polite">Camera starting...</p>
-      <div class="asset-scanner-actions">
-        <button id="assetScannerCancel" class="btn asset-scanner-cancel" type="button">Cancel</button>
-      </div>
-    </div>
-  </div>
+      <Feedback id="assetScannerStatus" tone="loading" class="asset-scanner-status">Camera starting...</Feedback>
+      <Button slot="actions" id="assetScannerCancel" class="asset-scanner-cancel" variant="ghost" type="button" data-ui-dialog-close>Cancel</Button>
+  </Dialog>
 
   <script is:inline src="/vendor/jsQR.min.js"></script>
   <script>

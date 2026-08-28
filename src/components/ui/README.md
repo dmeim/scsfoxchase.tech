@@ -21,11 +21,13 @@ Every component imports the shared `styles.css`, which Astro deduplicates and in
 ## Components
 
 - `Button`, `IconButton`
-- `ActionTile`, `MediaCard`
+- `Card`, `ActionTile`, `MediaCard`
 - `Badge`, `ChipGroup`
 - `TextField`, `TextareaField`, `SearchField`, `Toggle`
-- `SelectMenu`, `ChoiceGroup`
+- `SelectField`, `SelectMenu`, `ChoiceGroup`, `SegmentedControl`
+- `ProgressTabs` for accessible carousel position controls
 - `ActionMenu`, `Dialog`
+- `Feedback` for persistent inline status; toasts for transient application feedback
 - `ToastExample` for the reference page
 
 Application feedback should use the production toast API:
@@ -43,7 +45,9 @@ showToast({
 
 Interactive components dispatch bubbling custom events for page-specific behavior:
 
-- `ChipGroup` and `SelectMenu`: `ui:change`
+- `ChipGroup`, `SelectMenu`, `SegmentedControl`, and `ProgressTabs`: `ui:change`
 - `ActionMenu`: `ui:menu-select`
+
+Client-rendered collections should import `uiClassNames` from `./dom` so their generated cards, buttons, chips, badges, and feedback use the same class contract without copying component styles.
 
 The event value is available at `event.detail.value`.

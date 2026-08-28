@@ -357,18 +357,20 @@
 }
 
 /* Game detail modal — stacked: photo → title → chips → description → Play */
-.game-detail-modal[hidden] {
+.game-detail-modal:not([open]) {
     display: none;
 }
 
 .game-detail-modal {
     position: fixed;
-    inset: 0;
+    inset: auto;
     z-index: 600;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    margin: auto;
     padding: 18px;
+}
+
+.game-detail-modal::backdrop {
     background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -411,6 +413,26 @@
     font-size: 1.25rem;
     cursor: pointer;
     transition: var(--transition);
+}
+
+.game-detail-dialog-head {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 2;
+    margin: 0;
+    pointer-events: none;
+}
+
+.game-detail-dialog-head > div {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+}
+
+.game-detail-dialog-head .game-detail-close {
+    pointer-events: auto;
 }
 
 [data-theme="dark"] .game-detail-close {

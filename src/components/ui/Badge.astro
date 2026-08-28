@@ -4,11 +4,13 @@ import './styles.css';
 
 interface Props {
   tone?: BadgeTone;
+  href?: string;
   class?: string;
   [key: string]: any;
 }
 
-const { tone = 'normal', class: className, ...rest } = Astro.props;
+const { tone = 'normal', href, class: className, ...rest } = Astro.props;
+const Tag = href ? 'a' : 'span';
 ---
 
-<span class:list={['ui-badge', `ui-badge--${tone}`, className]} {...rest}><slot /></span>
+<Tag class:list={['ui-badge', `ui-badge--${tone}`, className]} href={href} {...rest}><slot /></Tag>

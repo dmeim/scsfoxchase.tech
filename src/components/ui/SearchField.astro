@@ -9,6 +9,8 @@ interface Props {
   placeholder?: string;
   disabled?: boolean;
   icon?: string;
+  inputClass?: string;
+  type?: 'search' | 'text';
   class?: string;
   [key: string]: any;
 }
@@ -16,12 +18,14 @@ interface Props {
 const {
   label,
   icon = iconSearch,
+  inputClass,
+  type = 'search',
   class: className,
   ...inputProps
 } = Astro.props;
 ---
 
 <label class:list={['ui-search-field', className]}>
-  <span set:html={icon}></span>
-  <input type="search" aria-label={label} {...inputProps} />
+  {icon && <span set:html={icon}></span>}
+  <input class:list={['ui-search-field-input', inputClass]} type={type} aria-label={label} {...inputProps} />
 </label>

@@ -7,12 +7,17 @@ import {
   ActionTile,
   Badge,
   Button,
+  Card,
   ChipGroup,
   ChoiceGroup,
   Dialog,
+  Feedback,
   IconButton,
   MediaCard,
+  ProgressTabs,
   SearchField,
+  SegmentedControl,
+  SelectField,
   SelectMenu,
   TextareaField,
   TextField,
@@ -31,6 +36,8 @@ import {
   iconLoaderCircle,
   iconPencil,
   iconQrCode,
+  iconHouse,
+  iconMessageCircleQuestion,
   iconSquarePlus,
   iconSquareX,
   iconTrash2,
@@ -279,6 +286,11 @@ const boardMenuGroups: MenuGroup[] = [
         </div>
 
         <div class="ui-card-showcase">
+          <Card as="article" class="ui-demo-generic-card">
+            <h3>Composable card</h3>
+            <p>A shared surface for page-specific content that does not fit an action or media card.</p>
+          </Card>
+
           <ActionTile
             href="#cards"
             icon={iconGamepad2}
@@ -348,11 +360,33 @@ const boardMenuGroups: MenuGroup[] = [
             <SearchField label="Search the library" placeholder="Search the library…" />
             <div class="ui-preview-card-head ui-preview-card-head--sub"><h3>Toggle</h3><span>Boolean control</span></div>
             <Toggle label="Group edit" description="Allow editors to draw on this board." checked />
+            <div class="ui-preview-card-head ui-preview-card-head--sub"><h3>Segmented choice</h3><span>Compact options</span></div>
+            <SegmentedControl
+              ariaLabel="Preview section"
+              selected="home"
+              options={[
+                { label: 'Home', value: 'home', icon: iconHouse },
+                { label: 'Games', value: 'games', icon: iconGamepad2 },
+                { label: 'Help', value: 'help', icon: iconMessageCircleQuestion },
+              ]}
+            />
+            <div class="ui-preview-card-head ui-preview-card-head--sub"><h3>Progress tabs</h3><span>Carousel position</span></div>
+            <ProgressTabs
+              ariaLabel="Preview carousel slides"
+              selected="two"
+              options={[
+                { label: 'Show first slide', value: 'one' },
+                { label: 'Show second slide', value: 'two' },
+                { label: 'Show third slide', value: 'three' },
+              ]}
+            />
           </article>
 
           <article class="ui-preview-card">
             <div class="ui-preview-card-head"><h3>Single-select dropdown</h3><span>Radio selection</span></div>
             <SelectMenu options={roleOptions} selected="editor" name="access-role" label="Access role" />
+            <div class="ui-preview-card-head ui-preview-card-head--sub"><h3>Native select</h3><span>Dynamic options</span></div>
+            <SelectField label="Follow user" options={roleOptions} value="viewer" name="follow-role" />
           </article>
 
           <article class="ui-preview-card">
@@ -405,6 +439,11 @@ const boardMenuGroups: MenuGroup[] = [
                 <Button variant="outline" size="small" icon={iconLoaderCircle} data-ui-toast="loading">Loading</Button>
               </div>
             </div>
+          </div>
+          <div class="ui-form-stack ui-feedback-examples">
+            <Feedback tone="success" title="Saved">The latest changes are available.</Feedback>
+            <Feedback tone="warning" title="Action needed">Check this value before continuing.</Feedback>
+            <Feedback tone="error" title="Could not save">Try again in a moment.</Feedback>
           </div>
         </article>
       </section>

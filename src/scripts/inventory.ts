@@ -1,5 +1,6 @@
 // Inventory lookup page (Astro ESM port)
 import { iconSearch } from './icons';
+import { setUiButtonLoading, uiClassNames } from '../components/ui/dom';
 declare global {
   interface Window {
     jsQR?: (
@@ -211,6 +212,9 @@ function setupScannerControls() {
     state.scannerModal.addEventListener('click', event => {
         if (event.target === state.scannerModal) stopScanner();
     });
+    state.scannerModal.addEventListener('close', () => {
+        if (state.scannerActive || state.scannerStream) stopScanner();
+    });
 
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && state.scannerActive) stopScanner();
@@ -233,7 +237,7 @@ async function startScanner() {
     }
 
     try {
-        state.scannerModal.hidden = false;
+        state.scannerModal.showModal();
         document.body.classList.add('asset-scanner-open');
         setScannerStatus('Camera starting...');
         state.scanButton.disabled = true;
@@ -335,8 +339,8 @@ function stopScanner(options = {}) {
         state.scannerVideo.srcObject = null;
     }
 
-    if (state.scannerModal) {
-        state.scannerModal.hidden = true;
+    if (state.scannerModal?.open) {
+        state.scannerModal.close();
     }
 
     if (state.scanButton) {
@@ -427,7 +431,7 @@ function renderAsset(asset, fallbackSerial) {
     ];
 
     const statusCard = `
-        <div class="asset-condition-card asset-condition-card-wide asset-status-condition-card">
+        <div class="${uiClassNames.card('asset-condition-card asset-condition-card-wide asset-status-condition-card')}">
             <span class="asset-condition-name">Status</span>
             ${renderConditionStatuses(deviceStatus)}
         </div>
@@ -438,7 +442,7 @@ function renderAsset(asset, fallbackSerial) {
         .map(component => {
             const value = getField(asset, component.keys, NO_DATA_LABEL);
             return `
-                <div class="asset-condition-card">
+                <div class="${uiClassNames.card('asset-condition-card')}">
                     <span class="asset-condition-name">${escapeHtml(component.label)}</span>
                     ${renderConditionStatuses(value)}
                 </div>
@@ -456,14 +460,14 @@ function renderAsset(asset, fallbackSerial) {
             <p><span data-print-date>${escapeHtml(formatPrintedDate())}</span></p>
         </div>
 
-        <article class="asset-card">
+        <article class="${uiClassNames.card('asset-card')}">
             <div class="asset-overview-grid">
-                <div class="asset-photo-card">
+                <div class="${uiClassNames.card('asset-photo-card')}">
                     <img class="asset-device-photo" data-asset-photo src="${escapeAttribute(image.src)}" alt="${escapeAttribute(image.alt)}">
                 </div>
                 <div class="asset-details-grid">
                     ${details.map(([label, value, layout]) => `
-                        <div class="asset-detail${layout === 'wide' ? ' asset-detail-wide' : ''}">
+                        <div class="${uiClassNames.card(`asset-detail${layout === 'wide' ? ' asset-detail-wide' : ''}`)}">
                             <div class="asset-detail-label">${escapeHtml(label)}</div>
                             <div class="asset-detail-value"${getSpecialToneAttribute(value)}>${escapeHtml(value)}</div>
                         </div>
@@ -473,7 +477,7 @@ function renderAsset(asset, fallbackSerial) {
         </article>
 
         <div class="asset-lower-grid">
-            <section class="asset-section-card asset-device-condition-card" aria-labelledby="asset-condition-title">
+            <section class="${uiClassNames.card('asset-section-card asset-device-condition-card')}" aria-labelledby="asset-condition-title">
                 <div class="asset-section-title-row">
                     <div>
                         <h3 id="asset-condition-title" class="asset-section-title">Condition</h3>
@@ -485,7 +489,7 @@ function renderAsset(asset, fallbackSerial) {
                 </div>
             </section>
 
-            <section class="asset-section-card asset-notes-card" aria-labelledby="asset-notes-title">
+            <section class="${uiClassNames.card('asset-section-card asset-notes-card')}" aria-labelledby="asset-notes-title">
                 <div class="asset-section-title-row">
                     <div>
                         <h3 id="asset-notes-title" class="asset-section-title">Notes</h3>
@@ -514,14 +518,14 @@ function renderConditionStatuses(value) {
     if (statuses.length <= 1) {
         const status = statuses[0] || NO_DATA_LABEL;
         const style = getExactStatusStyle(status);
-        return `<span class="asset-condition-status" data-status-tone="${getStatusTone(status)}"${style ? ' ' + style : ''}>${escapeHtml(status)}</span>`;
+        return `<span class="${uiClassNames.badge('normal', 'asset-condition-status')}" data-status-tone="${getStatusTone(status)}"${style ? ' ' + style : ''}>${escapeHtml(status)}</span>`;
     }
 
     return `
         <span class="asset-condition-status-list" aria-label="Multiple condition values">
             ${statuses.map(status => {
                 const style = getExactStatusStyle(status);
-                return `<span class="asset-condition-status" data-status-tone="${getStatusTone(status)}"${style ? ' ' + style : ''}>${escapeHtml(status)}</span>`;
+                return `<span class="${uiClassNames.badge('normal', 'asset-condition-status')}" data-status-tone="${getStatusTone(status)}"${style ? ' ' + style : ''}>${escapeHtml(status)}</span>`;
             }).join('')}
         </span>
     `;
@@ -634,6 +638,7 @@ function setPrintEnabled(enabled) {
 }
 
 function showMessage(text, tone = 'success') {
+    state.message.className = uiClassNames.feedback(tone === 'error' ? 'error' : 'success', 'asset-message');
     state.message.innerHTML = escapeHtml(text);
     state.message.dataset.messageTone = tone;
     state.message.hidden = false;
@@ -646,13 +651,11 @@ function hideMessage() {
 
 function setLoading(isLoading, text = '') {
     if (state.button) {
-        state.button.disabled = isLoading;
-        state.button.innerHTML = isLoading
-            ? '<span class="asset-loading-spinner" aria-hidden="true"></span><span>Looking up</span>'
-            : `${iconSearch}<span>Lookup</span>`;
+        setUiButtonLoading(state.button, isLoading, { loading: 'Looking up', idle: 'Lookup' }, iconSearch);
     }
 
     if (isLoading) {
+        state.message.className = uiClassNames.feedback('loading', 'asset-message');
         state.message.innerHTML = `<span class="asset-loading-row"><span class="asset-loading-spinner" aria-hidden="true"></span>${escapeHtml(text)}</span>`;
         state.message.dataset.messageTone = 'loading';
         state.message.hidden = false;
