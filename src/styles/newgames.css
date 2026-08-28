@@ -12,10 +12,12 @@
 }
 
 .newgames-sidebar {
+    --newgames-header-height: 62px;
+    --newgames-sticky-gap: 16px;
     position: sticky;
-    top: 16px;
+    top: calc(var(--newgames-header-height) + var(--newgames-sticky-gap));
     align-self: start;
-    max-height: calc(100dvh - 32px);
+    max-height: calc(100dvh - var(--newgames-header-height) - var(--newgames-sticky-gap) - var(--newgames-sticky-gap));
     overflow-y: auto;
     padding: 16px;
     border: 1px solid var(--border-color);
@@ -617,8 +619,7 @@
 /* Chromebook vertical compression */
 @media (max-height: 800px) {
     .newgames-sidebar {
-        top: 10px;
-        max-height: calc(100dvh - 20px);
+        --newgames-sticky-gap: 10px;
         padding: 12px;
     }
 
@@ -698,4 +699,3 @@
         grid-template-columns: 1fr;
     }
 }
-
