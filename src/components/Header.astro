@@ -6,13 +6,13 @@ import {
   Button,
   Card,
   Feedback,
-  IconButton,
   SegmentedControl,
   SelectField,
   TextField,
   Toggle,
 } from './ui';
 import {
+  iconArrowLeft,
   iconHouse,
   iconGamepad2,
   iconMessageCircleQuestion,
@@ -21,7 +21,6 @@ import {
   iconMinimize2,
   iconPencil,
   iconClipboard,
-  iconInfo,
   iconLogIn,
   iconMoon,
   iconSun,
@@ -97,44 +96,58 @@ const notificationDemo = pathname === '/temp';
             aria-label="Manage whiteboard"
             aria-hidden="true"
           >
+            <div class="whiteboard-manage-header">
+              <Button
+                href="/whiteboard"
+                variant="ghost"
+                size="small"
+                class="whiteboard-manage-library"
+                icon={iconArrowLeft}
+              >
+                <span class="whiteboard-manage-library-icon" set:html={iconLayoutFreeform} />
+                <span>Library</span>
+              </Button>
+              <div class="whiteboard-manage-name-wrap">
+                <p class="whiteboard-manage-title-ro" data-wb-live-title hidden></p>
+                <div class="whiteboard-manage-name-edit" data-wb-manage-name-wrap hidden>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="small"
+                    class="whiteboard-manage-title-btn"
+                    data-wb-title-display
+                  >
+                    <span data-wb-title-text></span>
+                    <span class="whiteboard-manage-pencil" set:html={iconPencil} />
+                  </Button>
+                  <form class="whiteboard-manage-name" data-wb-manage-name hidden>
+                    <TextField
+                      label="Board name"
+                      labelHidden
+                      id="wb-manage-title"
+                      class="whiteboard-manage-title-field"
+                      inputClass="whiteboard-join-input"
+                      name="title"
+                      data-wb-manage-title
+                      placeholder="Name this whiteboard"
+                      autocomplete="off"
+                      spellcheck="false"
+                      maxlength="80"
+                    />
+                  </form>
+                  <p class="whiteboard-join-hint" data-wb-manage-hint hidden></p>
+                </div>
+              </div>
+              <span class="whiteboard-manage-header-spacer" aria-hidden="true"></span>
+            </div>
+
             <div class="whiteboard-manage-layout" data-wb-manage-layout>
               <div class="whiteboard-manage-primary">
-                <div class="whiteboard-manage-header">
-                  <Button href="/whiteboard" variant="ghost" size="small" class="whiteboard-manage-library">← Library</Button>
-                  <div class="whiteboard-manage-name-wrap">
-                    <p class="whiteboard-manage-title-ro" data-wb-live-title hidden></p>
-                    <div class="whiteboard-manage-name-edit" data-wb-manage-name-wrap hidden>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="small"
-                        class="whiteboard-manage-title-btn"
-                        data-wb-title-display
-                      >
-                        <span data-wb-title-text></span>
-                        <span class="whiteboard-manage-pencil" set:html={iconPencil} />
-                      </Button>
-                      <form class="whiteboard-manage-name" data-wb-manage-name hidden>
-                        <TextField
-                          label="Board name"
-                          labelHidden
-                          id="wb-manage-title"
-                          class="whiteboard-manage-title-field"
-                          inputClass="whiteboard-join-input"
-                          name="title"
-                          data-wb-manage-title
-                          placeholder="Name this whiteboard"
-                          autocomplete="off"
-                          spellcheck="false"
-                          maxlength="80"
-                        />
-                      </form>
-                      <p class="whiteboard-join-hint" data-wb-manage-hint hidden></p>
-                    </div>
-                  </div>
-                </div>
-
                 <div class="whiteboard-manage-col whiteboard-manage-col--people" data-wb-manage-people>
+                  <div class="whiteboard-people-heading">
+                    <p class="whiteboard-join-label">People</p>
+                    <span class="whiteboard-people-count" data-wb-people-count>0 connected</span>
+                  </div>
                   <ul class="whiteboard-people-list" data-wb-people-list aria-label="People" hidden></ul>
                   <p class="whiteboard-join-hint whiteboard-people-empty" data-wb-people-empty>
                     People appear when sync is on.
@@ -145,76 +158,41 @@ const notificationDemo = pathname === '/temp';
 
               <div class="whiteboard-manage-sharing">
                 <div class="whiteboard-manage-code-block" data-wb-manage-share hidden>
-                  <p class="whiteboard-join-label">Share Code</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    class="whiteboard-join-input whiteboard-join-input--code whiteboard-share-code"
-                    aria-label="Share code — click to copy"
-                    data-wb-share-code
-                    disabled
-                  >
-                    <span class="whiteboard-share-code-value" data-wb-share-code-value>Code</span>
-                  </Button>
+                  <div class="whiteboard-manage-share-head">
+                    <p class="whiteboard-join-label">Share Code</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      class="whiteboard-join-input whiteboard-join-input--code whiteboard-share-code"
+                      aria-label="Share code — click to copy"
+                      data-wb-share-code
+                      disabled
+                    >
+                      <span class="whiteboard-share-code-value" data-wb-share-code-value>Code</span>
+                    </Button>
+                  </div>
                   <div class="whiteboard-share-copies">
-                    <div class="whiteboard-share-action">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="small"
-                        class="whiteboard-share-copy-btn"
-                        data-wb-share-copy-code
-                        icon={iconClipboard}
-                      >
-                        Copy Code
-                      </Button>
-                      <IconButton
-                        icon={iconInfo}
-                        label="About Copy Code"
-                        size="small"
-                        class="whiteboard-info-btn"
-                        data-wb-info="copy-code"
-                        aria-expanded="false"
-                        aria-controls="wb-info-copy-code"
-                      />
-                      <p
-                        class="whiteboard-info-pop"
-                        id="wb-info-copy-code"
-                        data-wb-info-pop="copy-code"
-                        hidden
-                      >
-                        Copies the join code. Anyone with it can open this board.
-                      </p>
-                    </div>
-                    <div class="whiteboard-share-action">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="small"
-                        class="whiteboard-share-copy-btn"
-                        data-wb-share-copy-link
-                        icon={iconClipboard}
-                      >
-                        Copy Link
-                      </Button>
-                      <IconButton
-                        icon={iconInfo}
-                        label="About Copy Link"
-                        size="small"
-                        class="whiteboard-info-btn"
-                        data-wb-info="copy-link"
-                        aria-expanded="false"
-                        aria-controls="wb-info-copy-link"
-                      />
-                      <p
-                        class="whiteboard-info-pop"
-                        id="wb-info-copy-link"
-                        data-wb-info-pop="copy-link"
-                        hidden
-                      >
-                        Copies the permanent board link. View-only unless you set Editor on People.
-                      </p>
-                    </div>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="small"
+                      class="whiteboard-share-copy-btn"
+                      data-wb-share-copy-code
+                      icon={iconClipboard}
+                      disabled
+                    >
+                      Copy Share Code
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="small"
+                      class="whiteboard-share-copy-btn"
+                      data-wb-share-copy-link
+                      icon={iconClipboard}
+                    >
+                      Copy Board Link
+                    </Button>
                   </div>
                   <Feedback
                     tone="success"
@@ -227,76 +205,42 @@ const notificationDemo = pathname === '/temp';
                   <p class="whiteboard-join-hint" data-wb-share-hint hidden></p>
                 </div>
 
-              <div
-                class="whiteboard-manage-col whiteboard-manage-col--features"
-                data-wb-manage-features
-                hidden
-              >
-                <p class="whiteboard-join-label">Sharing Features</p>
-                <div class="whiteboard-feature-row" data-wb-class-can-edit>
-                  <Toggle
-                    class="whiteboard-switch"
-                    label="Group Edit"
-                    aria-label="Group Edit — Editors can draw when on"
-                    data-wb-class-can-edit-toggle
-                  >
-                    <span slot="state" class="whiteboard-switch-label" data-wb-class-can-edit-state>Off</span>
-                  </Toggle>
-                  <IconButton
-                    icon={iconInfo}
-                    label="About Group Edit"
-                    size="small"
-                    class="whiteboard-info-btn"
-                    data-wb-info="group-edit"
-                    aria-expanded="false"
-                    aria-controls="wb-info-group-edit"
-                  />
-                  <p
-                    class="whiteboard-info-pop"
-                    id="wb-info-group-edit"
-                    data-wb-info-pop="group-edit"
-                    hidden
-                  >
-                    When on, Editors can draw. When off, only Owner and Manager can draw.
-                  </p>
+                <div
+                  class="whiteboard-manage-col whiteboard-manage-col--features"
+                  data-wb-manage-features
+                  hidden
+                >
+                  <div class="whiteboard-feature-row" data-wb-class-can-edit>
+                    <Toggle
+                      class="whiteboard-switch"
+                      label="Group Edit"
+                      description="Let editors draw on this board"
+                      aria-label="Group Edit — Editors can draw when on"
+                      data-wb-class-can-edit-toggle
+                    >
+                      <span slot="state" class="whiteboard-switch-label" data-wb-class-can-edit-state>Off</span>
+                    </Toggle>
+                  </div>
+                  <div class="whiteboard-feature-row" data-wb-manage-force-follow hidden>
+                    <Toggle
+                      class="whiteboard-switch"
+                      label="Follow User"
+                      description="Keep guests on one person’s view"
+                      aria-label="Lock everyone to follow a screen"
+                      data-wb-force-follow-toggle
+                    >
+                      <span slot="state" class="whiteboard-switch-label" data-wb-force-follow-state>Off</span>
+                    </Toggle>
+                    <SelectField
+                      label="Person to follow"
+                      class="whiteboard-people-target"
+                      selectClass="whiteboard-people-target-select"
+                      options={[{ label: 'Me', value: '' }]}
+                      data-wb-force-follow-target
+                    />
+                    <p class="whiteboard-join-hint" data-wb-force-follow-hint hidden></p>
+                  </div>
                 </div>
-                <div class="whiteboard-feature-row" data-wb-manage-force-follow hidden>
-                  <Toggle
-                    class="whiteboard-switch"
-                    label="Follow User"
-                    aria-label="Lock everyone to follow a screen"
-                    data-wb-force-follow-toggle
-                  >
-                    <span slot="state" class="whiteboard-switch-label" data-wb-force-follow-state>Off</span>
-                  </Toggle>
-                  <IconButton
-                    icon={iconInfo}
-                    label="About Follow User"
-                    size="small"
-                    class="whiteboard-info-btn"
-                    data-wb-info="follow-user"
-                    aria-expanded="false"
-                    aria-controls="wb-info-follow-user"
-                  />
-                  <p
-                    class="whiteboard-info-pop"
-                    id="wb-info-follow-user"
-                    data-wb-info-pop="follow-user"
-                    hidden
-                  >
-                    Locks everyone’s view to the person in the menu. They cannot pan away until you turn it off.
-                  </p>
-                  <SelectField
-                    label="Who others follow"
-                    labelHidden
-                    class="whiteboard-people-target"
-                    selectClass="whiteboard-people-target-select"
-                    options={[{ label: 'Me', value: '' }]}
-                    data-wb-force-follow-target
-                  />
-                  <p class="whiteboard-join-hint" data-wb-force-follow-hint hidden></p>
-                </div>
-              </div>
               </div>
             </div>
           </Card>

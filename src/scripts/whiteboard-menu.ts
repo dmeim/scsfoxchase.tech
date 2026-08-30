@@ -13,7 +13,14 @@ import {
   type WhiteboardRole,
 } from '../lib/whiteboard-participants'
 import { assignableRolesFor } from '../lib/whiteboard-sync'
-import { iconEye, iconEyeOff } from './icons'
+import {
+  iconChevronDown,
+  iconCrown,
+  iconEye,
+  iconEyeOff,
+  iconPencil,
+  iconShieldUser,
+} from './icons'
 import { uiClassNames } from '../components/ui/dom'
 import {
   getEntryActive,
@@ -177,8 +184,14 @@ const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
 
 function roleLabel(role: WhiteboardRole): string {
-  if (role === 'editor') return 'Edit'
   return role.charAt(0).toUpperCase() + role.slice(1)
+}
+
+function roleIcon(role: WhiteboardRole): string {
+  if (role === 'owner') return iconCrown
+  if (role === 'manager') return iconShieldUser
+  if (role === 'editor') return iconPencil
+  return iconEye
 }
 
 function initWhiteboardMenu() {
@@ -208,6 +221,7 @@ function initWhiteboardMenu() {
   const featuresCol = root.querySelector<HTMLElement>('[data-wb-manage-features]')
 
   const peopleList = root.querySelector<HTMLUListElement>('[data-wb-people-list]')
+  const peopleCount = root.querySelector<HTMLElement>('[data-wb-people-count]')
   const peopleEmpty = root.querySelector<HTMLElement>('[data-wb-people-empty]')
   const peopleHint = root.querySelector<HTMLElement>('[data-wb-people-hint]')
 
@@ -226,6 +240,8 @@ function initWhiteboardMenu() {
   const forceFollowTarget = root.querySelector<HTMLSelectElement>(
     '[data-wb-force-follow-target]',
   )
+  const forceFollowTargetField =
+    forceFollowTarget?.closest<HTMLElement>('.whiteboard-people-target') ?? null
   const classCanEditToggle = root.querySelector<HTMLInputElement>(
     '[data-wb-class-can-edit-toggle]',
   )
@@ -257,19 +273,6 @@ function initWhiteboardMenu() {
   const canRenameBoard = () => canForceFollow()
   const canManageShare = () => canForceFollow()
 
-  const closeInfoPops = (except?: string) => {
-    for (const pop of root.querySelectorAll<HTMLElement>('[data-wb-info-pop]')) {
-      const id = pop.getAttribute('data-wb-info-pop') || ''
-      if (except && id === except) continue
-      pop.hidden = true
-    }
-    for (const btn of root.querySelectorAll<HTMLButtonElement>('[data-wb-info]')) {
-      const id = btn.getAttribute('data-wb-info') || ''
-      if (except && id === except) continue
-      btn.setAttribute('aria-expanded', 'false')
-    }
-  }
-
   const renderNameFormUi = () => {
     const allowed = canRenameBoard()
     if (nameWrap) nameWrap.hidden = !allowed
@@ -297,6 +300,7 @@ function initWhiteboardMenu() {
     if (!allowed) {
       currentShare = { code: null }
       if (shareCodeBtn) shareCodeBtn.disabled = true
+      if (shareCopyCode) shareCopyCode.disabled = true
       if (shareCodeValue) shareCodeValue.textContent = 'Code'
     }
   }
@@ -428,8 +432,9 @@ function initWhiteboardMenu() {
     if (forceFollowToggle) forceFollowToggle.checked = on
     if (forceFollowState) forceFollowState.textContent = on ? 'On' : 'Off'
     if (forceFollowBlock) forceFollowBlock.hidden = !canForceFollow()
+    if (forceFollowTargetField) forceFollowTargetField.hidden = !on
     if (forceFollowTarget) {
-      forceFollowTarget.disabled = !canForceFollow()
+      forceFollowTarget.disabled = !canForceFollow() || !on
       const self = participants.find((p) => p.sessionId === yourSessionId)
       const selfUserId = self?.userId ?? ''
       forceFollowTarget.replaceChildren()
@@ -457,6 +462,7 @@ function initWhiteboardMenu() {
     currentShare = state
     const code = state.code
     if (shareCodeBtn) shareCodeBtn.disabled = !code
+    if (shareCopyCode) shareCopyCode.disabled = !code
     if (shareCodeValue) {
       shareCodeValue.textContent = code || 'Code'
     }
@@ -507,6 +513,9 @@ function initWhiteboardMenu() {
     if (!peopleList || !peopleEmpty) return
 
     peopleList.replaceChildren()
+    if (peopleCount) {
+      peopleCount.textContent = `${participants.length} connected`
+    }
     if (participants.length === 0) {
       peopleList.hidden = true
       peopleEmpty.hidden = false
@@ -538,32 +547,39 @@ function initWhiteboardMenu() {
         ? assignableRolesFor(yourRole, person.role)
         : null
       let roleControl: HTMLElement
-      if (canManageRoles && boardId) {
-        const select = document.createElement('select')
-        select.className = uiClassNames.fieldControl('whiteboard-people-role')
-        select.setAttribute('aria-label', `Role for ${label}`)
-        select.disabled = roleBusy
+      if (canManageRoles && boardId && assignable) {
+        const menu = document.createElement('details')
+        menu.className = 'whiteboard-people-role-menu'
+        const summary = document.createElement('summary')
+        summary.className = 'whiteboard-people-role-trigger'
+        summary.setAttribute('aria-label', `Role for ${label}: ${roleLabel(person.role)}`)
+        summary.innerHTML =
+          `<span class="whiteboard-people-role-current">${roleIcon(person.role)}<span>${roleLabel(person.role)}</span></span>` +
+          `<span class="whiteboard-people-role-chevron">${iconChevronDown}</span>`
+        menu.append(summary)
 
+        const options = document.createElement('div')
+        options.className = 'whiteboard-people-role-options'
+        options.setAttribute('role', 'listbox')
+        options.setAttribute('aria-label', `Role for ${label}`)
         const roles: WhiteboardRole[] = assignable
           ? Array.from(new Set<WhiteboardRole>([person.role, ...assignable]))
           : [person.role]
         for (const role of roles) {
-          const opt = document.createElement('option')
-          opt.value = role
-          opt.textContent = roleLabel(role)
-          if (role === person.role) opt.selected = true
-          select.append(opt)
-        }
-
-        if (assignable) {
-          select.addEventListener('change', () => {
-            const next = select.value
+          const option = document.createElement('button')
+          option.type = 'button'
+          option.className = 'whiteboard-people-role-option'
+          option.setAttribute('role', 'option')
+          option.setAttribute('aria-selected', role === person.role ? 'true' : 'false')
+          option.innerHTML = `${roleIcon(role)}<span>${roleLabel(role)}</span>`
+          option.addEventListener('click', () => {
+            const next = role
+            menu.open = false
+            if (next === person.role) return
             if (next !== 'manager' && next !== 'editor' && next !== 'viewer') {
-              select.value = person.role
               return
             }
             if (roleBusy) {
-              select.value = person.role
               return
             }
             roleBusy = true
@@ -578,7 +594,6 @@ function initWhiteboardMenu() {
                   participants[idx] = { ...participants[idx]!, ...updated }
                 }
               } catch (err) {
-                select.value = person.role
                 setPeopleHint(
                   err instanceof Error && err.message
                     ? err.message
@@ -590,21 +605,21 @@ function initWhiteboardMenu() {
               }
             })()
           })
-        } else {
-          select.classList.add('is-locked')
-          select.setAttribute(
-            'aria-label',
-            person.role === 'owner'
-              ? `${label} is the Owner and cannot be demoted`
-              : `${label}'s role cannot be changed by a Manager`,
-          )
+          options.append(option)
         }
-        roleControl = select
+        menu.append(options)
+        roleControl = menu
       } else {
-        const badge = document.createElement('span')
-        badge.className = uiClassNames.badge('info', 'whiteboard-people-role-label')
-        badge.textContent = roleLabel(person.role)
-        roleControl = badge
+        const role = document.createElement('span')
+        role.className = 'whiteboard-people-role-static'
+        role.innerHTML = `${roleIcon(person.role)}<span>${roleLabel(person.role)}</span>`
+        role.setAttribute(
+          'aria-label',
+          canManageRoles && person.role === 'owner'
+            ? `${label} is the Owner and cannot be demoted`
+            : `${label}: ${roleLabel(person.role)}`,
+        )
+        roleControl = role
       }
 
       const followBtn = document.createElement('button')
@@ -638,9 +653,9 @@ function initWhiteboardMenu() {
         })
       }
 
+      li.append(followBtn)
       li.append(name)
       li.append(roleControl)
-      li.append(followBtn)
       peopleList.append(li)
     }
     renderForceFollowUi(forceFollowOn, forceFollowTargetUserId)
@@ -736,12 +751,10 @@ function initWhiteboardMenu() {
       else syncTitleFromLiveRoom()
       setHint(null)
       titleInput?.setCustomValidity('')
-      closeInfoPops()
       void refreshShareState()
       renderPeople()
     } else {
       titleEditing = false
-      closeInfoPops()
       setShareHint(null)
       setPeopleHint(null)
       setForceFollowHint(null)
@@ -913,19 +926,6 @@ function initWhiteboardMenu() {
       'Link Copied',
       'Copy failed — select and copy the address bar instead.',
     )
-  })
-
-  root.querySelectorAll<HTMLButtonElement>('[data-wb-info]').forEach((btn) => {
-    btn.addEventListener('click', (event) => {
-      event.stopPropagation()
-      const id = btn.getAttribute('data-wb-info') || ''
-      const pop = root.querySelector<HTMLElement>(`[data-wb-info-pop="${id}"]`)
-      if (!pop) return
-      const willOpen = pop.hidden
-      closeInfoPops(willOpen ? id : undefined)
-      pop.hidden = !willOpen
-      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false')
-    })
   })
 
   forceFollowToggle?.addEventListener('change', () => {

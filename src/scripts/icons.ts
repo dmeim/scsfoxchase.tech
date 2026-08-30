@@ -43,6 +43,11 @@ export const iconChevronDown = svg(
 export const iconChevronLeft = svg('<path d="m15 18-6-6 6-6"/>');
 export const iconChevronRight = svg('<path d="m9 18 6-6-6-6"/>');
 
+/** Lucide ArrowLeft — back navigation */
+export const iconArrowLeft = svg(
+  '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>'
+);
+
 /** Lucide Gamepad2 — forms: Request A Game */
 export const iconGamepad2 = svg(
   '<line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/>'
@@ -189,6 +194,16 @@ export const iconInfo = svg(
 /** Lucide Eye — follow this person */
 export const iconEye = svg(
   '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'
+);
+
+/** Lucide Crown — whiteboard Owner role */
+export const iconCrown = svg(
+  '<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/>'
+);
+
+/** Lucide ShieldUser — whiteboard Manager role */
+export const iconShieldUser = svg(
+  '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M6.376 18.91a6 6 0 0 1 11.249.003"/><circle cx="12" cy="11" r="4"/>'
 );
 
 /** Lucide EyeOff — not following */
