@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import worker from '../../src/worker'
 import {
 	admitWhiteboardConnect,
+	BOARD_CONNECT_RATE_LIMIT,
 	consumeLocalConnectAdmission,
 	CONNECT_RATE_LIMIT,
 	LOCAL_CONNECT_BUCKET_MAX,
 	LOCAL_CONNECT_WINDOW_MS,
 	localConnectAdmissionSize,
 	resetLocalConnectAdmissionForTests,
+	trustedBoardConnectRateLimitKey,
 	trustedConnectRateLimitKey,
 	isValidConnectSessionId,
 } from '../../src/worker/connectAdmission'
@@ -26,26 +28,32 @@ import {
 	WORKER_ORIGIN,
 } from './helpers/harness'
 
+const BOARD_A = '11111111-1111-4111-8111-111111111111'
+const BOARD_B = '22222222-2222-4222-8222-222222222222'
+
 afterEach(() => {
 	resetLocalConnectAdmissionForTests()
 })
 
 describe('whiteboard connection admission', () => {
-	it('accepts only strict UUID session handles and keys by CF-Connecting-IP', () => {
+	it('accepts only strict UUID session handles and creates stable layered keys', () => {
 		const valid = crypto.randomUUID()
 		expect(isValidConnectSessionId(valid)).toBe(true)
 		expect(isValidConnectSessionId(`${valid}x`)).toBe(false)
 		expect(isValidConnectSessionId('not-a-session')).toBe(false)
-		expect(
-			trustedConnectRateLimitKey(
-				new Request(`${WORKER_ORIGIN}/api/whiteboard/connect`, {
-					headers: {
-						'CF-Connecting-IP': '203.0.113.7',
-						'X-Forwarded-For': '198.51.100.9',
-					},
-				}),
-			),
-		).toBe('203.0.113.7')
+		const request = new Request(`${WORKER_ORIGIN}/api/whiteboard/connect`, {
+			headers: {
+				'CF-Connecting-IP': '203.0.113.7',
+				'X-Forwarded-For': '198.51.100.9',
+			},
+		})
+		expect(trustedConnectRateLimitKey(request)).toBe('203.0.113.7')
+		expect(trustedBoardConnectRateLimitKey(request, BOARD_A.toUpperCase())).toBe(
+			`${BOARD_A}:203.0.113.7`,
+		)
+		expect(trustedBoardConnectRateLimitKey(request, BOARD_B)).not.toBe(
+			trustedBoardConnectRateLimitKey(request, BOARD_A),
+		)
 	})
 
 	it('keeps the local fallback at its hard cap and prunes expired keys', () => {
@@ -69,8 +77,9 @@ describe('whiteboard connection admission', () => {
 		expect(localConnectAdmissionSize()).toBe(1)
 	})
 
-	it('uses the platform limiter and fails closed if it is unavailable', async () => {
-		const keys: string[] = []
+	it('uses both platform limiters with independent keys', async () => {
+		const ipKeys: string[] = []
+		const boardKeys: string[] = []
 		const request = new Request(`${WORKER_ORIGIN}/api/whiteboard/connect`, {
 			headers: { 'CF-Connecting-IP': '192.0.2.20' },
 		})
@@ -78,20 +87,47 @@ describe('whiteboard connection admission', () => {
 			admitWhiteboardConnect(request, {
 				WHITEBOARD_CONNECT_LIMITER: {
 					limit: async ({ key }) => {
-						keys.push(key)
+						ipKeys.push(key)
 						return { success: true }
 					},
 				},
-			}),
+				WHITEBOARD_BOARD_CONNECT_LIMITER: {
+					limit: async ({ key }) => {
+						boardKeys.push(key)
+						return { success: true }
+					},
+				},
+			}, BOARD_A),
 		).resolves.toBeNull()
-		expect(keys).toEqual(['192.0.2.20'])
+		expect(ipKeys).toEqual(['192.0.2.20'])
+		expect(boardKeys).toEqual([`${BOARD_A}:192.0.2.20`])
+	})
 
-		const rejected = await admitWhiteboardConnect(request, {
+	it('rejects either exhausted layer and fails closed on partial configuration', async () => {
+		const request = new Request(`${WORKER_ORIGIN}/api/whiteboard/connect`, {
+			headers: { 'CF-Connecting-IP': '192.0.2.21' },
+		})
+		const allows = { limit: async () => ({ success: true }) }
+		const rejects = { limit: async () => ({ success: false }) }
+
+		const ipRejected = await admitWhiteboardConnect(request, {
 			WHITEBOARD_CONNECT_LIMITER: {
 				limit: async () => ({ success: false }),
 			},
-		})
-		expect(rejected?.status).toBe(429)
+			WHITEBOARD_BOARD_CONNECT_LIMITER: allows,
+		}, BOARD_A)
+		expect(ipRejected?.status).toBe(429)
+
+		const boardRejected = await admitWhiteboardConnect(request, {
+			WHITEBOARD_CONNECT_LIMITER: allows,
+			WHITEBOARD_BOARD_CONNECT_LIMITER: rejects,
+		}, BOARD_A)
+		expect(boardRejected?.status).toBe(429)
+
+		const partial = await admitWhiteboardConnect(request, {
+			WHITEBOARD_CONNECT_LIMITER: allows,
+		}, BOARD_A)
+		expect(partial?.status).toBe(503)
 
 		const unavailable = await admitWhiteboardConnect(request, {
 			WHITEBOARD_CONNECT_LIMITER: {
@@ -99,13 +135,25 @@ describe('whiteboard connection admission', () => {
 					throw new Error('ignored')
 				},
 			},
-		})
+			WHITEBOARD_BOARD_CONNECT_LIMITER: allows,
+		}, BOARD_A)
 		expect(unavailable?.status).toBe(503)
 	})
 
 	it('stops a random UUID flood before resolving more Durable Object stubs', async () => {
 		let resolved = 0
+		let ipAdmissions = 0
 		const env = {
+			WHITEBOARD_CONNECT_LIMITER: {
+				limit: async ({ key }: { key: string }) => {
+					expect(key).toBe('198.51.100.200')
+					ipAdmissions += 1
+					return { success: ipAdmissions <= 3 }
+				},
+			},
+			WHITEBOARD_BOARD_CONNECT_LIMITER: {
+				limit: async () => ({ success: true }),
+			},
 			WHITEBOARDS: {
 				idFromName: (name: string) => name,
 				get: () => {
@@ -118,7 +166,7 @@ describe('whiteboard connection admission', () => {
 			waitUntil: () => undefined,
 			passThroughOnException: () => undefined,
 		} as unknown as ExecutionContext
-		for (let index = 0; index < CONNECT_RATE_LIMIT + 1; index += 1) {
+		for (let index = 0; index < 5; index += 1) {
 			const response = await worker.fetch(
 				new Request(
 					`${WORKER_ORIGIN}/api/whiteboard/connect/${crypto.randomUUID()}?sessionId=${crypto.randomUUID()}`,
@@ -133,9 +181,9 @@ describe('whiteboard connection admission', () => {
 				env,
 				ctx,
 			)
-			if (index === CONNECT_RATE_LIMIT) expect(response.status).toBe(429)
+			if (index >= 3) expect(response.status).toBe(429)
 		}
-		expect(resolved).toBe(CONNECT_RATE_LIMIT)
+		expect(resolved).toBe(3)
 	})
 
 	it('keeps random unauthenticated upgrades write-free, including arbitrary host headers', async () => {
@@ -211,7 +259,7 @@ describe('whiteboard connection admission', () => {
 		}
 	})
 
-	it('preserves the classroom burst allowance in the fallback', () => {
+	it('enforces the 600-request IP-wide fallback ceiling', () => {
 		for (let index = 0; index < CONNECT_RATE_LIMIT; index += 1) {
 			expect(consumeLocalConnectAdmission('classroom', index)).toMatchObject({
 				allowed: true,
@@ -220,5 +268,18 @@ describe('whiteboard connection admission', () => {
 		expect(consumeLocalConnectAdmission('classroom', CONNECT_RATE_LIMIT)).toMatchObject({
 			allowed: false,
 		})
+	})
+
+	it('enforces 240 per IP and board without blocking another board', async () => {
+		const request = new Request(`${WORKER_ORIGIN}/api/whiteboard/connect`, {
+			headers: { 'CF-Connecting-IP': '203.0.113.44' },
+		})
+		for (let index = 0; index < BOARD_CONNECT_RATE_LIMIT; index += 1) {
+			await expect(admitWhiteboardConnect(request, {}, BOARD_A)).resolves.toBeNull()
+		}
+		await expect(admitWhiteboardConnect(request, {}, BOARD_A)).resolves.toMatchObject({
+			status: 429,
+		})
+		await expect(admitWhiteboardConnect(request, {}, BOARD_B)).resolves.toBeNull()
 	})
 })

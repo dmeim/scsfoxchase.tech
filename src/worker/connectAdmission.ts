@@ -5,8 +5,10 @@ export const MAX_CONNECT_SESSION_ID_LENGTH = 64
 const SESSION_ID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-/** Generous enough for a classroom, while stopping one IP from opening a flood. */
-export const CONNECT_RATE_LIMIT = 120
+/** Three full 64-seat boards can reconnect three times behind one school NAT. */
+export const CONNECT_RATE_LIMIT = 600
+/** One full board can reconnect three times with practical burst headroom. */
+export const BOARD_CONNECT_RATE_LIMIT = 240
 export const CONNECT_RATE_PERIOD_SECONDS = 60
 
 /** Local/test fallback is deliberately bounded and expires idle buckets. */
@@ -23,6 +25,7 @@ const localBuckets = new Map<string, LocalBucket>()
 
 export type ConnectAdmissionEnv = {
 	WHITEBOARD_CONNECT_LIMITER?: Pick<RateLimit, 'limit'>
+	WHITEBOARD_BOARD_CONNECT_LIMITER?: Pick<RateLimit, 'limit'>
 }
 
 export function isValidConnectSessionId(value: string | null): value is string {
@@ -41,6 +44,17 @@ export function isValidConnectSessionId(value: string | null): value is string {
 export function trustedConnectRateLimitKey(request: Request): string {
 	const ip = request.headers.get('CF-Connecting-IP')?.trim() ?? ''
 	return ip.length > 0 && ip.length <= 128 ? ip : 'local'
+}
+
+/**
+ * The board UUID is already validated by the Worker route. Canonicalizing its
+ * case keeps alternate UUID spelling from creating a fresh board bucket.
+ */
+export function trustedBoardConnectRateLimitKey(
+	request: Request,
+	boardId: string,
+): string {
+	return `${boardId.toLowerCase()}:${trustedConnectRateLimitKey(request)}`
 }
 
 function pruneLocalBuckets(now: number): void {
@@ -69,6 +83,7 @@ function evictOldestLocalBucket(): void {
 export function consumeLocalConnectAdmission(
 	key: string,
 	now = Date.now(),
+	limit = CONNECT_RATE_LIMIT,
 ): { allowed: boolean; retryAfterSeconds: number } {
 	const safeKey = key.length <= 128 ? key : key.slice(0, 128)
 	pruneLocalBuckets(now)
@@ -85,7 +100,7 @@ export function consumeLocalConnectAdmission(
 		localBuckets.set(safeKey, bucket)
 	}
 	bucket.lastSeenAt = now
-	if (bucket.count >= CONNECT_RATE_LIMIT) {
+	if (bucket.count >= limit) {
 		return {
 			allowed: false,
 			retryAfterSeconds: Math.max(1, Math.ceil((bucket.expiresAt - now) / 1000)),
@@ -122,14 +137,35 @@ function rejectedResponse(request: Request, retryAfterSeconds: number): Response
 export async function admitWhiteboardConnect(
 	request: Request,
 	env: ConnectAdmissionEnv,
+	boardId: string,
 ): Promise<Response | null> {
-	const key = trustedConnectRateLimitKey(request)
-	const limiter = env.WHITEBOARD_CONNECT_LIMITER
-	if (limiter) {
+	const ipKey = trustedConnectRateLimitKey(request)
+	const boardKey = trustedBoardConnectRateLimitKey(request, boardId)
+	const ipLimiter = env.WHITEBOARD_CONNECT_LIMITER
+	const boardLimiter = env.WHITEBOARD_BOARD_CONNECT_LIMITER
+	if (ipLimiter || boardLimiter) {
+		if (!ipLimiter || !boardLimiter) {
+			logWhiteboardEvent('connect_admission_unavailable')
+			return jsonResponse(
+				request,
+				503,
+				{ error: 'WebSocket connections are temporarily unavailable.' },
+				{ methods: 'GET, OPTIONS' },
+			)
+		}
 		try {
-			const outcome = await limiter.limit({ key })
-			if (!outcome.success) {
-				logWhiteboardEvent('connect_admission_rejected')
+			const ipOutcome = await ipLimiter.limit({ key: ipKey })
+			if (!ipOutcome.success) {
+				logWhiteboardEvent('connect_admission_rejected', {
+					limit: CONNECT_RATE_LIMIT,
+				})
+				return rejectedResponse(request, CONNECT_RATE_PERIOD_SECONDS)
+			}
+			const boardOutcome = await boardLimiter.limit({ key: boardKey })
+			if (!boardOutcome.success) {
+				logWhiteboardEvent('connect_admission_rejected', {
+					limit: BOARD_CONNECT_RATE_LIMIT,
+				})
 				return rejectedResponse(request, CONNECT_RATE_PERIOD_SECONDS)
 			}
 			return null
@@ -145,10 +181,28 @@ export async function admitWhiteboardConnect(
 		}
 	}
 
-	const outcome = consumeLocalConnectAdmission(key)
-	if (!outcome.allowed) {
-		logWhiteboardEvent('connect_admission_rejected')
-		return rejectedResponse(request, outcome.retryAfterSeconds)
+	const now = Date.now()
+	const ipOutcome = consumeLocalConnectAdmission(
+		`ip:${ipKey}`,
+		now,
+		CONNECT_RATE_LIMIT,
+	)
+	if (!ipOutcome.allowed) {
+		logWhiteboardEvent('connect_admission_rejected', {
+			limit: CONNECT_RATE_LIMIT,
+		})
+		return rejectedResponse(request, ipOutcome.retryAfterSeconds)
+	}
+	const boardOutcome = consumeLocalConnectAdmission(
+		`board:${boardKey}`,
+		now,
+		BOARD_CONNECT_RATE_LIMIT,
+	)
+	if (!boardOutcome.allowed) {
+		logWhiteboardEvent('connect_admission_rejected', {
+			limit: BOARD_CONNECT_RATE_LIMIT,
+		})
+		return rejectedResponse(request, boardOutcome.retryAfterSeconds)
 	}
 	return null
 }

@@ -24,7 +24,15 @@
 			"name": "WHITEBOARD_CONNECT_LIMITER",
 			"namespace_id": "1001",
 			"simple": {
-				"limit": 120,
+				"limit": 600,
+				"period": 60
+			}
+		},
+		{
+			"name": "WHITEBOARD_BOARD_CONNECT_LIMITER",
+			"namespace_id": "2026083001",
+			"simple": {
+				"limit": 240,
 				"period": 60
 			}
 		}

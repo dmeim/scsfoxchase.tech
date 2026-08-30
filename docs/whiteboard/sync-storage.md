@@ -40,7 +40,7 @@ New image/video insertion is paused at the canvas boundary. Existing image refer
 
 ### Authentication handshake
 
-The Worker validates the board UUID, canonical UUID `sessionId`, and `Upgrade: websocket`, then runs `WHITEBOARD_CONNECT_LIMITER` before `WHITEBOARDS.get().fetch`. The binding allows 120 admissions per 60 seconds per trusted `CF-Connecting-IP`; local/test fallback buckets expire and are capped at 4096 keys. Each DO admits at most 64 total sockets and 32 pending-auth sockets; pending auth expires after approximately 30 seconds without a per-socket alarm.
+The Worker validates the board UUID, canonical UUID `sessionId`, and `Upgrade: websocket`, then runs two admission gates before `WHITEBOARDS.get().fetch`. `WHITEBOARD_CONNECT_LIMITER` allows 600 admissions per 60 seconds per trusted `CF-Connecting-IP`; `WHITEBOARD_BOARD_CONNECT_LIMITER` then allows 240 per 60 seconds per canonical board UUID plus trusted IP. Both bindings must be configured, and the local/test fallback enforces the same layered policy with expiring buckets capped at 4096 keys. Each DO admits at most 64 total sockets and 32 pending-auth sockets; pending auth expires after approximately 30 seconds without a per-socket alarm.
 
 Scratch host proof (`hostSecret`) and a Clerk JWT are sent in the first WebSocket message (`wb:auth`), not in the connect query string. `X-Board-Host` on the upgrade request is a non-mutating compatibility check for an already initialized board only; it cannot create host metadata or claim a random UUID. Do not put the host secret in a URL because query strings can reach access logs.
 
@@ -51,7 +51,7 @@ The socket opens and sends the stored scene before Clerk is necessarily ready. A
 `src/worker.ts` matches `/api/whiteboard/connect/:uuid`, validates the UUID/session/upgrade, applies connection admission, and only then forwards to the board object:
 
 ```ts
-admitWhiteboardConnect(request, env) → env.WHITEBOARDS.idFromName(boardId) → stub.fetch(request)
+admitWhiteboardConnect(request, env, boardId) → env.WHITEBOARDS.idFromName(boardId) → stub.fetch(request)
 ```
 
 The PWA service worker (`public/sw.js`) never intercepts `/api/*`, so this upgrade is not cached.
@@ -187,10 +187,16 @@ From `wrangler.jsonc`:
   "binding": "WHITEBOARD_LIBRARY",
   "database_name": "scsfoxchase-tech-whiteboard-library"
 }],
-"ratelimits": [{
-  "name": "WHITEBOARD_CONNECT_LIMITER",
-  "simple": { "limit": 120, "period": 60 }
-}]
+"ratelimits": [
+  {
+    "name": "WHITEBOARD_CONNECT_LIMITER",
+    "simple": { "limit": 600, "period": 60 }
+  },
+  {
+    "name": "WHITEBOARD_BOARD_CONNECT_LIMITER",
+    "simple": { "limit": 240, "period": 60 }
+  }
+]
 ```
 
 `wrangler.jsonc` also configures a separate `preview_database_id`; preview is a distinct bound database and must not be inferred from production state.

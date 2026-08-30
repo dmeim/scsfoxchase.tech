@@ -125,7 +125,7 @@ Product resource family: **`scsfoxchase-tech_whiteboards`**.
 | KV namespace | `scsfoxchase-tech-whiteboard-codes` (share code → boardId, permanent) |
 | D1 binding | `WHITEBOARD_LIBRARY` |
 | D1 production database | `scsfoxchase-tech-whiteboard-library` (metadata only) |
-| Rate Limiting binding | `WHITEBOARD_CONNECT_LIMITER` (120 admissions / 60 seconds / trusted IP) |
+| Rate Limiting bindings | `WHITEBOARD_CONNECT_LIMITER` (600 / 60 seconds / trusted IP) and `WHITEBOARD_BOARD_CONNECT_LIMITER` (240 / 60 seconds / canonical board + IP) |
 
 **R2 naming note:** Cloudflare R2 bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling with an underscore is unchanged for docs / DO naming.
 
@@ -146,7 +146,7 @@ First deploy after adding the DO applies migration `whiteboard-v1` automatically
 
 ## Observability and connection admission
 
-`wrangler.jsonc` explicitly enables structured Worker logs with `invocation_logs: false` and a production head sampling rate of `0.05` (5%). The `WHITEBOARD_CONNECT_LIMITER` binding runs before Durable Object resolution and admits up to 120 WebSocket upgrades per 60-second window per trusted `CF-Connecting-IP`. Local/test fallback buckets expire and are capped at 4096 keys. Per-board limits are 64 total sockets, 32 pending-auth sockets, and approximately 30 seconds pending age; pending cleanup does not schedule one alarm per socket.
+`wrangler.jsonc` explicitly enables structured Worker logs with `invocation_logs: false` and a production head sampling rate of `0.05` (5%). Before Durable Object resolution, `WHITEBOARD_CONNECT_LIMITER` admits up to 600 WebSocket upgrades per 60-second window per trusted `CF-Connecting-IP`, then `WHITEBOARD_BOARD_CONNECT_LIMITER` admits up to 240 for the canonical board plus that IP. Both bindings must be present; partial binding configuration fails closed. Local/test fallback buckets enforce the same layers, expire, and are capped at 4096 keys. Per-board Durable Object limits remain 64 total sockets, 32 pending-auth sockets, and approximately 30 seconds pending age; pending cleanup does not schedule one alarm per socket.
 
 The safe logger records only low-cardinality admission/auth transitions, scene rejection/persistence failures, bounded storage failures, and throttles. It excludes board/session identifiers, IPs, URLs/paths, host secrets, JWTs, arbitrary exception text, and scene contents. Review the [whiteboard runbook](docs/whiteboard/d1-library-operations.md) for migration and rollback checks.
 

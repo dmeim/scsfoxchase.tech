@@ -43,7 +43,7 @@ Production surface: **https://scsfoxchase.tech** (Worker `scsfoxchase-tech`).
 
 ## Connection and protocol guardrails
 
-The Worker validates canonical UUID board/session identifiers and applies the `WHITEBOARD_CONNECT_LIMITER` gate before resolving a Durable Object. The deployed policy allows 120 upgrades per trusted `CF-Connecting-IP` per 60 seconds. Local/test fallback buckets expire and are pruned at a hard maximum of 4096 keys. Each board admits at most 64 total sockets and 32 pending-auth sockets; pending authentication expires after approximately 30 seconds without a per-socket storage alarm.
+The Worker validates canonical UUID board/session identifiers and applies two admission gates before resolving a Durable Object. The deployed policy allows 600 upgrades per trusted `CF-Connecting-IP` per 60 seconds and 240 per canonical board UUID plus trusted IP. Local/test fallback buckets enforce both layers, expire, and are pruned at a hard maximum of 4096 keys. Each board admits at most 64 total sockets and 32 pending-auth sockets; pending authentication expires after approximately 30 seconds without a per-socket storage alarm.
 
 An arbitrary `X-Board-Host` on a new UUID is read-only and cannot create metadata, an alarm, or a share code. The creating browser must send a valid host proof in its first `wb:auth` message. Signed-in tabs without a JWT remain pending until a token arrives. UUID-only guests are Viewers, share-code guests are Editors subject to Group Edit, Clerk owners/managers retain their roles, and signed-out creators are ephemeral scratch Owners. Scene mutations use mutation IDs and `scene:ack`; transient persistence failures retry on bounded reconnect backoff, while malformed or oversized payloads are terminal and visible. Frames and scenes are bounded by UTF-8 bytes and the 4,000-element / 2,000,000-byte scene limits.
 
@@ -57,7 +57,8 @@ Product family spelling: `scsfoxchase-tech_whiteboards` (underscore). R2 bucket 
 | `WHITEBOARD_ASSETS` | R2 bucket `scsfoxchase-tech-whiteboards` | Previews and legacy media; historical library JSON source indexes are read-only |
 | `WHITEBOARD_CODES` | KV namespace | `code:{CODE}` → `{ boardId }` (no TTL) |
 | `WHITEBOARD_LIBRARY` | D1 database `scsfoxchase-tech-whiteboard-library` | Signed-in Library / Recents / Assets metadata only; preview uses separate configured preview ID |
-| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | 120 connection admissions / 60 seconds per trusted `CF-Connecting-IP` |
+| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | 600 connection admissions / 60 seconds per trusted `CF-Connecting-IP` |
+| `WHITEBOARD_BOARD_CONNECT_LIMITER` | Rate Limiting | 240 connection admissions / 60 seconds per canonical board UUID plus trusted IP |
 
 Clerk secrets / vars (not in `wrangler.jsonc`): `CLERK_SECRET_KEY`, `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`. See `.dev.vars.example` and `DEPLOYMENT.md`. No whiteboard license key.
 

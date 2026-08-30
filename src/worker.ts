@@ -142,7 +142,7 @@ export default {
 				logWhiteboardEvent('connect_rejected')
 				return new Response('Invalid session id', { status: 400 })
 			}
-			const admission = await admitWhiteboardConnect(request, env)
+			const admission = await admitWhiteboardConnect(request, env, boardId)
 			if (admission) return admission
 			const id = env.WHITEBOARDS.idFromName(boardId)
 			const stub = env.WHITEBOARDS.get(id)

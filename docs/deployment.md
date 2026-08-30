@@ -87,7 +87,8 @@ Configured in `wrangler.jsonc`. Product resource family: **`scsfoxchase-tech_whi
 | `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` |
 | `WHITEBOARD_CODES` | KV | Namespace `scsfoxchase-tech-whiteboard-codes` (share code → board id, permanent) |
 | `WHITEBOARD_LIBRARY` | D1 | `scsfoxchase-tech-whiteboard-library` in production; signed-in metadata only |
-| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | 120 admissions / 60 seconds per trusted `CF-Connecting-IP` |
+| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | 600 admissions / 60 seconds per trusted `CF-Connecting-IP` |
+| `WHITEBOARD_BOARD_CONNECT_LIMITER` | Rate Limiting | 240 admissions / 60 seconds per canonical board UUID plus trusted IP |
 | `ASSETS` | Assets fetcher | Bound automatically from the assets directory |
 
 R2 bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling keeps the underscore.

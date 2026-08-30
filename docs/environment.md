@@ -32,7 +32,8 @@ No extra env vars for sync, assets, share codes, library metadata, connection ad
 - `WHITEBOARD_LIBRARY` — D1 database `scsfoxchase-tech-whiteboard-library` in production; signed-in Library / Recents / Assets metadata only. Preview uses the separate `preview_database_id` in `wrangler.jsonc`; local test workers use `scsfoxchase-tech-whiteboard-library-worker-tests`.
 - `WHITEBOARD_ASSETS` — R2 bucket `scsfoxchase-tech-whiteboards` (previews and legacy media reads; historical library JSON source indexes retained)
 - `WHITEBOARD_CODES` — KV share-code index
-- `WHITEBOARD_CONNECT_LIMITER` — Rate Limiting binding, 120 admissions per 60 seconds keyed only by trusted `CF-Connecting-IP`
+- `WHITEBOARD_CONNECT_LIMITER` — Rate Limiting binding, 600 admissions per 60 seconds keyed by trusted `CF-Connecting-IP`
+- `WHITEBOARD_BOARD_CONNECT_LIMITER` — Rate Limiting binding, 240 admissions per 60 seconds keyed by canonical board UUID plus trusted `CF-Connecting-IP`
 
 Scenes never move to D1 or R2. New image/video insertion remains disabled. The historical R2 indexes are read-only migration sources; normal library CRUD uses D1.
 

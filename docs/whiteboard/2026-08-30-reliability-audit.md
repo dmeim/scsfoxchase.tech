@@ -2,7 +2,7 @@
 
 **Audit date:** August 30, 2026
 **Scope:** Whiteboard and Excalidraw client, Worker routes, Durable Object synchronization, authentication, storage, operational limits, tests, and build guardrails
-**Audit type:** Initial read-only review followed by tracked stabilization work; no deployment was performed
+**Audit type:** Initial read-only review followed by tracked stabilization work and separately recorded releases
 
 ## Executive Summary
 
@@ -23,7 +23,7 @@ The safest implementation order is:
 2. Make public metadata reads write-free.
 3. Attach important background work to the Cloudflare event lifetime.
 4. Repair the date-dependent alarm tests.
-5. Load-test the rate limits before changing them.
+5. If classroom clients are unavailable, size layered connection limits from the deterministic maximum-board model and keep the IP-wide abuse ceiling.
 6. Add a scoped whiteboard type-checking guardrail.
 
 ---
@@ -186,20 +186,20 @@ Cloudflare’s guidance is to await important work or explicitly extend event li
 ## Issue 4 — IP-Only Rate Limiting May Throttle Legitimate School-Wide Reconnects
 
 **Priority:** Medium
-**Classification:** Suspected operational risk; requires load testing
-**Status:** Needs measurement
+**Classification:** Suspected operational risk; mitigated from a deterministic capacity model
+**Status:** Completed with theoretical sizing
 
 ### Issue
 
-Connection and join limits use only the public client IP. Many school devices commonly share one public NAT address.
+The original connection limit used only the public client IP. Many school devices commonly share one public NAT address.
 
-Normal use likely stays under the current limits. A Wi-Fi interruption, Worker restart, or simultaneous class transition could cause dozens of Chromebooks to reconnect several times inside one minute and consume the shared IP allowance.
+Normal use likely stayed under the original limit, but a Wi-Fi interruption, Worker restart, or simultaneous class transition could cause dozens of Chromebooks to reconnect several times inside one minute and consume the shared IP allowance.
 
 ### Research & Found/Suspected Bug(s)
 
-The Cloudflare rate-limit binding is configured for 120 connections per 60 seconds in [`wrangler.jsonc`](../../wrangler.jsonc#L54).
+Before the mitigation, the Cloudflare rate-limit binding was configured for 120 connections per 60 seconds in [`wrangler.jsonc`](../../wrangler.jsonc#L54).
 
-The connection limiter uses `CF-Connecting-IP` as its key in [`connectAdmission.ts`](../../src/worker/connectAdmission.ts#L122).
+The connection limiter uses trusted `CF-Connecting-IP` for the school-wide key. The layered board key combines the canonical board UUID with that trusted IP in [`connectAdmission.ts`](../../src/worker/connectAdmission.ts).
 
 Share-code joins have a separate 60-per-minute IP limiter in [`codeRoutes.ts`](../../src/worker/codeRoutes.ts#L216).
 
@@ -207,9 +207,9 @@ The client reconnect schedule starts aggressively and then backs off. A group of
 
 Cloudflare specifically cautions against relying exclusively on IP addresses because many legitimate users can share one IP. Rate-limit binding counters are also local to a Cloudflare location, so they should be treated as abuse controls rather than exact global quotas. See [Cloudflare Rate Limiting bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 
-The audit did not find production traffic or rejection metrics that prove users are currently encountering this. It should be tested rather than changed speculatively.
+The audit did not find production traffic or rejection metrics proving that users encountered this. Classroom clients were not available for a staged NAT test, so the final thresholds were selected from the deterministic model at the user’s direction.
 
-### Local Risk Model — August 30, 2026
+### Original Local Risk Model — August 30, 2026
 
 A deterministic single-location model was run with two boards behind one public IP and reconnect attempts at cumulative 0.5, 1.5, and 3.5 seconds. It models the strict local fallback; Cloudflare’s deployed binding is permissive and eventually consistent, so staging results may differ.
 
@@ -219,16 +219,18 @@ A deterministic single-location model was run with two boards behind one public 
 | 60 | 120 | 120 | 0; the 60-request third wave is over budget |
 | 120 | 240 | 120 | 120; the third wave is also over budget |
 
-This supports retaining the current threshold until a staged NAT test provides actual rejection and recovery measurements. A composite `IP + board` key must not replace the IP-wide key because rotating valid UUIDs would create fresh board buckets; if changes are justified, use layered IP-wide and per-board controls.
+The original model established that 120 was too close to an ordinary synchronized burst. A composite `IP + board` key could not replace the IP-wide key because rotating valid UUIDs would create fresh board buckets.
 
-### Possible/Proposed Fix(s)
+### Implemented Fix
 
-- Preserve rate limiting; do not simply remove the protection.
-- Load-test the current threshold using school-like NAT behavior.
-- Consider a two-layer design with a higher IP-wide abuse ceiling and a lower composite `IP + board` classroom ceiling.
-- Retain the Durable Object’s 64-socket-per-board limit.
-- Ensure composite keys do not allow attackers to bypass all protection by rotating random board UUIDs.
-- Add an observable counter for admission and join rejections.
+- `WHITEBOARD_CONNECT_LIMITER` now allows 600 attempts per 60 seconds per trusted public IP. Three completely full 64-socket boards reconnecting three times produce 576 attempts, leaving a small practical margin.
+- `WHITEBOARD_BOARD_CONNECT_LIMITER` independently allows 240 attempts per 60 seconds per canonical board plus IP. One full board reconnecting three times produces 192 attempts, leaving 25% headroom.
+- The IP-wide gate runs first, so rotating valid board UUIDs still consumes the same 600-request school-wide allowance.
+- Both production bindings must exist; a partial or failed binding configuration returns 503 rather than silently bypassing a layer.
+- The bounded local/test fallback enforces the same two ceilings.
+- Rejection logs include the low-cardinality configured limit (`600` or `240`) without recording the IP or board ID.
+- The Durable Object’s 64-total-socket and 32-pending-auth limits remain unchanged.
+- Share-code lookup remains a separate 60-per-minute IP limiter. Reconnects use the resolved board UUID and do not repeat share-code lookup.
 
 ### Actionable Task List
 
@@ -237,14 +239,15 @@ This supports retaining the current threshold until a staged NAT test provides a
 - [x] Simulate 120 clients behind one IP with the deterministic local limiter model.
 - [x] Simulate a brief outage followed by synchronized reconnect attempts.
 - [x] Model two classrooms/boards behind the same IP.
-- [ ] Measure rejected connection percentage.
-- [ ] Measure time until every legitimate client reconnects.
-- [ ] Measure requests per device during recovery.
-- [ ] Measure Worker and Durable Object load.
 - [x] Verify rotating board IDs still consume the IP-wide admission limit and document why a board-only key is unsafe.
-- [ ] Choose thresholds from measurements rather than estimates.
-- [ ] Add monitoring for connection-limit and join-limit rejections.
-- [ ] Document expected maximum classrooms/devices per public IP.
+- [x] Record that live classroom/NAT measurements are unavailable and use deterministic theoretical sizing instead.
+- [x] Set the IP-wide threshold to 600 attempts per 60 seconds.
+- [x] Add a separate 240-per-60-second canonical board plus IP threshold.
+- [x] Keep the IP-wide gate authoritative when board UUIDs rotate.
+- [x] Make partial production binding configuration fail closed.
+- [x] Mirror both layers in the bounded local/test fallback.
+- [x] Distinguish IP-wide and board-specific rejection logs without emitting identifiers.
+- [x] Document the expected capacity: three full 64-seat boards, each reconnecting three times behind one public IP.
 
 ---
 
@@ -347,14 +350,15 @@ The repository’s build script only runs `astro build`; there is no required CI
 | Check | Result |
 |---|---|
 | Production build | Passed |
-| Test suite | 165 passed, 0 failed after stabilization work |
+| Test suite | 167 passed, 0 failed after layered admission work |
 | Scoped whiteboard type-check | Passed |
 | Focused post-implementation regression pass | Passed: 41 unit/protocol checks and 21 Worker integration checks; no corrective code changes required |
+| Layered connection admission | Passed: 10 focused admission tests; Wrangler dry run exposes 600/IP and 240/IP+board bindings |
 | Repository-wide type-check | Remains outside the gate because unrelated baseline and untracked duplicate-file errors still exist |
 | Production dependency audit | 0 known vulnerabilities |
 | Secret scan of tracked content | No committed credential surfaced; test secrets were false positives |
-| Deployment | Not performed |
-| Stabilization implementation | Issues 1, 2, 3, 5, and 6 completed; Issue 4 locally modeled and awaiting staged NAT measurements |
+| Deployment | Issues 1, 2, 3, 5, and 6 shipped in `b6ed9b2`; the Issue 4 layered admission change remains local until separately approved |
+| Stabilization implementation | Issues 1–6 completed; Issue 4 uses explicitly approved theoretical sizing because classroom clients were unavailable |
 
 The build reported large JavaScript chunks. The board and Excalidraw bundles are substantial, but some of the largest dependencies are dynamically loaded. Without measurements from a real Chromebook, this is not classified as a performance bug. Measure board startup, time-to-canvas, and memory on an 11.6-inch Chromebook before attempting bundle changes.
 
@@ -376,6 +380,6 @@ The audit also confirmed several areas that should be preserved rather than rewo
 
 ## Overall Recommendation
 
-Prepare a small, focused stabilization release containing Issues 1, 2, 3, and 5, plus the two narrow type fixes from Issue 6. Keep any rate-limit change separate until a classroom-style reconnect test supplies real measurements.
+The original stabilization release containing Issues 1, 2, 3, 5, and 6 shipped successfully. Keep the Issue 4 layered rate-limit change as its own focused release and verify the generated Cloudflare bindings before deployment.
 
 Avoid dependency upgrades, architectural rewrites, or Excalidraw loading changes in the same release. `npm audit` is clean, and the immediate priority should be protecting the working behavior that exists now.

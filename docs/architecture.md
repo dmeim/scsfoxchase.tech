@@ -27,7 +27,7 @@ flowchart TD
   D1[D1 WHITEBOARD_LIBRARY metadata]
   R2[R2 WHITEBOARD_ASSETS]
   KV[KV WHITEBOARD_CODES]
-  RL[Rate Limiting WHITEBOARD_CONNECT_LIMITER]
+  RL[Layered connection rate limiting]
   Assets[Astro handler + Workers Assets]
 
   Client --> SW
@@ -53,7 +53,8 @@ Product resource family for whiteboards: **`scsfoxchase-tech_whiteboards`**.
 | `WHITEBOARD_ASSETS` | R2 | Bucket `scsfoxchase-tech-whiteboards` | Preview bytes + legacy media; historical library JSON source indexes retained read-only |
 | `WHITEBOARD_CODES` | KV | Share-code namespace | `code:{1A2B3C4D}` → board UUID (permanent; leftover `1A2B` still joins) |
 | `WHITEBOARD_LIBRARY` | D1 | Production `scsfoxchase-tech-whiteboard-library`; separate preview ID in config | Signed-in Library / Recents / Assets metadata only |
-| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | Simple 120 / 60-second policy | Admission before `WHITEBOARDS.get()`, keyed only by `CF-Connecting-IP` |
+| `WHITEBOARD_CONNECT_LIMITER` | Rate Limiting | Simple 600 / 60-second policy | IP-wide admission before `WHITEBOARDS.get()`, keyed by trusted `CF-Connecting-IP` |
+| `WHITEBOARD_BOARD_CONNECT_LIMITER` | Rate Limiting | Simple 240 / 60-second policy | Board-specific admission after the IP-wide gate, keyed by canonical board UUID plus trusted IP |
 
 **R2 naming:** Bucket names cannot contain `_`. The live bucket is hyphenated (`scsfoxchase-tech-whiteboards`); the product family spelling keeps the underscore.
 
@@ -89,7 +90,7 @@ Board URLs use a path rewrite so one prerendered shell serves every UUID:
 | `/api/whiteboard/assets…` | `worker/assetRoutes.ts` | R2 PUT/GET/DELETE / claim |
 | `/api/whiteboard/connect/:uuid` | `worker/connectAdmission.ts`, then DO (`idFromName` → `stub.fetch`) | UUID/session validation and IP admission precede WebSocket upgrade → `WhiteboardBoard` |
 
-Connect requires a valid UUID, canonical UUID `sessionId`, and `Upgrade: websocket`; otherwise the Worker returns `400` or `426`. The edge gate admits 120 upgrades per trusted IP per 60 seconds; local/test fallback buckets expire and never exceed 4096 keys. The connect query string is `sessionId` plus optional `displayName` / guest `userId`. Scratch host proof and Clerk JWT are first-message `wb:auth` (or an existing-board `X-Board-Host` compatibility proof / share cookie), not the WebSocket URL. A header alone cannot initialize a random UUID.
+Connect requires a valid UUID, canonical UUID `sessionId`, and `Upgrade: websocket`; otherwise the Worker returns `400` or `426`. Layered edge gates admit 600 upgrades per trusted IP and 240 per canonical board plus IP per 60 seconds; the local/test fallback enforces both layers with expiring buckets capped at 4096 keys. The connect query string is `sessionId` plus optional `displayName` / guest `userId`. Scratch host proof and Clerk JWT are first-message `wb:auth` (or an existing-board `X-Board-Host` compatibility proof / share cookie), not the WebSocket URL. A header alone cannot initialize a random UUID.
 
 Everything else falls through to the Astro asset handler.
 
