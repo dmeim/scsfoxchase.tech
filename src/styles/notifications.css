@@ -3,20 +3,20 @@
   --notification-warning: #f6d724;
   --notification-info: #5dade2;
   --notification-error: #f28c8c;
-  --notification-cream: #fff7e6;
-  --notification-charcoal: #2f343a;
-  --notification-surface: var(--notification-cream);
-  --notification-ink: var(--notification-charcoal);
+  --notification-white: #fff;
+  --notification-black: #000;
+  --notification-surface: var(--notification-white);
+  --notification-ink: var(--notification-black);
   --notification-muted: #62686d;
   --notification-border: rgba(18, 95, 49, 0.22);
   --notification-shadow: 0 12px 30px rgba(29, 52, 38, 0.14);
 }
 
 [data-theme="dark"] {
-  --notification-surface: var(--notification-charcoal);
-  --notification-ink: var(--notification-cream);
+  --notification-surface: var(--notification-black);
+  --notification-ink: var(--notification-white);
   --notification-muted: #d7d0c2;
-  --notification-border: rgba(255, 247, 230, 0.14);
+  --notification-border: rgba(255, 255, 255, 0.14);
   --notification-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
 }
 
@@ -59,7 +59,7 @@
 
 .notification-trigger:hover,
 .notification-center.is-open .notification-trigger {
-  color: #2f343a;
+  color: var(--notification-black);
   border-color: var(--secondary-color);
   background: var(--secondary-color);
 }
@@ -80,9 +80,9 @@
   min-width: 17px;
   height: 17px;
   padding: 0 4px;
-  border: 2px solid var(--notification-cream);
+  border: 2px solid var(--notification-white);
   border-radius: 999px;
-  color: var(--notification-cream);
+  color: var(--notification-white);
   background: var(--notification-success);
   font-size: 0.62rem;
   font-weight: 900;
@@ -90,7 +90,7 @@
 }
 
 [data-theme="dark"] .notification-badge {
-  border-color: var(--notification-charcoal);
+  border-color: var(--notification-black);
 }
 
 .notification-panel[hidden],
@@ -148,7 +148,7 @@
 }
 
 .notification-clear:hover:not(:disabled) {
-  color: var(--notification-charcoal);
+  color: var(--notification-black);
   border-color: var(--notification-error);
   background: var(--notification-error);
 }
@@ -197,14 +197,14 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  color: var(--notification-charcoal);
+  color: var(--notification-black);
   background: var(--toast-accent);
   border-radius: 2px;
 }
 
 .notification-item.is-success .notification-item-icon,
 .toast.is-success .toast-icon {
-  color: var(--notification-cream);
+  color: var(--notification-white);
 }
 
 .notification-item-icon {
