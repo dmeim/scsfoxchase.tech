@@ -110,7 +110,7 @@ Everything else falls through to the Astro asset handler.
 
 ## PWA service worker boundary
 
-`public/sw.js` (cache name `st-cecilia-tech-astro-v17`):
+`public/sw.js` (build-stamped cache name `st-cecilia-tech-astro-{buildSha}`):
 
 | Request | Strategy |
 |---------|----------|
@@ -119,6 +119,8 @@ Everything else falls through to the Astro asset handler.
 | Path starts with `/api/` | **Not intercepted** (required for WebSocket upgrades and Worker APIs) |
 | `navigate` | Network-first; on failure serve cached `/offline` |
 | Same-origin assets | Network-first with cache put on 200; cache match on failure |
+
+New workers wait while an older page is active. The production toast system offers an explicit **Reload** action, then the activated worker deletes caches from older build SHAs.
 
 Canonical offline page: `/offline` (`src/pages/offline.astro`), precached on install. PWA metadata: `public/manifest.json`.
 

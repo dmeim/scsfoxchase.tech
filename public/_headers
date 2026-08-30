@@ -1,6 +1,6 @@
 # Security headers — single source of truth for Cloudflare (Astro public/)
-# Cache: max-age ≤ 3600 everywhere (never immutable). Long immutable TTLs on
-# /_astro/* previously cached 404s for a year when CSS was briefly missing.
+# Cache: revalidate every reuse. Long freshness windows previously allowed old
+# HTML/CSS pairs and missing-asset 404s to survive UI deployments.
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
@@ -17,7 +17,7 @@
   # Guide source chips load favicons via Google s2 (often served from *.gstatic.com).
   Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com https://clerk.scsfoxchase.tech https://accounts.scsfoxchase.tech https://*.clerk.accounts.dev https://challenges.cloudflare.com https://accounts.google.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://img.clerk.com https://*.googleusercontent.com https://www.google.com https://*.gstatic.com https://challenges.cloudflare.com; media-src 'self' data: blob:; connect-src 'self' https://cloudflareinsights.com https://*.n8n.cloud https://n8n.mlabz.io https://clerk.scsfoxchase.tech https://accounts.scsfoxchase.tech https://*.clerk.accounts.dev https://api.clerk.com https://clerk-telemetry.com https://challenges.cloudflare.com https://accounts.google.com; frame-src 'self' https://clerk.scsfoxchase.tech https://accounts.scsfoxchase.tech https://*.clerk.accounts.dev https://accounts.google.com https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://vimeo.com; worker-src 'self' blob:
   Strict-Transport-Security: max-age=31536000; includeSubDomains
-  Cache-Control: public, max-age=3600, must-revalidate
+  Cache-Control: public, max-age=0, must-revalidate
 
 /whiteboard-player
   X-Frame-Options: SAMEORIGIN

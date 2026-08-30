@@ -133,9 +133,9 @@ Whiteboard sync, assets, share codes, and cloud libraries are documented under [
 
 | File | Role |
 |------|------|
-| `public/_headers` | Sole security-header source: CSP, HSTS, `X-Frame-Options`, `nosniff`, cache (`max-age=3600`, never `immutable`) |
+| `public/_headers` | Sole security-header source: CSP, HSTS, `X-Frame-Options`, `nosniff`, and immediate cache revalidation (`max-age=0, must-revalidate`) |
 | `public/_redirects` | `/newhome/` → `/`, `/inventory/` → `/inventory`, `/board/*` → `/board` (200 rewrite) |
-| `public/sw.js` | PWA service worker: network-first navigations; offline page `/offline`; **never** intercepts `/api/*` (WebSockets and whiteboard APIs) |
+| `public/sw.js` | PWA service worker: build-stamped cache, network-first navigations, update toast, offline page `/offline`; **never** intercepts `/api/*` (WebSockets and whiteboard APIs) |
 | `astro.config.mjs` | Additional legacy redirects (e.g. `/games.html` → `/games`, `/newgames` → `/games`) |
 
 Asset config in Wrangler uses `not_found_handling: "404-page"` so missing assets return 404 instead of SPA HTML (avoids `nosniff` breakage on CSS).

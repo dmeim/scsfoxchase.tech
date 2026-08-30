@@ -9,6 +9,7 @@ const serviceWorkerSource = readFileSync(
 )
 
 type WorkerEvent = {
+	data?: unknown
 	request?: RequestLike
 	response?: Promise<Response>
 	waitUntilPromises: Promise<unknown>[]
@@ -45,7 +46,10 @@ function workerHarness() {
 	}
 	const cachesApi = {
 		open: vi.fn(async () => cache),
-		keys: vi.fn(async () => ['old-cache', 'st-cecilia-tech-astro-v17']),
+		keys: vi.fn(async () => [
+			'old-cache',
+			'st-cecilia-tech-astro-__SERVICE_WORKER_BUILD_SHA__',
+		]),
 		delete: vi.fn(async () => true),
 		match: vi.fn(async () => undefined as Response | undefined),
 	}
@@ -71,6 +75,7 @@ function workerHarness() {
 	function dispatch(name: string, event: Partial<WorkerEvent> = {}): WorkerEvent {
 		const waitUntilPromises: Promise<unknown>[] = []
 		const fullEvent = {
+			data: event.data,
 			request: event.request,
 			response: undefined as Promise<Response> | undefined,
 			waitUntilPromises,
@@ -96,9 +101,30 @@ describe('service worker policy', () => {
 
 		expect(worker.cachesApi.delete).toHaveBeenCalledWith('old-cache')
 		expect(worker.cachesApi.delete).not.toHaveBeenCalledWith(
-			'st-cecilia-tech-astro-v17',
+			'st-cecilia-tech-astro-__SERVICE_WORKER_BUILD_SHA__',
 			)
 		expect(worker.self.clients.claim).toHaveBeenCalledTimes(1)
+	})
+
+	it('keeps an update waiting until the page accepts it', async () => {
+		const worker = workerHarness()
+		worker.fetchMock.mockResolvedValue(
+			new Response('offline', {
+				status: 200,
+				headers: { 'content-type': 'text/html' },
+			}),
+		)
+		const event = worker.dispatch('install')
+		await Promise.all(event.waitUntilPromises)
+
+		expect(worker.self.skipWaiting).not.toHaveBeenCalled()
+	})
+
+	it('activates an update after the reload action accepts it', () => {
+		const worker = workerHarness()
+		worker.dispatch('message', { data: { type: 'SKIP_WAITING' } })
+
+		expect(worker.self.skipWaiting).toHaveBeenCalledTimes(1)
 	})
 
 	it('does not intercept API GETs', () => {

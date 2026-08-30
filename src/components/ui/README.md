@@ -43,6 +43,18 @@ showToast({
 });
 ```
 
+Persistent toasts may include one action:
+
+```ts
+showToast({
+  kind: 'info',
+  icon: 'info',
+  title: 'Update ready',
+  persist: true,
+  action: { label: 'Reload', onClick: () => window.location.reload() },
+});
+```
+
 Interactive components dispatch bubbling custom events for page-specific behavior:
 
 - `ChipGroup`, `SelectMenu`, `SegmentedControl`, and `ProgressTabs`: `ui:change`

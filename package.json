@@ -10,6 +10,7 @@
     "copy-excalidraw-fonts": "node scripts/copy-excalidraw-fonts.mjs",
     "predev": "npm run copy-excalidraw-fonts",
     "prebuild": "npm run copy-excalidraw-fonts",
+    "postbuild": "node scripts/stamp-service-worker.mjs",
     "dev": "astro dev --host",
     "test": "vitest run",
     "typecheck:whiteboard": "tsc -p tsconfig.whiteboard.json",

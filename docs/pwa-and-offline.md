@@ -25,9 +25,9 @@ Related: [UI and design](ui-and-design.md), [architecture](architecture.md), [wh
 
 `BaseLayout` also sets `<meta name="theme-color" content="#125F31" />`, favicons, and `apple-touch-icon`.
 
-### Service worker registration
+### Service worker registration and updates
 
-On every page using `BaseLayout`, after `window` `load`:
+On every page using `BaseLayout`, `src/scripts/service-worker-updates.ts` registers after `window` `load`:
 
 ```js
 navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
@@ -35,13 +35,17 @@ navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
 
 Registration runs only when `'serviceWorker' in navigator`. `updateViaCache: 'none'` avoids caching the worker script itself through HTTP cache in a way that stalls updates.
 
+When a new worker reaches `installed`, the production toast system shows a persistent **Update ready** notice with a **Reload** action. Reload sends `SKIP_WAITING` to the waiting worker; the resulting `controllerchange` reloads the page once so the new HTML and hashed assets arrive together. The worker is not forced active before the user accepts the update.
+
 ## Caching strategy (`public/sw.js`)
 
-Cache name: `st-cecilia-tech-astro-v17`.
+Cache name: `st-cecilia-tech-astro-{buildSha}`.
+
+`npm run build` runs `scripts/stamp-service-worker.mjs` after Astro finishes. It replaces the placeholder in the emitted `dist/client/sw.js` with the same build SHA used by `/api/whiteboard/version`. A missing or duplicate placeholder fails the build instead of silently reusing an old cache name.
 
 ### Install / activate
 
-- **Install** — opens the cache, `fetch`es `/offline` with `redirect: 'follow'`, `cache.put`s it under `/offline`, then `skipWaiting()`.
+- **Install** — opens the build-specific cache, `fetch`es `/offline` with `redirect: 'follow'`, and `cache.put`s it under `/offline`. Updates remain waiting until the reload toast is accepted or all older clients close.
 - **Activate** — deletes every cache whose name is not the current `CACHE_NAME`, then `clients.claim()`.
 
 Only `/offline` is precached. Other entries appear later when successful same-origin GETs are stored (see below).

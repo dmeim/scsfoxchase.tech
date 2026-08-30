@@ -2,7 +2,8 @@
 // Navigations: network-first (never stale HTML; offline page on failure)
 // /_astro/* and other assets: network-first with cache fallback
 // (v2: drop cache-first on /_astro — poisoned immutable 404s broke CSS)
-const CACHE_NAME = 'st-cecilia-tech-astro-v17';
+// postbuild replaces this placeholder so every deployment owns a fresh cache.
+const CACHE_NAME = 'st-cecilia-tech-astro-__SERVICE_WORKER_BUILD_SHA__';
 const OFFLINE_PAGE = '/offline';
 
 self.addEventListener('install', (event) => {
@@ -18,8 +19,12 @@ self.addEventListener('install', (event) => {
           return cache.put(OFFLINE_PAGE, response);
         })
       )
-      .then(() => self.skipWaiting())
   );
+});
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 self.addEventListener('activate', (event) => {
   event.waitUntil(

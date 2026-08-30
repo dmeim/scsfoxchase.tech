@@ -255,6 +255,17 @@
   font-size: 0.68rem;
 }
 
+.toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.toast-action {
+  min-height: 30px;
+}
+
 .notification-dismiss,
 .toast-close {
   display: inline-flex;
@@ -293,6 +304,7 @@
 .notification-trigger:focus-visible,
 .notification-clear:focus-visible,
 .notification-dismiss:focus-visible,
+.toast-action:focus-visible,
 .toast-close:focus-visible {
   outline: 2px solid var(--secondary-color);
   outline-offset: 1px;

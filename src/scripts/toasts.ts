@@ -46,12 +46,17 @@ export function dismissToast(id: string): void {
 }
 
 export function showToast(input: ToastInput): string | null {
+  const action = input.action;
   if (
     typeof document === 'undefined' ||
     !isToastKind(input.kind) ||
     !isToastIcon(input.icon) ||
     typeof input.title !== 'string' ||
-    !input.title.trim()
+    !input.title.trim() ||
+    (action !== undefined &&
+      (typeof action.label !== 'string' ||
+        !action.label.trim() ||
+        typeof action.onClick !== 'function'))
   ) {
     return null;
   }
@@ -76,6 +81,20 @@ export function showToast(input: ToastInput): string | null {
   }
   if (input.description?.trim()) {
     copy.appendChild(textElement('toast-description', input.description.trim()));
+  }
+  if (action) {
+    const actions = document.createElement('div');
+    actions.className = 'toast-actions';
+    const actionButton = document.createElement('button');
+    actionButton.type = 'button';
+    actionButton.className = uiClassNames.button('primary', 'small', 'toast-action');
+    actionButton.textContent = action.label.trim();
+    actionButton.addEventListener('click', () => {
+      dismissToast(id);
+      action.onClick();
+    });
+    actions.appendChild(actionButton);
+    copy.appendChild(actions);
   }
 
   const close = document.createElement('button');

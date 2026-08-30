@@ -57,6 +57,10 @@ export type ToastInput = Omit<
   kind: ToastKind;
   icon: ToastIcon;
   duration?: number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 };
 
 const kindSet = new Set<string>(NOTIFICATION_KINDS);

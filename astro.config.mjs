@@ -1,25 +1,8 @@
-import { execSync } from 'node:child_process';
 import { defineConfig, sessionDrivers } from 'astro/config';
 import cloudflare from '@astrojs/cloudflare';
 
 import react from '@astrojs/react';
-
-function resolveBuildSha() {
-  const fromEnv =
-    process.env.CF_VERSION_METADATA_ID ||
-    process.env.WORKERS_CI_COMMIT_SHA ||
-    process.env.GITHUB_SHA;
-  if (fromEnv) {
-    return fromEnv.trim().slice(0, 12);
-  }
-  try {
-    return execSync('git rev-parse --short HEAD', { encoding: 'utf8' })
-      .trim()
-      .slice(0, 12);
-  } catch {
-    return 'unknown';
-  }
-}
+import { resolveBuildSha } from './scripts/build-metadata.mjs';
 
 export default defineConfig({
   site: 'https://scsfoxchase.tech',
