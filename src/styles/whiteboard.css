@@ -645,11 +645,34 @@ body.board-page .excalidraw {
   --color-brand-active: #0a4020;
   --color-surface-primary-container: rgba(18, 95, 49, 0.14);
   --color-on-primary-container: #0a4020;
+  --color-surface-high: #eaf3ed;
+  --color-surface-mid: #f2f7f4;
+  --color-surface-low: #edf4ef;
+  --color-surface-lowest: #ffffff;
+  --color-on-surface: #253329;
+  --color-border-outline: #708077;
+  --color-border-outline-variant: #cbd9d0;
+  --color-logo-text: #0a4020;
+  --island-bg-color: #ffffff;
+  --popup-bg-color: #ffffff;
+  --popup-secondary-bg-color: #f2f7f4;
+  --input-hover-bg-color: #f2f7f4;
+  --default-border-color: rgba(18, 95, 49, 0.14);
+  --dialog-border-color: rgba(18, 95, 49, 0.18);
+  --sidebar-bg-color: #ffffff;
+  --sidebar-border-color: rgba(18, 95, 49, 0.16);
+  --link-color: #125f31;
+  --keybinding-color: #65736a;
+  --scrollbar-thumb: rgba(18, 95, 49, 0.24);
+  --scrollbar-thumb-hover: rgba(18, 95, 49, 0.42);
   --button-hover-bg: rgba(246, 215, 36, 0.14);
   --button-active-bg: rgba(18, 95, 49, 0.18);
   --button-active-border: rgba(18, 95, 49, 0.55);
   --focus-highlight-color: rgba(18, 95, 49, 0.38);
   --select-highlight-color: #125f31;
+  --color-selection: #125f31;
+  --color-slider-track: rgba(18, 95, 49, 0.28);
+  --color-slider-thumb: #125f31;
   --wb-excalidraw-control-bg: rgba(18, 95, 49, 0.08);
   --wb-excalidraw-control-border: rgba(18, 95, 49, 0.18);
   --wb-excalidraw-control-color: #0a4020;
@@ -666,11 +689,34 @@ body.board-page .excalidraw.theme--dark {
   --color-brand-active: #addabe;
   --color-surface-primary-container: rgba(18, 95, 49, 0.38);
   --color-on-primary-container: #e2f4e8;
+  --color-surface-high: #2b372f;
+  --color-surface-mid: #171b18;
+  --color-surface-low: #1d241f;
+  --color-surface-lowest: #121212;
+  --color-on-surface: #e0e7e2;
+  --color-border-outline: #84958a;
+  --color-border-outline-variant: #3b4a40;
+  --color-logo-text: #e2f4e8;
+  --island-bg-color: #222723;
+  --popup-bg-color: #222723;
+  --popup-secondary-bg-color: #1d231f;
+  --input-hover-bg-color: #1d231f;
+  --default-border-color: rgba(120, 189, 144, 0.18);
+  --dialog-border-color: rgba(120, 189, 144, 0.24);
+  --sidebar-bg-color: #222723;
+  --sidebar-border-color: rgba(120, 189, 144, 0.2);
+  --link-color: #90cba4;
+  --keybinding-color: #8c9b91;
+  --scrollbar-thumb: rgba(120, 189, 144, 0.28);
+  --scrollbar-thumb-hover: rgba(120, 189, 144, 0.46);
   --button-hover-bg: rgba(246, 215, 36, 0.12);
   --button-active-bg: rgba(18, 95, 49, 0.42);
   --button-active-border: rgba(246, 215, 36, 0.55);
   --focus-highlight-color: rgba(246, 215, 36, 0.55);
   --select-highlight-color: #78bd90;
+  --color-selection: #78bd90;
+  --color-slider-track: rgba(120, 189, 144, 0.42);
+  --color-slider-thumb: #78bd90;
   --wb-excalidraw-control-bg: rgba(18, 95, 49, 0.28);
   --wb-excalidraw-control-border: rgba(120, 189, 144, 0.28);
   --wb-excalidraw-control-color: #e2f4e8;
@@ -702,6 +748,17 @@ body.board-page .excalidraw .main-menu-trigger:active,
 body.board-page .excalidraw .help-icon:active {
   background-color: var(--button-active-bg);
   box-shadow: 0 0 0 1px var(--button-active-border);
+}
+
+/* Excalidraw hard-codes a violet hover surface for these dark-mode controls.
+   Route them back through the branded hover token without touching swatches. */
+body.board-page .excalidraw.theme--dark .dropdown-menu-button:hover {
+  --background: var(--button-hover-bg);
+}
+
+body.board-page .excalidraw.theme--dark .App-mobile-menu,
+body.board-page .excalidraw.theme--dark .App-menu__left {
+  --button-hover-bg: rgba(246, 215, 36, 0.12);
 }
 
 body.board-page .excalidraw .zoom-actions,
