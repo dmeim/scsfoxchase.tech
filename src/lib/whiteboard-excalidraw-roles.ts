@@ -323,10 +323,16 @@ export function useWhiteboardExcalidrawRoles(opts: {
 				fitToViewport: true,
 				viewportZoomFactor: 1,
 			})
-			const cameraFitted =
-				current.scrollX === next.appState.scrollX &&
-				current.scrollY === next.appState.scrollY &&
-				current.zoom.value === next.appState.zoom.value
+			const nextScrollX = next.appState.scrollX
+			const nextScrollY = next.appState.scrollY
+			const nextZoom = next.appState.zoom
+			if (
+				typeof nextScrollX !== 'number' ||
+				typeof nextScrollY !== 'number' ||
+				!nextZoom
+			) {
+				return
+			}
 			beginApplyingFollow()
 			api.updateScene({
 				collaborators: sceneCollaborators(
@@ -334,7 +340,9 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					sessionIdRef.current,
 				),
 				appState: {
-					...(cameraFitted ? {} : next.appState),
+					scrollX: nextScrollX,
+					scrollY: nextScrollY,
+					zoom: nextZoom,
 					userToFollow: {
 							socketId: target.socketId as NonNullable<Collaborator['socketId']>,
 						username: target.username,

@@ -36,8 +36,7 @@ npx wrangler login   # once, interactive — or set CLOUDFLARE_API_TOKEN
 Build locally as usual. To test a change **before merge**, upload a preview version (it does not take production traffic):
 
 ```bash
-npm run build
-npx wrangler versions upload
+npm run preview:upload  # type-check + tests + build + preview upload
 ```
 
 Do **not** run `npx wrangler deploy` (or `npm run deploy`) from a laptop: Workers Builds on `main` overwrites that version shortly afterward.
@@ -91,7 +90,7 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 ```bash
 npm run dev              # Astro local dev
 npm run build            # production build → dist/client/
-npx wrangler versions upload   # preview URL; does not take production traffic
+npm run preview:upload          # verified preview URL; does not take production traffic
 npx wrangler deploy --dry-run
 # npx wrangler deploy    # discouraged from a laptop — Builds overwrites it shortly after
 npx wrangler whoami      # auth check

@@ -38,6 +38,8 @@ import {
   sceneOutboxRetry,
   sceneOutboxStart,
   sceneOutboxTerminalFailure,
+  SCENE_EDIT_NOT_ALLOWED_CODE,
+  SCENE_EDIT_NOT_ALLOWED_MESSAGE,
   SCENE_MALFORMED_CODE,
   SCENE_MALFORMED_MESSAGE,
   SCENE_PERSIST_FAILED_CODE,
@@ -318,19 +320,24 @@ export default function WhiteboardCanvas({
 
   type MutationSendResult = 'sent' | 'not-ready' | 'terminal'
 
-  const showClientSceneError = useCallback((code: 'scene_too_large' | 'malformed_scene') => {
-    const now = Date.now()
-    if (now - persistErrorToastAtRef.current < 5000) return
-    persistErrorToastAtRef.current = now
-    apiRef.current?.setToast?.({
-      message:
-        code === SCENE_MALFORMED_CODE
-          ? SCENE_MALFORMED_MESSAGE
-          : SCENE_TOO_LARGE_MESSAGE,
-      duration: 8000,
-      closable: true,
-    })
-  }, [])
+  const showClientSceneError = useCallback(
+    (code: 'scene_too_large' | 'malformed_scene' | 'edit_not_allowed') => {
+      const now = Date.now()
+      if (now - persistErrorToastAtRef.current < 5000) return
+      persistErrorToastAtRef.current = now
+      apiRef.current?.setToast?.({
+        message:
+          code === SCENE_EDIT_NOT_ALLOWED_CODE
+            ? SCENE_EDIT_NOT_ALLOWED_MESSAGE
+            : code === SCENE_MALFORMED_CODE
+              ? SCENE_MALFORMED_MESSAGE
+              : SCENE_TOO_LARGE_MESSAGE,
+        duration: 8000,
+        closable: true,
+      })
+    },
+    [],
+  )
 
   const sendMutationFrame = useCallback(
     (
@@ -831,6 +838,7 @@ export default function WhiteboardCanvas({
           if (inFlight && inFlight.mutationId === errorMutationId) {
             const terminal =
               data.terminal === true ||
+              data.code === SCENE_EDIT_NOT_ALLOWED_CODE ||
               data.code === SCENE_TOO_LARGE_CODE ||
               data.code === SCENE_MALFORMED_CODE
             if (terminal) {
@@ -839,9 +847,27 @@ export default function WhiteboardCanvas({
               // the rejected payload may have contained elements unknown to
               // the server (for example, an over-4000 scene).
               forceFullNextRef.current = true
-              outboxRef.current = sceneOutboxTerminalFailure(outboxRef.current)
+              outboxRef.current = sceneOutboxTerminalFailure(
+                outboxRef.current,
+                (flight) => flight.mutationId === errorMutationId,
+              )
               mutationSocketRef.current = null
-              queueMicrotask(() => flushNowRef.current(false))
+              if (data.code === SCENE_EDIT_NOT_ALLOWED_CODE) {
+                // A coalesced snapshot was made under the same permission that
+                // rejected the flight. Report it as unsaved and rehydrate from
+                // the server before any later edit can leave this tab.
+                outboxRef.current = sceneOutboxClearPending(outboxRef.current)
+                if (flushTimerRef.current != null) {
+                  window.clearTimeout(flushTimerRef.current)
+                  flushTimerRef.current = null
+                }
+                sceneHydratedRef.current = false
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: 'scene:request' }))
+                }
+              } else {
+                queueMicrotask(() => flushNowRef.current(false))
+              }
             } else if (data.code === SCENE_PERSIST_FAILED_CODE) {
               // Keep the immutable mutation. A reconnect (with the normal
               // bounded backoff) is the only retry trigger.
@@ -962,7 +988,12 @@ export default function WhiteboardCanvas({
       // anything the previous instance had queued so the empty starting scene
       // can never be flushed over the stored board.
       sceneHydratedRef.current = false
+      const discardedPendingEdit =
+        !canEditRef.current && outboxRef.current.pending !== null
       outboxRef.current = sceneOutboxClearPending(outboxRef.current)
+      if (discardedPendingEdit) {
+        showClientSceneError(SCENE_EDIT_NOT_ALLOWED_CODE)
+      }
       if (flushTimerRef.current != null) {
         window.clearTimeout(flushTimerRef.current)
         flushTimerRef.current = null
@@ -995,7 +1026,7 @@ export default function WhiteboardCanvas({
         wsRef.current.send(JSON.stringify({ type: 'scene:request' }))
       }
     },
-    [applyRemoteElements],
+    [applyRemoteElements, showClientSceneError],
   )
 
   if (!boardId) {
@@ -1041,7 +1072,6 @@ export default function WhiteboardCanvas({
         isCollaborating
         name={roles.displayName}
         viewModeEnabled={roles.viewModeEnabled}
-        collaborators={roles.collaborators}
         onScrollChange={roles.onScrollChange}
       />
       {roles.forceFollowLocked ? (

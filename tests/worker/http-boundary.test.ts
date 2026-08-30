@@ -474,6 +474,8 @@ describe('whiteboard Worker HTTP boundary', () => {
 			role: 'editor',
 		})
 
+		const ownerFrameStart = owner.frames.length
+		const targetFrameStart = target.frames.length
 		const forceFollow = await workerFetch(
 			`${WORKER_ORIGIN}/api/whiteboard/boards/${boardId}/force-follow`,
 			{
@@ -484,6 +486,37 @@ describe('whiteboard Worker HTTP boundary', () => {
 		)
 		expect(forceFollow.status).toBe(200)
 		expect(await forceFollow.json()).toMatchObject({ forceFollow: false })
+		for (const frames of [
+			owner.frames.slice(ownerFrameStart),
+			target.frames.slice(targetFrameStart),
+		]) {
+			expect(frames).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						type: 'wb:forceFollow',
+						forceFollow: false,
+					}),
+					expect.objectContaining({
+						type: 'wb:followedBy',
+						followed: false,
+					}),
+				]),
+			)
+		}
+
+		const followedStart = owner.frames.length
+		target.send({ type: 'wb:follow', targetSessionId: owner.sessionId })
+		await owner.waitForFrameAfter(
+			followedStart,
+			(frame) => frame.type === 'wb:followedBy' && frame.followed === true,
+		)
+
+		const unfollowedStart = owner.frames.length
+		target.close()
+		await owner.waitForFrameAfter(
+			unfollowedStart,
+			(frame) => frame.type === 'wb:followedBy' && frame.followed === false,
+		)
 	})
 
 	it('keeps legacy actor query support bounded to compatibility requests', async () => {

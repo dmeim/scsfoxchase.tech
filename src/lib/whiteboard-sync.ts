@@ -27,12 +27,15 @@ export const MAX_SCENE_FRAME_BYTES =
 export const SCENE_TOO_LARGE_CODE = 'scene_too_large' as const
 export const SCENE_PERSIST_FAILED_CODE = 'persist_failed' as const
 export const SCENE_MALFORMED_CODE = 'malformed_scene' as const
+export const SCENE_EDIT_NOT_ALLOWED_CODE = 'edit_not_allowed' as const
 export const SCENE_TOO_LARGE_MESSAGE =
 	'This board is too large to save. The last change was not stored.'
 export const SCENE_PERSIST_FAILED_MESSAGE =
 	'Could not save this board. The last change was not stored.'
 export const SCENE_MALFORMED_MESSAGE =
 	'This board update was invalid and was not stored.'
+export const SCENE_EDIT_NOT_ALLOWED_MESSAGE =
+	'Your last change was not saved because editing is no longer allowed.'
 
 /** Exponential reconnect backoff with a one-minute outage ceiling. */
 export function reconnectDelayMs(attempt: number): number {
@@ -46,6 +49,7 @@ export type SceneErrorCode =
 	| typeof SCENE_TOO_LARGE_CODE
 	| typeof SCENE_PERSIST_FAILED_CODE
 	| typeof SCENE_MALFORMED_CODE
+	| typeof SCENE_EDIT_NOT_ALLOWED_CODE
 
 export type SceneErrorMessage = {
 	type: 'wb:error'
@@ -78,6 +82,13 @@ export function sceneMalformedError(
 	message = SCENE_MALFORMED_MESSAGE,
 ): ScenePersistError {
 	return new ScenePersistError(SCENE_MALFORMED_CODE, message)
+}
+
+export function sceneEditNotAllowedError(): ScenePersistError {
+	return new ScenePersistError(
+		SCENE_EDIT_NOT_ALLOWED_CODE,
+		SCENE_EDIT_NOT_ALLOWED_MESSAGE,
+	)
 }
 
 export function asScenePersistError(err: unknown): ScenePersistError {
@@ -323,7 +334,9 @@ export function sceneOutboxReplay<InFlight, Pending>(
 /** Terminal preflight/protocol failure drops only the rejected flight. */
 export function sceneOutboxTerminalFailure<InFlight, Pending>(
 	state: SceneOutboxState<InFlight, Pending>,
+	matches: (inFlight: InFlight) => boolean = () => true,
 ): SceneOutboxState<InFlight, Pending> {
+	if (state.inFlight === null || !matches(state.inFlight)) return state
 	return { inFlight: null, pending: state.pending }
 }
 

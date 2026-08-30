@@ -33,6 +33,7 @@ import {
 	parseSceneElements,
 	parseStoredSceneElements,
 	roleCanEdit,
+	sceneEditNotAllowedError,
 	sceneMalformedError,
 	sessionCanEdit,
 	sceneTooLargeError,
@@ -1227,8 +1228,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 		await this.sendConnectHello(ws, next)
 		this.broadcastParticipants()
-		void this.broadcastForceFollow()
-		void this.refreshFollowedFlags()
+		await Promise.all([
+			this.broadcastForceFollow(),
+			this.refreshFollowedFlags(),
+		])
 		return next
 	}
 
@@ -1265,8 +1268,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			canEdit: next.canEdit,
 		})
 		this.broadcastParticipants()
-		void this.broadcastForceFollow()
-		void this.refreshFollowedFlags()
+		await Promise.all([
+			this.broadcastForceFollow(),
+			this.refreshFollowedFlags(),
+		])
 	}
 
 	private async handleMetaHttp(
@@ -1275,7 +1280,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		boardId: string,
 	): Promise<Response> {
 		if (request.method === 'GET') {
-			await this.ensureBoardLifetime(boardId, { mintShareCode: false })
 			const reveal = await this.canRevealCloudOwnerKey(request, url)
 			return json(200, await this.readPublicMeta(reveal))
 		}
@@ -2581,8 +2585,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			current.targetUserId = forceFollow ? targetUserId : ''
 		}
 		await this.setForceFollowState(current)
-		void this.broadcastForceFollow()
-		void this.refreshFollowedFlags()
+		await Promise.all([
+			this.broadcastForceFollow(),
+			this.refreshFollowedFlags(),
+		])
 		const targetSessionId = this.sessionIdForUserId(current.targetUserId)
 		return json(200, {
 			forceFollow: current.enabled,
@@ -2716,12 +2722,12 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		})
 	}
 
-	private handleFollowSubscribe(
+	private async handleFollowSubscribe(
 		fromSessionId: string,
 		targetSessionId: string | null,
-	): void {
+	): Promise<void> {
 		this.persistVoluntaryFollow(fromSessionId, targetSessionId)
-		void this.refreshFollowedFlags()
+		await this.refreshFollowedFlags()
 	}
 
 	private async relaySceneBounds(
@@ -3170,7 +3176,7 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				typeof data.targetSessionId === 'string' && data.targetSessionId
 					? data.targetSessionId
 					: null
-			this.handleFollowSubscribe(sessionId, targetSessionId)
+			await this.handleFollowSubscribe(sessionId, targetSessionId)
 			return
 		}
 
@@ -3194,8 +3200,20 @@ export class WhiteboardBoard extends DurableObject<Env> {
 				ws.deserializeAttachment() as Partial<SocketAttachment> | null,
 				sessionId,
 			)
+			const rawMutationId = data.mutationId
+			const mutationId =
+				rawMutationId === undefined
+					? null
+					: isMutationId(rawMutationId)
+						? rawMutationId
+						: null
+			if (rawMutationId !== undefined && !mutationId) {
+				protocolError(ws, sceneMalformedError('The mutation ID is invalid.'))
+				return
+			}
 			// PHASE 3.3: Viewers and frozen Editors cannot mutate the document.
 			if (!sessionCanEdit(attachment.role, await this.readClassCanEdit())) {
+				protocolError(ws, sceneEditNotAllowedError(), mutationId)
 				return
 			}
 			const allowedKeys = new Set([
@@ -3208,17 +3226,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			])
 			if (Object.keys(data).some((key) => !allowedKeys.has(key))) {
 				protocolError(ws, sceneMalformedError())
-				return
-			}
-			const rawMutationId = data.mutationId
-			const mutationId =
-				rawMutationId === undefined
-					? null
-					: isMutationId(rawMutationId)
-						? rawMutationId
-						: null
-			if (rawMutationId !== undefined && !mutationId) {
-				protocolError(ws, sceneMalformedError('The mutation ID is invalid.'))
 				return
 			}
 			if ('full' in data && typeof data.full !== 'boolean') {
@@ -3311,14 +3318,14 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		} catch {
 			// already closing
 		}
-		this.handleWebSocketEnd(ws)
+		await this.handleWebSocketEnd(ws)
 	}
 
 	override async webSocketError(ws: WebSocket) {
-		this.handleWebSocketEnd(ws)
+		await this.handleWebSocketEnd(ws)
 	}
 
-	private handleWebSocketEnd(ws: WebSocket) {
+	private async handleWebSocketEnd(ws: WebSocket): Promise<void> {
 		this.hydrateSockets()
 		const raw = ws.deserializeAttachment() as Partial<SocketAttachment> | null
 		if (!raw?.sessionId) return
@@ -3328,6 +3335,6 @@ export class WhiteboardBoard extends DurableObject<Env> {
 			if (target === raw.sessionId) this.persistVoluntaryFollow(follower, null)
 		}
 		this.broadcastParticipants()
-		void this.refreshFollowedFlags()
+		await this.refreshFollowedFlags()
 	}
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('cloudflare:workers', () => ({
 	DurableObject: class DurableObject {
@@ -37,6 +37,10 @@ class FakeWebSocketRequestResponsePair {
 }
 
 type BoardPrivate = {
+	ensureBoardLifetime: (
+		boardId: string,
+		opts?: { mintShareCode?: boolean },
+	) => Promise<void>
 	ensureShareCode: (boardId: string) => Promise<{ code: string } | null>
 	revokeActiveCode: () => Promise<void>
 	expireUnsavedBoard: () => Promise<void>
@@ -383,20 +387,16 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		expect(harness.storage.put).not.toHaveBeenCalled()
 	})
 
-	it('initializes scene storage once on the first board lifetime request', async () => {
+	it('initializes scene storage once on the first trusted lifetime request', async () => {
 		const { board, sqlExec } = await createBoard()
-		const request = () =>
-			new Request(
-				`https://scsfoxchase.tech/api/whiteboard/boards/${BOARD_ID}/meta`,
-			)
 
 		expect(sqlExec).not.toHaveBeenCalled()
-		expect((await board.fetch(request())).status).toBe(200)
+		await priv(board).ensureBoardLifetime(BOARD_ID, { mintShareCode: false })
 		expect(
 			sqlExec.mock.calls.filter((call) => isSceneTableCreate(String(call[0]))),
 		).toHaveLength(1)
 
-		expect((await board.fetch(request())).status).toBe(200)
+		await priv(board).ensureBoardLifetime(BOARD_ID, { mintShareCode: false })
 		expect(
 			sqlExec.mock.calls.filter((call) => isSceneTableCreate(String(call[0]))),
 		).toHaveLength(1)
@@ -404,11 +404,9 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 
 	it('does not write schema or metadata on a second object lifetime', async () => {
 		const first = await createBoard()
-		const request = () =>
-			new Request(
-				`https://scsfoxchase.tech/api/whiteboard/boards/${BOARD_ID}/meta`,
-			)
-		await first.board.fetch(request())
+		await priv(first.board).ensureBoardLifetime(BOARD_ID, {
+			mintShareCode: false,
+		})
 		const sqlCalls = first.sqlExec.mock.calls.length
 		const storagePutCalls = first.storage.put.mock.calls.length
 
@@ -417,7 +415,9 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 			first.env,
 		)
 		await first.getInit()
-		await secondBoard.fetch(request())
+		await priv(secondBoard).ensureBoardLifetime(BOARD_ID, {
+			mintShareCode: false,
+		})
 
 		expect(first.sqlExec.mock.calls).toHaveLength(sqlCalls)
 		expect(first.storage.put.mock.calls).toHaveLength(storagePutCalls)
@@ -769,8 +769,8 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		expect(storage.delete).toHaveBeenCalledWith('meta:codeExpiresAt')
 	})
 
-	it('GET /meta does not mint or KV-put a share code', async () => {
-		const { board, codes } = await createBoard()
+	it('GET /meta is read-only for a fresh board', async () => {
+		const { board, codes, meta, sqlExec, storage } = await createBoard()
 
 		const response = await board.fetch(
 			new Request(
@@ -779,6 +779,49 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		)
 
 		expect(response.status).toBe(200)
+		expect(await response.json()).toMatchObject({
+			savedToLibrary: false,
+			cloudOwnerKey: null,
+			createdAt: null,
+			unsavedExpiresAt: null,
+			title: 'Untitled board',
+			classCanEdit: false,
+		})
+		expect(meta.size).toBe(0)
+		expect(sqlExec).not.toHaveBeenCalled()
+		expect(storage.put).not.toHaveBeenCalled()
+		expect(storage.delete).not.toHaveBeenCalled()
+		expect(storage.setAlarm).not.toHaveBeenCalled()
+		expect(storage.deleteAlarm).not.toHaveBeenCalled()
+		expect(codes.put).not.toHaveBeenCalled()
+		expect(codes.get).not.toHaveBeenCalled()
+	})
+
+	it('GET /meta returns existing lifetime metadata without rewriting it', async () => {
+		const expiresAt = '2026-08-28T12:00:00.000Z'
+		const { board, codes, sqlExec, storage } = await createBoard({ expiresAt })
+		sqlExec.mockClear()
+		storage.put.mockClear()
+		storage.delete.mockClear()
+		storage.setAlarm.mockClear()
+		storage.deleteAlarm.mockClear()
+
+		const response = await board.fetch(
+			new Request(
+				`https://scsfoxchase.tech/api/whiteboard/boards/${BOARD_ID}/meta`,
+			),
+		)
+
+		expect(response.status).toBe(200)
+		expect(await response.json()).toMatchObject({
+			createdAt: '2026-01-01T00:00:00.000Z',
+			unsavedExpiresAt: expiresAt,
+		})
+		expect(sqlExec).not.toHaveBeenCalled()
+		expect(storage.put).not.toHaveBeenCalled()
+		expect(storage.delete).not.toHaveBeenCalled()
+		expect(storage.setAlarm).not.toHaveBeenCalled()
+		expect(storage.deleteAlarm).not.toHaveBeenCalled()
 		expect(codes.put).not.toHaveBeenCalled()
 		expect(codes.get).not.toHaveBeenCalled()
 	})
@@ -882,30 +925,56 @@ describe('WhiteboardBoard share-code and persist lifetime', () => {
 		).resolves.toBe('applied')
 	})
 
-	it('skips setAlarm when an alarm is already that time', async () => {
-		const expiresAt = '2026-08-28T12:00:00.000Z'
-		const target = Date.parse(expiresAt)
-		const { board, storage } = await createBoard({
-			expiresAt,
-			alarm: target,
+	describe('alarm scheduling', () => {
+		beforeEach(() => {
+			vi.useFakeTimers()
+			vi.setSystemTime(new Date('2026-08-30T12:00:00.000Z'))
 		})
 
-		await priv(board).scheduleNextAlarm()
-
-		expect(storage.setAlarm).not.toHaveBeenCalled()
-	})
-
-	it('setAlarm runs when the existing alarm is missing or drifted', async () => {
-		const expiresAt = '2026-08-28T12:00:00.000Z'
-		const { board, storage } = await createBoard({
-			expiresAt,
-			alarm: null,
+		afterEach(() => {
+			vi.useRealTimers()
 		})
 
-		await priv(board).scheduleNextAlarm()
+		it('skips alarm changes when an alarm is already at the future expiry', async () => {
+			const expiresAt = new Date(Date.now() + 60_000).toISOString()
+			const target = Date.parse(expiresAt)
+			const { board, storage } = await createBoard({
+				expiresAt,
+				alarm: target,
+			})
 
-		expect(storage.setAlarm).toHaveBeenCalledTimes(1)
-		expect(storage.setAlarm).toHaveBeenCalledWith(Date.parse(expiresAt))
+			await priv(board).scheduleNextAlarm()
+
+			expect(storage.setAlarm).not.toHaveBeenCalled()
+			expect(storage.deleteAlarm).not.toHaveBeenCalled()
+		})
+
+		it('sets an alarm when the future expiry has no alarm', async () => {
+			const expiresAt = new Date(Date.now() + 60_000).toISOString()
+			const { board, storage } = await createBoard({
+				expiresAt,
+				alarm: null,
+			})
+
+			await priv(board).scheduleNextAlarm()
+
+			expect(storage.setAlarm).toHaveBeenCalledTimes(1)
+			expect(storage.setAlarm).toHaveBeenCalledWith(Date.parse(expiresAt))
+			expect(storage.deleteAlarm).not.toHaveBeenCalled()
+		})
+
+		it('deletes an existing alarm when the expiry has passed', async () => {
+			const expiresAt = new Date(Date.now() - 60_000).toISOString()
+			const { board, storage } = await createBoard({
+				expiresAt,
+				alarm: Date.parse(expiresAt),
+			})
+
+			await priv(board).scheduleNextAlarm()
+
+			expect(storage.deleteAlarm).toHaveBeenCalledTimes(1)
+			expect(storage.setAlarm).not.toHaveBeenCalled()
+		})
 	})
 
 	it('skips repeated writes for an unchanged Group Edit setting', async () => {

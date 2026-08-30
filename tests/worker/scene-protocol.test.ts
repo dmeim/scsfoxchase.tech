@@ -2,16 +2,21 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
 	MAX_SCENE_ELEMENTS,
 	MAX_SCENE_FRAME_BYTES,
+	SCENE_EDIT_NOT_ALLOWED_MESSAGE,
 } from '../../src/lib/whiteboard-sync'
 import {
 	bootWorker,
 	connectAndAuth,
 	disposeWorker,
 	frameHasElement,
+	joinCodeCookieHeader,
+	listShareCodeKeysForBoard,
 	newBoardId,
 	randomHostSecret,
 	readSceneUpdatedAt,
 	rectangleElement,
+	shareCodeFromKvKey,
+	workerFetch,
 } from './helpers/harness'
 
 describe('reliable scene mutation protocol', () => {
@@ -127,6 +132,103 @@ describe('reliable scene mutation protocol', () => {
 		)
 		expect(error.code).toBe('malformed_scene')
 		expect(error.terminal).toBe(true)
+	})
+
+	it('terminally rejects a frozen Editor mutation and accepts a later edit after re-enable', async () => {
+		const boardId = newBoardId()
+		const hostSecret = randomHostSecret()
+		const owner = await connectAndAuth(boardId, hostSecret)
+		sockets.push(owner)
+		const [codeKey] = await listShareCodeKeysForBoard(boardId)
+		if (!codeKey) throw new Error('Missing share code')
+
+		const editor = await connectAndAuth(boardId, '', {
+			headers: {
+				Cookie: joinCodeCookieHeader(boardId, shareCodeFromKvKey(codeKey)),
+			},
+		})
+		sockets.push(editor)
+
+		const setGroupEdit = async (classCanEdit: boolean) => {
+			const response = await workerFetch(
+				`https://example.com/api/whiteboard/boards/${boardId}/meta`,
+				{
+					method: 'PATCH',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-Board-Host': hostSecret,
+					},
+					body: JSON.stringify({ classCanEdit }),
+				},
+			)
+			expect(response.status).toBe(200)
+		}
+
+		await setGroupEdit(true)
+		await editor.waitForFrame(
+			(frame) => frame.type === 'wb:role' && frame.canEdit === true,
+		)
+		await setGroupEdit(false)
+		await editor.waitForFrame(
+			(frame) => frame.type === 'wb:role' && frame.canEdit === false,
+		)
+
+		const rejectedMutationId = crypto.randomUUID()
+		const rejectedElement = rectangleElement()
+		const rejectedStart = editor.frames.length
+		editor.send({
+			type: 'scene:update',
+			mutationId: rejectedMutationId,
+			elements: [rejectedElement],
+			full: true,
+		})
+		const rejected = await editor.waitForFrameAfter(
+			rejectedStart,
+			(frame) =>
+				frame.type === 'wb:error' && frame.mutationId === rejectedMutationId,
+			500,
+		)
+		expect(rejected).toMatchObject({
+			code: 'edit_not_allowed',
+			message: SCENE_EDIT_NOT_ALLOWED_MESSAGE,
+			terminal: true,
+		})
+		const resyncStart = editor.frames.length
+		editor.send({ type: 'scene:request' })
+		const authoritative = await editor.waitForFrameAfter(
+			resyncStart,
+			(frame) => frame.type === 'scene:sync',
+		)
+		expect(frameHasElement(authoritative, rejectedElement.id)).toBe(false)
+		expect(
+			editor.frames
+				.slice(rejectedStart)
+				.some(
+					(frame) =>
+						frame.type === 'scene:ack' &&
+						frame.mutationId === rejectedMutationId,
+				),
+		).toBe(false)
+
+		await setGroupEdit(true)
+		await editor.waitForFrame(
+			(frame) =>
+				frame.type === 'wb:role' &&
+				frame.canEdit === true &&
+				editor.frames.indexOf(frame) >= rejectedStart,
+		)
+		const acceptedMutationId = crypto.randomUUID()
+		editor.send({
+			type: 'scene:update',
+			mutationId: acceptedMutationId,
+			elements: [rectangleElement()],
+			full: false,
+		})
+		const accepted = await editor.waitForFrame(
+			(frame) =>
+				frame.type === 'scene:ack' && frame.mutationId === acceptedMutationId,
+		)
+		expect(accepted.status).toBe('applied')
 	})
 
 	it('parses and broadcasts an appState-only mutation without rewriting identical state', async () => {

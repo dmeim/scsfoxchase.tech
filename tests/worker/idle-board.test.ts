@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { runInDurableObject } from 'cloudflare:test'
 import { CLIENT_PING_MS } from '../../src/lib/whiteboard-sync'
 import {
+	boardStub,
 	bootWorker,
 	connectAndAuth,
 	disposeWorker,
@@ -29,12 +31,33 @@ describe('idle board does not write', () => {
 		await disposeWorker()
 	})
 
-	it('does not mint a share-code KV key from GET /meta alone', async () => {
+	it('keeps a fresh Durable Object write-free after GET /meta', async () => {
 		const boardId = newBoardId()
 		const meta = await workerFetch(
 			`${WORKER_ORIGIN}/api/whiteboard/boards/${boardId}/meta`,
 		)
 		expect(meta.status).toBe(200)
+		expect(await meta.json()).toMatchObject({
+			savedToLibrary: false,
+			createdAt: null,
+			unsavedExpiresAt: null,
+			title: 'Untitled board',
+			classCanEdit: false,
+		})
+		const snapshot = await runInDurableObject(
+			boardStub(boardId),
+			async (_instance, state) => ({
+				metaKeys: [...(await state.storage.list({ prefix: 'meta:' })).keys()],
+				alarm: await state.storage.getAlarm(),
+				tables: state.storage.sql
+					.exec<{ name: string }>(
+						"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+					)
+					.toArray()
+					.map((row) => row.name),
+			}),
+		)
+		expect(snapshot).toEqual({ metaKeys: [], alarm: null, tables: [] })
 		expect(await listShareCodeKeysForBoard(boardId)).toEqual([])
 	})
 

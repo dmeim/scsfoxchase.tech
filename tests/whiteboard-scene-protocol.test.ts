@@ -8,6 +8,7 @@ import {
 	preflightSceneMutationFrame,
 	reconnectDelayMs,
 	sceneOutboxAcknowledge,
+	sceneOutboxClearPending,
 	sceneOutboxQueue,
 	sceneOutboxReplay,
 	sceneOutboxRetry,
@@ -117,5 +118,39 @@ describe('bounded scene protocol primitives', () => {
 		})
 		expect(reconnectDelayMs(0)).toBe(500)
 		expect(reconnectDelayMs(7)).toBe(60_000)
+	})
+
+	it('retires only a matching rejection and stays live after a downgrade clears pending', () => {
+		const rejected = { mutationId: 'rejected', baseRevision: 4 }
+		const pending = { label: 'pending', baseRevision: 4 }
+		let state = sceneOutboxQueue(
+			sceneOutboxStart(
+				{
+					inFlight: null as typeof rejected | null,
+					pending: null as typeof pending | null,
+				},
+				rejected,
+			),
+			pending,
+		)
+
+		const beforeMismatchedRejection = state
+		state = sceneOutboxTerminalFailure(
+			state,
+			(flight) => flight.mutationId === 'another-mutation',
+		)
+		expect(state).toBe(beforeMismatchedRejection)
+
+		state = sceneOutboxClearPending(state)
+		expect(state).toEqual({ inFlight: rejected, pending: null })
+		state = sceneOutboxTerminalFailure(
+			state,
+			(flight) => flight.mutationId === rejected.mutationId,
+		)
+		expect(state).toEqual({ inFlight: null, pending: null })
+
+		const next = { mutationId: 'next', baseRevision: 5 }
+		state = sceneOutboxStart(state, next)
+		expect(state).toEqual({ inFlight: next, pending: null })
 	})
 })

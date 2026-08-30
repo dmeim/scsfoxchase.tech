@@ -4,6 +4,7 @@
  * and optional users.getUser for Google sub.
  */
 import { createClerkClient, verifyToken } from '@clerk/backend'
+import { waitUntil } from 'cloudflare:workers'
 
 export type ClerkWhiteboardAuth = {
 	clerkUserId: string
@@ -15,11 +16,7 @@ export type ClerkWhiteboardAuth = {
 }
 
 function publishableKey(env: Env): string {
-	return (
-		env.PUBLIC_CLERK_PUBLISHABLE_KEY ||
-		env.CLERK_PUBLISHABLE_KEY ||
-		''
-	)
+	return env.PUBLIC_CLERK_PUBLISHABLE_KEY || ''
 }
 
 function parseAllowedDomains(raw: string | undefined): {
@@ -121,8 +118,11 @@ const PROFILE_MEMORY_FRESH_MS = 10 * 60 * 1000
 const PROFILE_KV_TTL_SECONDS = 30 * 24 * 60 * 60
 const PROFILE_KV_REFRESH_MS = 24 * 60 * 60 * 1000
 const PROFILE_FETCH_TIMEOUT_MS = 5000
+const PROFILE_REFRESH_RETRY_COOLDOWN_MS = 60 * 1000
 
 const profileMemoryCache = new Map<string, CachedClerkProfile>()
+const profileRefreshInFlight = new Map<string, Promise<void>>()
+const profileRefreshRetryAfter = new Map<string, number>()
 
 function profileKvKey(clerkUserId: string): string {
 	return `clerkuser:${clerkUserId}`
@@ -221,6 +221,44 @@ async function writeKvProfile(
 	}
 }
 
+function refreshClerkProfile(
+	clerk: ReturnType<typeof createClerkClient>,
+	clerkUserId: string,
+	env: Env,
+	now: number,
+): void {
+	if (profileRefreshInFlight.has(clerkUserId)) return
+
+	const retryAfter = profileRefreshRetryAfter.get(clerkUserId) ?? 0
+	if (now < retryAfter) return
+	profileRefreshRetryAfter.delete(clerkUserId)
+
+	let tracked: Promise<void>
+	tracked = (async () => {
+		const fresh = await withTimeout(
+			fetchProfileFromClerk(clerk, clerkUserId),
+			PROFILE_FETCH_TIMEOUT_MS,
+		)
+		if (!fresh) {
+			profileRefreshRetryAfter.set(
+				clerkUserId,
+				Date.now() + PROFILE_REFRESH_RETRY_COOLDOWN_MS,
+			)
+			return
+		}
+		profileRefreshRetryAfter.delete(clerkUserId)
+		profileMemoryCache.set(clerkUserId, fresh)
+		await writeKvProfile(env, clerkUserId, fresh)
+	})().finally(() => {
+		if (profileRefreshInFlight.get(clerkUserId) === tracked) {
+			profileRefreshInFlight.delete(clerkUserId)
+		}
+	})
+
+	profileRefreshInFlight.set(clerkUserId, tracked)
+	waitUntil(tracked)
+}
+
 async function resolveClerkProfile(
 	clerk: ReturnType<typeof createClerkClient>,
 	clerkUserId: string,
@@ -236,11 +274,7 @@ async function resolveClerkProfile(
 	if (kv) {
 		profileMemoryCache.set(clerkUserId, kv)
 		if (now - kv.fetchedAt > PROFILE_KV_REFRESH_MS) {
-			void fetchProfileFromClerk(clerk, clerkUserId).then((fresh) => {
-				if (!fresh) return
-				profileMemoryCache.set(clerkUserId, fresh)
-				return writeKvProfile(env, clerkUserId, fresh)
-			})
+			refreshClerkProfile(clerk, clerkUserId, env, now)
 		}
 		return kv
 	}

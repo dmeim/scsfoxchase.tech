@@ -31,8 +31,7 @@ Build locally as usual. To test a change **before merge**, upload a preview vers
 
 ```bash
 npm install
-npm run build                 # astro build → dist/client/
-npx wrangler versions upload  # preview URL; does not take production traffic
+npm run preview:upload  # type-check + tests + build + preview upload
 ```
 
 Do **not** run `npx wrangler deploy` (or `npm run deploy`) from a laptop: Workers Builds on `main` overwrites that version shortly afterward.

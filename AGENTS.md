@@ -9,7 +9,7 @@ St. Cecilia Technology — a PWA dashboard and educational games catalog for a g
 
 - **Dev server**: `npm run dev` (Astro)
 - **Production build**: `npm run build` → output under `dist/client/`
-- **Deploy**: GitHub **Workers Builds** on `main` is the only production deployer (Worker name `scsfoxchase-tech`). Do not deploy from a laptop — Workers Builds rebuilds the same commit and replaces it. Pre-merge check: `npx wrangler versions upload`.
+- **Deploy**: GitHub **Workers Builds** on `main` is the only production deployer (Worker name `scsfoxchase-tech`). Do not deploy from a laptop — Workers Builds rebuilds the same commit and replaces it. Pre-merge check: `npm run preview:upload` (scoped whiteboard type-check, tests, build, then `wrangler versions upload`).
 - **Which commit is live**: `GET /api/whiteboard/version` → `{ sha, builtAt }`. Check it before trusting a production observation.
 - **Domain**: scsfoxchase.tech
 

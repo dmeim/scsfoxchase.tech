@@ -1,5 +1,7 @@
 # Local Worker / wrangler secrets (gitignored). Copy from .env for `astro preview` /
-# `wrangler dev` so the custom Worker entry can verify Clerk JWTs.
+# `wrangler dev` so the custom Worker entry can verify Clerk JWTs and exercise
+# authenticated administrative routes without putting credentials in source.
 CLERK_SECRET_KEY=
+WHITEBOARD_ADMIN_SECRET=
 PUBLIC_CLERK_PUBLISHABLE_KEY=
 PUBLIC_CLERK_ALLOWED_DOMAINS=stceciliafc.com

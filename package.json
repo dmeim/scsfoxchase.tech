@@ -12,9 +12,11 @@
     "prebuild": "npm run copy-excalidraw-fonts",
     "dev": "astro dev --host",
     "test": "vitest run",
+    "typecheck:whiteboard": "tsc -p tsconfig.whiteboard.json",
+    "verify:whiteboard": "npm run typecheck:whiteboard && npm test && npm run build",
     "build": "astro build",
     "preview": "astro preview",
-    "preview:upload": "npm run build && wrangler versions upload"
+    "preview:upload": "npm run verify:whiteboard && wrangler versions upload"
   },
   "keywords": [],
   "author": "",

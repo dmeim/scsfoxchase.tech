@@ -71,7 +71,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 
 - **Live domain:** [https://scsfoxchase.tech](https://scsfoxchase.tech)
 - **Build:** `npm run build` → assets under `dist/client/`
-- **Deploy:** GitHub **Workers Builds** on `main` is the only production deployer. Deploying from a laptop is discouraged — Workers Builds rebuilds the same commit shortly after and replaces it. For a pre-merge check use `npx wrangler versions upload`.
+- **Deploy:** GitHub **Workers Builds** on `main` is the only production deployer. Deploying from a laptop is discouraged — Workers Builds rebuilds the same commit shortly after and replaces it. For a pre-merge check use `npm run preview:upload`, which runs the scoped whiteboard type-check, tests, build, and then uploads a preview version.
 - **Which commit is live:** `GET /api/whiteboard/version` → `{ sha, builtAt }`. Confirm it before trusting any production observation.
 
 ### Where things live

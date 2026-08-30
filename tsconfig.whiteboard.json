@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    ".astro/types.d.ts",
+    "worker-configuration.d.ts",
+    "src/components/WhiteboardCanvas.tsx",
+    "src/lib/whiteboard-*.ts",
+    "src/worker.ts",
+    "src/worker/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "tests"
+  ]
+}
