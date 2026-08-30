@@ -53,6 +53,18 @@ function AuthBridge() {
 	const { isLoaded, isSignedIn, getToken } = useAuth()
 	const { user, isLoaded: userLoaded } = useUser()
 	const clerk = useClerk()
+	const userProfileSignature = user
+		? [
+				user.id,
+				user.fullName ?? '',
+				user.firstName ?? '',
+				user.lastName ?? '',
+				user.username ?? '',
+				user.imageUrl ?? '',
+				user.primaryEmailAddress?.emailAddress ?? '',
+				user.updatedAt?.getTime() ?? 0,
+			].join('\0')
+		: ''
 
 	useEffect(() => {
 		setSessionTokenGetter(async (options) => {
@@ -88,7 +100,15 @@ function AuthBridge() {
 
 		setActiveIdentity(identity)
 		void markAuthResolvedAfterTokenSettle(() => getToken())
-	}, [isLoaded, userLoaded, isSignedIn, user, clerk, getToken])
+	}, [
+		isLoaded,
+		userLoaded,
+		isSignedIn,
+		user,
+		userProfileSignature,
+		clerk,
+		getToken,
+	])
 
 	return null
 }

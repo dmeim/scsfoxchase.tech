@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const clerkMocks = vi.hoisted(() => ({
 	authenticateRequest: vi.fn(),
 	getUser: vi.fn(),
+	verifyToken: vi.fn(),
 	waitUntil: vi.fn(),
 }))
 
@@ -11,14 +12,17 @@ vi.mock('@clerk/backend', () => ({
 		authenticateRequest: clerkMocks.authenticateRequest,
 		users: { getUser: clerkMocks.getUser },
 	}),
-	verifyToken: vi.fn(),
+	verifyToken: clerkMocks.verifyToken,
 }))
 
 vi.mock('cloudflare:workers', () => ({
 	waitUntil: clerkMocks.waitUntil,
 }))
 
-import { requireClerkWhiteboardAuth } from '../src/worker/clerkAuth'
+import {
+	requireClerkWhiteboardAuth,
+	verifyClerkWhiteboardToken,
+} from '../src/worker/clerkAuth'
 
 type Deferred<T> = {
 	promise: Promise<T>
@@ -41,6 +45,7 @@ function staleProfile(clerkUserId: string): string {
 		accountId: `google-${clerkUserId}`,
 		email: `${clerkUserId}@example.edu`,
 		displayName: 'Cached User',
+		profileUpdatedAt: Date.now() - 60_000,
 		fetchedAt: Date.now() - 25 * 60 * 60 * 1000,
 	})
 }
@@ -57,6 +62,7 @@ function freshClerkUser(clerkUserId: string) {
 		lastName: null,
 		username: null,
 		imageUrl: 'https://example.edu/avatar.png',
+		updatedAt: Date.now(),
 	}
 }
 
@@ -68,16 +74,17 @@ function authRequest(): Request {
 
 function authEnv(clerkUserId: string) {
 	const put = vi.fn(async () => undefined)
+	const get = vi.fn(async () => staleProfile(clerkUserId))
 	const env = {
 		CLERK_SECRET_KEY: 'test-secret',
 		PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test',
 		PUBLIC_CLERK_ALLOWED_DOMAINS: 'example.edu',
 		WHITEBOARD_CODES: {
-			get: vi.fn(async () => staleProfile(clerkUserId)),
+			get,
 			put,
 		},
 	} as unknown as Env
-	return { env, put }
+	return { env, get, put }
 }
 
 function authenticateAs(clerkUserId: string): void {
@@ -93,6 +100,7 @@ describe('Clerk stale profile refresh', () => {
 		vi.setSystemTime(new Date('2026-08-30T12:00:00.000Z'))
 		clerkMocks.authenticateRequest.mockReset()
 		clerkMocks.getUser.mockReset()
+		clerkMocks.verifyToken.mockReset()
 		clerkMocks.waitUntil.mockReset()
 	})
 
@@ -168,5 +176,73 @@ describe('Clerk stale profile refresh', () => {
 		await Promise.all(lifetimePromises)
 		expect(clerkMocks.getUser).toHaveBeenCalledTimes(2)
 		expect(clerkMocks.waitUntil).toHaveBeenCalledTimes(2)
+	})
+
+	it('refreshes Clerk immediately when a connected user reports a profile update', async () => {
+		const clerkUserId = 'profile-update-user'
+		const { env, put } = authEnv(clerkUserId)
+		clerkMocks.verifyToken.mockResolvedValue({ sub: clerkUserId })
+		clerkMocks.getUser.mockResolvedValue(freshClerkUser(clerkUserId))
+
+		const auth = await verifyClerkWhiteboardToken(
+			'session-token',
+			env,
+			'https://scsfoxchase.tech',
+			{ refreshProfile: true },
+		)
+
+		expect(auth).toMatchObject({
+			clerkUserId,
+			accountId: `fresh-${clerkUserId}`,
+			displayName: 'Fresh User',
+		})
+		expect(clerkMocks.getUser).toHaveBeenCalledTimes(1)
+		expect(put).toHaveBeenCalledWith(
+			`clerkuser:${clerkUserId}`,
+			expect.stringContaining('Fresh User'),
+			{ expirationTtl: 30 * 24 * 60 * 60 },
+		)
+	})
+
+	it('refreshes a newer Clerk profile revision on a later board visit', async () => {
+		const clerkUserId = 'newer-profile-revision-user'
+		const { env } = authEnv(clerkUserId)
+		clerkMocks.verifyToken.mockResolvedValue({ sub: clerkUserId })
+		clerkMocks.getUser.mockResolvedValue(freshClerkUser(clerkUserId))
+
+		const auth = await verifyClerkWhiteboardToken(
+			'session-token',
+			env,
+			'https://scsfoxchase.tech',
+			{ profileUpdatedAt: Date.now() },
+		)
+
+		expect(auth?.displayName).toBe('Fresh User')
+		expect(clerkMocks.getUser).toHaveBeenCalledTimes(1)
+	})
+
+	it('keeps the cache hot when the Clerk profile revision is unchanged', async () => {
+		const clerkUserId = 'same-profile-revision-user'
+		const { env, get } = authEnv(clerkUserId)
+		clerkMocks.verifyToken.mockResolvedValue({ sub: clerkUserId })
+		get.mockResolvedValue(
+			JSON.stringify({
+				accountId: `google-${clerkUserId}`,
+				email: `${clerkUserId}@example.edu`,
+				displayName: 'Cached User',
+				profileUpdatedAt: Date.now() - 60_000,
+				fetchedAt: Date.now(),
+			}),
+		)
+
+		const auth = await verifyClerkWhiteboardToken(
+			'session-token',
+			env,
+			'https://scsfoxchase.tech',
+			{ profileUpdatedAt: Date.now() - 60_000 },
+		)
+
+		expect(auth?.displayName).toBe('Cached User')
+		expect(clerkMocks.getUser).not.toHaveBeenCalled()
 	})
 })

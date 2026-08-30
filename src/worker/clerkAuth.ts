@@ -111,7 +111,13 @@ type CachedClerkProfile = {
 	email: string
 	displayName: string
 	avatarUrl?: string
+	profileUpdatedAt?: number
 	fetchedAt: number
+}
+
+type ClerkProfileResolveOptions = {
+	refreshProfile?: boolean
+	profileUpdatedAt?: number
 }
 
 const PROFILE_MEMORY_FRESH_MS = 10 * 60 * 1000
@@ -119,10 +125,17 @@ const PROFILE_KV_TTL_SECONDS = 30 * 24 * 60 * 60
 const PROFILE_KV_REFRESH_MS = 24 * 60 * 60 * 1000
 const PROFILE_FETCH_TIMEOUT_MS = 5000
 const PROFILE_REFRESH_RETRY_COOLDOWN_MS = 60 * 1000
+/** Bound explicit profile refreshes without delaying the first real update. */
+const PROFILE_EXPLICIT_REFRESH_COOLDOWN_MS = 5 * 1000
 
 const profileMemoryCache = new Map<string, CachedClerkProfile>()
 const profileRefreshInFlight = new Map<string, Promise<void>>()
 const profileRefreshRetryAfter = new Map<string, number>()
+const profileExplicitRefreshInFlight = new Map<
+	string,
+	Promise<CachedClerkProfile | null>
+>()
+const profileExplicitRefreshAfter = new Map<string, number>()
 
 function profileKvKey(clerkUserId: string): string {
 	return `clerkuser:${clerkUserId}`
@@ -168,6 +181,10 @@ async function fetchProfileFromClerk(
 			email,
 			displayName,
 			avatarUrl: user.imageUrl || undefined,
+			profileUpdatedAt:
+				Number.isSafeInteger(user.updatedAt) && user.updatedAt > 0
+					? user.updatedAt
+					: undefined,
 			fetchedAt: Date.now(),
 		}
 	} catch {
@@ -196,12 +213,65 @@ async function readKvProfile(
 					: 'Signed-in user',
 			avatarUrl:
 				typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : undefined,
+			profileUpdatedAt:
+				typeof parsed.profileUpdatedAt === 'number' &&
+				Number.isSafeInteger(parsed.profileUpdatedAt) &&
+				parsed.profileUpdatedAt > 0
+					? parsed.profileUpdatedAt
+					: undefined,
 			fetchedAt:
 				typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : 0,
 		}
 	} catch {
 		return null
 	}
+}
+
+async function refreshClerkProfileNow(
+	clerk: ReturnType<typeof createClerkClient>,
+	clerkUserId: string,
+	env: Env,
+	now: number,
+): Promise<CachedClerkProfile | null> {
+	const inFlight = profileExplicitRefreshInFlight.get(clerkUserId)
+	if (inFlight) return inFlight
+	if (now < (profileExplicitRefreshAfter.get(clerkUserId) ?? 0)) {
+		return null
+	}
+	profileExplicitRefreshAfter.set(
+		clerkUserId,
+		now + PROFILE_EXPLICIT_REFRESH_COOLDOWN_MS,
+	)
+	let tracked: Promise<CachedClerkProfile | null>
+	tracked = (async () => {
+		const fresh = await withTimeout(
+			fetchProfileFromClerk(clerk, clerkUserId),
+			PROFILE_FETCH_TIMEOUT_MS,
+		)
+		if (!fresh) return null
+		profileMemoryCache.set(clerkUserId, fresh)
+		await writeKvProfile(env, clerkUserId, fresh)
+		return fresh
+	})().finally(() => {
+		if (profileExplicitRefreshInFlight.get(clerkUserId) === tracked) {
+			profileExplicitRefreshInFlight.delete(clerkUserId)
+		}
+	})
+	profileExplicitRefreshInFlight.set(clerkUserId, tracked)
+	return tracked
+}
+
+function clientHasNewerProfile(
+	profile: CachedClerkProfile,
+	options: ClerkProfileResolveOptions | undefined,
+): boolean {
+	const requested = options?.profileUpdatedAt
+	return Boolean(
+		typeof requested === 'number' &&
+		Number.isSafeInteger(requested) &&
+		requested > 0 &&
+		requested > (profile.profileUpdatedAt ?? 0),
+	)
 }
 
 async function writeKvProfile(
@@ -263,9 +333,17 @@ async function resolveClerkProfile(
 	clerk: ReturnType<typeof createClerkClient>,
 	clerkUserId: string,
 	env: Env,
+	options?: ClerkProfileResolveOptions,
 ): Promise<CachedClerkProfile | null> {
 	const now = Date.now()
 	const memory = profileMemoryCache.get(clerkUserId)
+	if (
+		memory &&
+		(options?.refreshProfile || clientHasNewerProfile(memory, options))
+	) {
+		const fresh = await refreshClerkProfileNow(clerk, clerkUserId, env, now)
+		if (fresh) return fresh
+	}
 	if (memory && now - memory.fetchedAt < PROFILE_MEMORY_FRESH_MS) {
 		return memory
 	}
@@ -273,6 +351,10 @@ async function resolveClerkProfile(
 	const kv = await readKvProfile(env, clerkUserId)
 	if (kv) {
 		profileMemoryCache.set(clerkUserId, kv)
+		if (options?.refreshProfile || clientHasNewerProfile(kv, options)) {
+			const fresh = await refreshClerkProfileNow(clerk, clerkUserId, env, now)
+			if (fresh) return fresh
+		}
 		if (now - kv.fetchedAt > PROFILE_KV_REFRESH_MS) {
 			refreshClerkProfile(clerk, clerkUserId, env, now)
 		}
@@ -297,8 +379,9 @@ async function authFromClerkUserId(
 	clerk: ReturnType<typeof createClerkClient>,
 	clerkUserId: string,
 	env: Env,
+	options?: ClerkProfileResolveOptions,
 ): Promise<ClerkWhiteboardAuth | null> {
-	const profile = await resolveClerkProfile(clerk, clerkUserId, env)
+	const profile = await resolveClerkProfile(clerk, clerkUserId, env, options)
 	const accountId = profile?.accountId || clerkUserId
 	const email = profile?.email ?? ''
 
@@ -422,6 +505,7 @@ export async function verifyClerkWhiteboardToken(
 	token: string,
 	env: Env,
 	origin?: string | null,
+	options?: ClerkProfileResolveOptions,
 ): Promise<ClerkWhiteboardAuth | null> {
 	const value = token.trim()
 	if (!value) return null
@@ -435,7 +519,7 @@ export async function verifyClerkWhiteboardToken(
 		})
 		const clerkUserId = subFromVerifyTokenResult(verified)
 		if (!clerkUserId) return null
-		return authFromClerkUserId(clerkClient(env), clerkUserId, env)
+		return authFromClerkUserId(clerkClient(env), clerkUserId, env, options)
 	} catch {
 		return null
 	}

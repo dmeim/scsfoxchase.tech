@@ -15,6 +15,8 @@ export type WhiteboardIdentity = {
 	email: string
 	displayName: string
 	avatarUrl?: string
+	/** Clerk profile revision, used to invalidate the Worker's profile cache. */
+	profileUpdatedAt?: number
 	/** Clerk user id (session subject). */
 	clerkUserId: string
 }
@@ -66,7 +68,15 @@ function getAuthStore(): WhiteboardAuthStore {
 
 function identityKey(identity: WhiteboardIdentity | null): string {
 	if (!identity) return ''
-	return `${identity.accountId}\0${identity.clerkUserId}\0${identity.ownerKey}`
+	return [
+		identity.accountId,
+		identity.clerkUserId,
+		identity.ownerKey,
+		identity.email,
+		identity.displayName,
+		identity.avatarUrl ?? '',
+		identity.profileUpdatedAt ?? 0,
+	].join('\0')
 }
 
 export function isClerkConfigured(): boolean {
@@ -353,6 +363,7 @@ type ClerkLikeUser = {
 	lastName?: string | null
 	username?: string | null
 	imageUrl?: string | null
+	updatedAt?: Date | number | null
 	primaryEmailAddress?: { emailAddress: string } | null
 	emailAddresses?: Array<{ emailAddress: string }>
 	externalAccounts?: Array<{
@@ -393,6 +404,16 @@ export function identityFromClerkUser(user: ClerkLikeUser): WhiteboardIdentity {
 		user.username?.trim() ||
 		email.split('@')[0] ||
 		'Signed-in user'
+	const rawUpdatedAt =
+		user.updatedAt instanceof Date
+			? user.updatedAt.getTime()
+			: typeof user.updatedAt === 'number'
+				? user.updatedAt
+				: 0
+	const profileUpdatedAt =
+		Number.isSafeInteger(rawUpdatedAt) && rawUpdatedAt > 0
+			? rawUpdatedAt
+			: undefined
 
 	return {
 		accountId,
@@ -400,6 +421,7 @@ export function identityFromClerkUser(user: ClerkLikeUser): WhiteboardIdentity {
 		email,
 		displayName,
 		avatarUrl: user.imageUrl || undefined,
+		profileUpdatedAt,
 		clerkUserId: user.id,
 	}
 }

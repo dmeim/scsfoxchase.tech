@@ -10,7 +10,11 @@ import {
 	zoomToFitBounds,
 } from '@excalidraw/excalidraw'
 import type { Collaborator, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { getActiveIdentity, identityMatchIds } from './whiteboard-identity'
+import {
+	getActiveIdentity,
+	identityMatchIds,
+	onAuthChange,
+} from './whiteboard-identity'
 import {
 	generateGuestDisplayName,
 	peopleListLabel,
@@ -180,7 +184,9 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	const [collaborators, setCollaborators] = useState<Map<string, Collaborator>>(
 		() => new Map(),
 	)
-	const [displayName] = useState(() => getBoardConnectIdentity().displayName)
+	const [displayName, setDisplayName] = useState(
+		() => getBoardConnectIdentity().displayName,
+	)
 
 	const peopleRef = useRef<ParticipantRow[]>([])
 	const sessionIdRef = useRef('')
@@ -207,6 +213,16 @@ export function useWhiteboardExcalidrawRoles(opts: {
 	const followPaintRafRef = useRef<number | null>(null)
 	const pendingFollowApplyRef = useRef(false)
 	const [forceFollowLocked, setForceFollowLocked] = useState(false)
+
+	useEffect(
+		() =>
+			onAuthChange((identity) => {
+				if (identity?.displayName) {
+					setDisplayName(identity.displayName.slice(0, 48))
+				}
+			}),
+		[],
+	)
 
 	const beginApplyingFollow = () => {
 		applyingFollowRef.current = true

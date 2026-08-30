@@ -4,6 +4,7 @@ import {
 	getSessionTokenSettled,
 	markAuthResolved,
 	markAuthResolvedAfterTokenSettle,
+	onAuthChange,
 	peekSessionToken,
 	raceSettled,
 	setActiveIdentity,
@@ -68,6 +69,23 @@ describe('getSessionTokenSettled', () => {
 		const pending = getSessionTokenSettled(AUTH_GET_TOKEN_SETTLE_MS)
 		await vi.advanceTimersByTimeAsync(AUTH_GET_TOKEN_SETTLE_MS)
 		await expect(pending).resolves.toBeNull()
+	})
+})
+
+describe('setActiveIdentity profile changes', () => {
+	it('publishes a Clerk display-name update for other client islands', () => {
+		setActiveIdentity(signedInIdentity())
+		const changes: Array<WhiteboardIdentity | null> = []
+		const stop = onAuthChange((identity) => changes.push(identity))
+
+		setActiveIdentity({
+			...signedInIdentity(),
+			displayName: 'Updated Teacher',
+		})
+
+		expect(changes).toHaveLength(1)
+		expect(changes[0]?.displayName).toBe('Updated Teacher')
+		stop()
 	})
 })
 

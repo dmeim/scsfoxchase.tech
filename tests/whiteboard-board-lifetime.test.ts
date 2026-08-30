@@ -13,6 +13,7 @@ vi.mock('cloudflare:workers', () => ({
 
 import {
 	WhiteboardBoard,
+	shouldApplySocketIdentityRefresh,
 	shouldApplySocketRoleUpgrade,
 	shouldReplaceStorageAlarm,
 	shouldSkipIdenticalScenePersist,
@@ -348,6 +349,28 @@ describe('shouldApplySocketRoleUpgrade', () => {
 		expect(shouldApplySocketRoleUpgrade('owner', 'viewer')).toBe(false)
 		expect(shouldApplySocketRoleUpgrade('manager', 'editor')).toBe(false)
 		expect(shouldApplySocketRoleUpgrade('editor', 'editor')).toBe(false)
+	})
+})
+
+describe('shouldApplySocketIdentityRefresh', () => {
+	it('accepts a verified Clerk name on a same-role socket', () => {
+		expect(
+			shouldApplySocketIdentityRefresh(
+				{ userId: 'guest-id', displayName: 'Curious Falcon' },
+				{ userId: 'google-id', displayName: 'Updated Teacher' },
+				true,
+			),
+		).toBe(true)
+	})
+
+	it('does not trust an unverified identity change', () => {
+		expect(
+			shouldApplySocketIdentityRefresh(
+				{ userId: 'google-id', displayName: 'Teacher' },
+				{ userId: '', displayName: 'Random Guest' },
+				false,
+			),
+		).toBe(false)
 	})
 })
 

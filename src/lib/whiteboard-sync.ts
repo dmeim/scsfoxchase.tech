@@ -228,6 +228,10 @@ export type BoardPublicMeta = {
 export type ConnectAuthMessage = {
 	type: 'wb:auth'
 	token?: string
+	/** Clerk User.updatedAt, so the Worker can invalidate an older profile cache. */
+	profileUpdatedAt?: number
+	/** Profile changed while this board was open; force one bounded Clerk refresh. */
+	refreshProfile?: boolean
 	/** Creating-browser scratch Owner proof. Omit after Google claim / `savedToLibrary`. */
 	hostSecret?: string
 }

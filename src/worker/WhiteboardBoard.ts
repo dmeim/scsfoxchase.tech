@@ -113,6 +113,19 @@ export function shouldApplySocketRoleUpgrade(
 	return rank[next] > rank[current]
 }
 
+export function shouldApplySocketIdentityRefresh(
+	current: { userId: string; displayName: string },
+	next: { userId: string; displayName: string },
+	clerkAuthenticated: boolean,
+): boolean {
+	return Boolean(
+		clerkAuthenticated &&
+			next.userId &&
+			(next.userId !== current.userId ||
+				next.displayName !== current.displayName),
+	)
+}
+
 const SCENE_TABLE_SQL = `
 	CREATE TABLE IF NOT EXISTS excalidraw_scene (
 		id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -307,6 +320,11 @@ interface SocketAttachment {
 	joinedViaShareCode?: boolean
 	/** Board UUID from the connect URL (Durable Object name). */
 	boardId?: string
+}
+
+type ResolvedSocketAuth = {
+	attachment: SocketAttachment
+	clerkAuthenticated: boolean
 }
 
 // PHASE 3.3
@@ -1129,17 +1147,27 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		attachment: SocketAttachment,
 		data: Record<string, unknown>,
 		opts: { mintHost: boolean },
-	): Promise<SocketAttachment | null> {
+	): Promise<ResolvedSocketAuth | null> {
 		// Identity comes only from this message. Clerk is never resolved during
 		// the upgrade, so there is nothing carried over from connect.
 		let clerkAuth: ClerkWhiteboardAuth | null = null
 		const rawToken = 'token' in data ? data.token : undefined
 		const token = typeof rawToken === 'string' ? rawToken.trim() : ''
 		if (token) {
+			const profileUpdatedAt =
+				typeof data.profileUpdatedAt === 'number' &&
+				Number.isSafeInteger(data.profileUpdatedAt) &&
+				data.profileUpdatedAt > 0
+					? data.profileUpdatedAt
+					: undefined
 			const fromToken = await verifyClerkWhiteboardToken(
 				token,
 				this.env,
 				attachment.connectOrigin,
+				{
+					refreshProfile: data.refreshProfile === true,
+					profileUpdatedAt,
+				},
 			)
 			if (fromToken) clerkAuth = fromToken
 		}
@@ -1187,19 +1215,22 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		}
 
 		return {
-			...attachment,
-			isHost,
-			role,
-			canEdit: sessionCanEdit(role, await this.readClassCanEdit()),
-			pendingClerkAuth: false,
-			pendingSince: undefined,
-			joinedViaShareCode,
-			boardId,
-			meta: {
-				...attachment.meta,
-				userId,
-				displayName,
+			clerkAuthenticated: Boolean(clerkAuth),
+			attachment: {
+				...attachment,
 				isHost,
+				role,
+				canEdit: sessionCanEdit(role, await this.readClassCanEdit()),
+				pendingClerkAuth: false,
+				pendingSince: undefined,
+				joinedViaShareCode,
+				boardId,
+				meta: {
+					...attachment.meta,
+					userId,
+					displayName,
+					isHost,
+				},
 			},
 		}
 	}
@@ -1209,10 +1240,11 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		attachment: SocketAttachment,
 		data: Record<string, unknown>,
 	): Promise<SocketAttachment> {
-		const next = await this.resolveAuthMessage(attachment, data, {
+		const resolved = await this.resolveAuthMessage(attachment, data, {
 			mintHost: true,
 		})
-		if (!next) return attachment
+		if (!resolved) return attachment
+		const next = resolved.attachment
 		// Another `wb:auth` may have greeted this socket while the Clerk
 		// verification above was in flight. One hello per socket.
 		const current = normalizeAttachment(
@@ -1238,8 +1270,9 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	/**
 	 * A second `wb:auth` on an already-greeted socket. Clerk can settle well
 	 * after connect (slow Chromebook, cold Clerk script), so the client
-	 * re-sends once it holds a real JWT. Upgrade in place via `wb:role` —
-	 * one hello per socket, and never downgrade an existing session.
+	 * re-sends once it holds a real JWT. Upgrade roles in place via `wb:role`,
+	 * or refresh verified identity metadata without changing privileges. One
+	 * hello per socket, and never downgrade an existing session.
 	 */
 	private async reauthenticateSocket(
 		ws: WebSocket,
@@ -1253,20 +1286,42 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		// `mintHost: false` — a greeted socket must not be able to plant the
 		// host hash on a board that has none, which would lock the real
 		// creator's leftover secret out for good.
-		const next = await this.resolveAuthMessage(attachment, data, {
+		const resolved = await this.resolveAuthMessage(attachment, data, {
 			mintHost: false,
 		})
-		if (!next) return
+		if (!resolved) return
+		const next = resolved.attachment
 		// Upgrades only. Demotions belong to the People PATCH and the Group Edit
-		// resync; letting a re-auth carry one means any frame that fails to
-		// resolve Clerk can strip a session that is already authenticated.
-		if (!shouldApplySocketRoleUpgrade(attachment.role, next.role)) return
-		ws.serializeAttachment(next)
-		sendJson(ws, {
-			type: 'wb:role',
-			role: next.role,
-			canEdit: next.canEdit,
-		})
+		// resync. A verified Clerk identity may still replace a same-role guest
+		// name, but it must retain the socket's existing privilege fields.
+		const roleUpgrade = shouldApplySocketRoleUpgrade(
+			attachment.role,
+			next.role,
+		)
+		const identityRefresh = shouldApplySocketIdentityRefresh(
+			attachment.meta,
+			next.meta,
+			resolved.clerkAuthenticated,
+		)
+		if (!roleUpgrade && !identityRefresh) return
+		const applied = roleUpgrade
+			? next
+			: {
+					...attachment,
+					meta: {
+						...attachment.meta,
+						userId: next.meta.userId,
+						displayName: next.meta.displayName,
+					},
+				}
+		ws.serializeAttachment(applied)
+		if (roleUpgrade) {
+			sendJson(ws, {
+				type: 'wb:role',
+				role: applied.role,
+				canEdit: applied.canEdit,
+			})
+		}
 		this.broadcastParticipants()
 		await Promise.all([
 			this.broadcastForceFollow(),

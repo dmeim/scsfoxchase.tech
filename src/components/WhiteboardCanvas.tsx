@@ -15,9 +15,11 @@ import type {
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
 import {
+  getActiveIdentity,
   getSessionTokenFresh,
   getSessionTokenSettled,
   isSignedIn,
+  onAuthChange,
   peekSessionToken,
   whenAuthReady,
 } from '../lib/whiteboard-identity'
@@ -594,6 +596,8 @@ export default function WhiteboardCanvas({
     let attempt = 0
     let preserveReconnectBackoff = false
     let lastSocketJsAt = 0
+    let observedIdentity = getActiveIdentity()
+    let refreshProfileOnNextAuth = false
 
     const clearAuthRetry = () => {
       if (authRetryTimer == null) return
@@ -624,14 +628,21 @@ export default function WhiteboardCanvas({
       if (ws.readyState !== WebSocket.OPEN) return
       const hostSecret = getHostSecret(boardId)
       const signedIn = isSignedIn()
+      const identity = getActiveIdentity()
+      const refreshProfile = Boolean(token && refreshProfileOnNextAuth)
       ws.send(
         JSON.stringify({
           type: 'wb:auth',
           ...(token ? { token } : {}),
           ...(hostSecret ? { hostSecret } : {}),
           ...(signedIn ? { signedIn: true } : {}),
+          ...(token && identity?.profileUpdatedAt
+            ? { profileUpdatedAt: identity.profileUpdatedAt }
+            : {}),
+          ...(refreshProfile ? { refreshProfile: true } : {}),
         }),
       )
+      if (refreshProfile) refreshProfileOnNextAuth = false
       lastAuthTokenSent = token
       lastAuthSignedInSent = signedIn
       // Resubscribe wb:follow on open/reconnect while the socket is OPEN.
@@ -952,10 +963,37 @@ export default function WhiteboardCanvas({
     }
     document.addEventListener('visibilitychange', onVisibleAfterGap)
 
+    const stopAuthChange = onAuthChange((identity) => {
+      const previous = observedIdentity
+      observedIdentity = identity
+      if (
+        !previous ||
+        !identity ||
+        previous.clerkUserId !== identity.clerkUserId ||
+        previous.displayName === identity.displayName
+      ) {
+        return
+      }
+      refreshProfileOnNextAuth = true
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      const cached = peekSessionToken()?.trim() ?? ''
+      if (cached) {
+        sendAuthFrame(ws, cached)
+        return
+      }
+      void getSessionTokenSettled().then((value) => {
+        const token = value?.trim() ?? ''
+        if (!token || cancelled || wsRef.current !== ws) return
+        sendAuthFrame(ws, token)
+      })
+    })
+
     void connect()
 
     return () => {
       cancelled = true
+      stopAuthChange()
       document.removeEventListener('visibilitychange', onVisibleAfterGap)
       clearTimers()
       clearAuthRetry()
