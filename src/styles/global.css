@@ -2481,7 +2481,7 @@ footer {
 
 /* iPads/tablets in portrait are wide enough for the dashboard layout.
    Keep the phone layout below 769px only; allow vertical scrolling when content exceeds the viewport. */
-@media (min-width: 740px) and (max-width: 900px) {
+@media (min-width: 769px) and (max-width: 900px) {
     body.home-page {
         overflow-x: hidden;
         overflow-y: auto;
@@ -2491,18 +2491,25 @@ footer {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         flex-direction: row;
-        gap: 10px;
+        gap: 6px;
     }
 
     header h1 {
-        font-size: 1.35rem;
+        font-size: 1.05rem;
+    }
+
+    .header-left {
+        gap: 6px;
     }
 
     .header-logo {
-        height: 32px;
+        height: 24px;
+        max-width: 24px;
     }
 
     .header-brand {
+        gap: 6px;
+        padding: 0 8px 0 5px;
         justify-self: start;
     }
 
@@ -2511,8 +2518,35 @@ footer {
         justify-self: end;
     }
 
-    nav ul li a {
-        font-size: 0.95rem;
+    nav ul {
+        gap: 6px;
+    }
+
+    header .header-right nav .ui-button--small {
+        min-height: 28px;
+        height: 28px;
+        padding: 0 7px;
+        gap: 5px;
+        font-size: 0.75rem;
+    }
+
+    header .whiteboard-toggle,
+    header .header-fullscreen-btn,
+    header .header-auth-btn {
+        min-height: 28px;
+        height: 28px;
+    }
+
+    header .whiteboard-toggle {
+        gap: 5px;
+        padding: 0 8px;
+        font-size: 0.8rem;
+    }
+
+    header .header-auth-btn {
+        padding: 0 7px;
+        gap: 5px;
+        font-size: 0.72rem;
     }
 
     .google-search-row .container {

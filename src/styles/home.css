@@ -195,7 +195,7 @@
     width: min(100%, 900px);
     max-width: 900px;
     min-height: 56px;
-    flex: 0 1 900px;
+    flex: 0 1 auto;
     overflow: visible;
 }
 
