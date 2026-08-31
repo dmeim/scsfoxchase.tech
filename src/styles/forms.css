@@ -49,6 +49,118 @@ body.help-page main .container.form-shell {
   max-width: 42em;
 }
 
+.classroom-codes-section {
+  display: flex;
+  justify-content: center;
+  margin-bottom: clamp(18px, 2.5vw, 30px);
+}
+
+.classroom-codes-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 1.2vw, 14px);
+  min-height: 64px;
+  padding: 10px clamp(20px, 3vw, 34px);
+  color: var(--text-color);
+  background: rgba(249, 249, 249, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px solid var(--border-color);
+  border-radius: 999px;
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.classroom-codes-badge img {
+  width: clamp(38px, 4vw, 48px);
+  height: clamp(38px, 4vw, 48px);
+  object-fit: contain;
+}
+
+[data-theme="dark"] .classroom-codes-badge {
+  background: rgba(45, 45, 45, 0.72);
+}
+
+.classroom-codes-badge:hover {
+  border-color: var(--primary-color);
+  color: var(--secondary-color);
+  transform: translateY(-2px);
+}
+
+.classroom-codes-badge:focus-visible {
+  outline: 3px solid var(--secondary-color);
+  outline-offset: 3px;
+}
+
+.classroom-codes-group {
+  width: 100%;
+}
+
+.classroom-codes-group-title {
+  margin: 0 0 clamp(10px, 1.4vw, 16px);
+  color: var(--primary-color);
+  font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+  line-height: 1.2;
+}
+
+[data-theme="dark"] .classroom-codes-group-title {
+  color: var(--light-text);
+}
+
+.classroom-codes-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(10px, 1.4vw, 20px);
+}
+
+.classroom-code-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 18px;
+  color: var(--text-color);
+  background: rgba(249, 249, 249, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px solid var(--border-color);
+  border-radius: 2px;
+  font-size: clamp(0.9rem, 1.15vw, 1.05rem);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.classroom-code-button img {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+[data-theme="dark"] .classroom-code-button {
+  background: rgba(45, 45, 45, 0.72);
+}
+
+.classroom-code-button:hover {
+  border-color: var(--primary-color);
+  color: var(--secondary-color);
+  transform: translateY(-2px);
+}
+
+.classroom-code-button:focus-visible {
+  outline: 3px solid var(--secondary-color);
+  outline-offset: 3px;
+}
+
 .help-catalog-header {
   display: flex;
   align-items: flex-start;
@@ -525,6 +637,14 @@ a.guide-source-chip:hover {
 }
 
 @media (max-width: 768px) {
+  .classroom-codes-badge {
+    width: min(100%, 360px);
+  }
+
+  .classroom-codes-grid {
+    grid-template-columns: 1fr;
+  }
+
   .forms-grid {
     grid-template-columns: 1fr;
   }
@@ -559,6 +679,20 @@ a.guide-source-chip:hover {
   .forms-hub,
   .help-hub {
     padding: 8px 0;
+  }
+
+  .classroom-codes-section {
+    margin-bottom: 14px;
+  }
+
+  .classroom-codes-badge {
+    min-height: 54px;
+    padding-block: 7px;
+  }
+
+  .classroom-codes-badge img {
+    width: 36px;
+    height: 36px;
   }
 
   .forms-tile {

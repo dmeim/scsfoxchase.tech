@@ -1,0 +1,64 @@
+---
+export const prerender = true;
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { Button } from '../components/ui';
+import { iconMessageCircleQuestion } from '../scripts/icons';
+
+const technologyClassrooms = [
+  {
+    name: '8A Tech (26-27)',
+    href: 'https://classroom.google.com/c/ODc2Mzk1NTIwNDE0?cjc=egvjhukc',
+  },
+  {
+    name: '8B Tech (26-27)',
+    href: 'https://classroom.google.com/c/ODcyNDQ3Nzc5ODQ4?cjc=iutjkbu2',
+  },
+  {
+    name: '8C Tech (26-27)',
+    href: 'https://classroom.google.com/c/ODc2Mzk2MTY5OTQ0?cjc=nwst22fw',
+  },
+];
+---
+<BaseLayout title="Google Classroom Codes - St. Cecilia Technology" bodyClass="help-page classroom-codes-page">
+  <meta
+    slot="head"
+    name="description"
+    content="Google Classroom invite links for St. Cecilia School students"
+  />
+
+  <div class="help-hub help-catalog">
+    <div class="container form-shell">
+      <header class="help-hub-intro help-catalog-header">
+        <div class="help-catalog-heading">
+          <h2 class="help-hub-title">Google Classroom Codes</h2>
+        </div>
+        <Button href="/help" variant="outline" class="page-nav-btn" icon={iconMessageCircleQuestion}>Back to Help</Button>
+      </header>
+
+      <section class="classroom-codes-group" aria-labelledby="technology-classrooms-title">
+        <h3 id="technology-classrooms-title" class="classroom-codes-group-title">Technology</h3>
+        <div class="classroom-codes-grid">
+          {
+            technologyClassrooms.map((classroom) => (
+              <a
+                class="classroom-code-button"
+                href={classroom.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src="/images/google-classroom-logo-clean.png"
+                  alt=""
+                  width="282"
+                  height="243"
+                  aria-hidden="true"
+                />
+                <span>{classroom.name}</span>
+              </a>
+            ))
+          }
+        </div>
+      </section>
+    </div>
+  </div>
+</BaseLayout>
