@@ -37,6 +37,8 @@ Node.js **22+** is required (see `.nvmrc` / `package.json` `engines`).
 
 The site deploys to **Cloudflare Workers** (Worker name `scsfoxchase-tech`). Assets come from `dist/client/` after `npm run build`.
 
+Public form configuration is attached at Worker runtime. After adding or changing `PUBLIC_TURNSTILE_SITEKEY` in **Runtime variables and secrets**, deploy a fresh Worker version and verify that `/api/forms/config` returns the public sitekey before testing `/inventory`.
+
 See [DEPLOYMENT.md](DEPLOYMENT.md) for Workers Builds settings and deploy details. Agent-oriented project notes live in [AGENTS.md](AGENTS.md).
 
 ## Whiteboard storage boundary
