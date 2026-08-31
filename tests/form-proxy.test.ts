@@ -31,6 +31,7 @@ function formEnv(limiterSuccess = true): {
 	const limit = vi.fn(async () => ({ success: limiterSuccess }))
 	return {
 		env: {
+			PUBLIC_TURNSTILE_SITEKEY: 'test-public-sitekey',
 			TURNSTILE_SECRET: TEST_TURNSTILE_SECRET,
 			N8N_WEBHOOK_BASE_URL: 'https://n8n.mlabz.io/webhook/scs',
 			N8N_WEBHOOK_SECRET: 'test-n8n-secret',
@@ -67,6 +68,34 @@ function successfulFetch(): {
 }
 
 describe('public form proxy', () => {
+	it('serves the public Turnstile sitekey from the Worker runtime', async () => {
+		const { env, limit } = formEnv()
+		const response = await handleFormRequest(
+			new Request(`${ORIGIN}/api/forms/config`, {
+				headers: { Origin: ORIGIN },
+			}),
+			env,
+		)
+
+		expect(response?.status).toBe(200)
+		expect(await response?.json()).toEqual({
+			turnstileSitekey: 'test-public-sitekey',
+		})
+		expect(response?.headers.get('Cache-Control')).toBe('no-store')
+		expect(limit).not.toHaveBeenCalled()
+	})
+
+	it('fails closed when the runtime sitekey is missing', async () => {
+		const { env } = formEnv()
+		env.PUBLIC_TURNSTILE_SITEKEY = ''
+		const response = await handleFormRequest(
+			new Request(`${ORIGIN}/api/forms/config`),
+			env,
+		)
+
+		expect(response?.status).toBe(503)
+	})
+
 	it('verifies Turnstile and forwards only the clean inventory payload', async () => {
 		const { env, limit } = formEnv()
 		const { fetchImpl, calls } = successfulFetch()

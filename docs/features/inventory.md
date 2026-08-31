@@ -14,7 +14,7 @@ Title: “Inventory Lookup | St. Cecilia Technology”; `bodyClass="asset-lookup
 ## User-visible flow
 
 1. Enter a serial in `#assetSerialInput` (input is forced uppercase on each keystroke), or use **Scan QR**, or open `/inventory?serial=…` (also accepts `serviceTag` / `tag` query params).
-2. Turnstile issues a single-use `inventory_lookup` token without requiring Clerk sign-in.
+2. The page reads the shared public sitekey from `/api/forms/config`, then Turnstile issues a single-use `inventory_lookup` token without requiring Clerk sign-in.
 3. **Lookup** POSTs the serial and token to the same-origin form proxy, which verifies Turnstile and forwards only the serial to n8n.
 4. Successful lookup enables **Print Report** (`window.print()`); print chrome includes “St. Cecilia Inventory Report” and a timestamp.
 5. On success, the URL is updated via `history.replaceState` to include `?serial=<SERIAL>`.
@@ -30,6 +30,8 @@ Page copy: QR tags should store **only the serial as plain text** (e.g. `ABC123X
 ```text
 /api/forms/inventory
 ```
+
+The same script first GETs `/api/forms/config`. That endpoint exposes only `PUBLIC_TURNSTILE_SITEKEY`, which is public by design; all secrets remain in Worker runtime bindings.
 
 Browser body shape: `{ "serial": "<NORMALIZED_SERIAL>", "turnstileToken": "<TOKEN>" }` (`Content-Type: application/json`). Serial normalization: trim + uppercase.
 

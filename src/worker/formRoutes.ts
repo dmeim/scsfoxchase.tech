@@ -10,6 +10,7 @@ import {
 } from './turnstile'
 
 const FORM_PATH_RE = /^\/api\/forms\/([^/]+)\/?$/i
+const FORM_CONFIG_PATH_RE = /^\/api\/forms\/config\/?$/i
 const MAX_FORM_BODY_BYTES = 8 * 1_024
 const MAX_UPSTREAM_RESPONSE_BYTES = 256 * 1_024
 const N8N_TIMEOUT_MS = 12_000
@@ -212,6 +213,31 @@ export async function handleFormRequest(
 	dependencies: FormDependencies = {},
 ): Promise<Response | null> {
 	const url = new URL(request.url)
+	if (FORM_CONFIG_PATH_RE.test(url.pathname)) {
+		if (request.method === 'OPTIONS') {
+			return new Response(null, {
+				status: 204,
+				headers: jsonHeaders(request, {
+					methods: 'GET, OPTIONS',
+					maxAge: 86400,
+				}),
+			})
+		}
+		if (request.method !== 'GET') {
+			return jsonResponse(request, 405, { error: 'Method not allowed' }, {
+				methods: 'GET, OPTIONS',
+			})
+		}
+		const turnstileSitekey = env.PUBLIC_TURNSTILE_SITEKEY?.trim()
+		if (!turnstileSitekey) {
+			logFormEvent('configuration_error')
+			return jsonResponse(request, 503, { error: 'Form service unavailable' })
+		}
+		return jsonResponse(request, 200, { turnstileSitekey }, {
+			methods: 'GET, OPTIONS',
+		})
+	}
+
 	const match = url.pathname.match(FORM_PATH_RE)
 	if (!match) return null
 

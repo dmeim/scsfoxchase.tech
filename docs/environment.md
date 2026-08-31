@@ -12,7 +12,7 @@ Runtime and build configuration for Worker `scsfoxchase-tech`. Bindings (DO / D1
 | `PUBLIC_CLERK_ALLOWED_DOMAINS` | Public | No | Workers Builds vars; local `.env` / `.dev.vars` | Optional allowlist: comma-separated email domains and/or full emails |
 | `CLERK_SECRET_KEY` | **Secret** | Yes for cloud library / `google:*` writes | `npx wrangler secret put`; local `.dev.vars` only | Worker verifies Clerk sessions via `@clerk/backend` |
 | `WHITEBOARD_ADMIN_SECRET` | **Secret** | Only for Durable Object storage wipe | `npx wrangler secret put WHITEBOARD_ADMIN_SECRET` | Bearer token for `POST /api/whiteboard/admin/wipe-storage` (`deleteAll` on listed object hex IDs). Omit locally unless testing wipe. |
-| `PUBLIC_TURNSTILE_SITEKEY` | Public | Yes for public forms | Workers Builds build variable; local `.env` | Shared Turnstile sitekey rendered by every public form |
+| `PUBLIC_TURNSTILE_SITEKEY` | Public | Yes for public forms | Worker runtime variable; local `.dev.vars` | Shared Turnstile sitekey returned to public forms by `/api/forms/config` |
 | `TURNSTILE_SECRET` | **Secret** | Yes for public forms | Worker runtime secret; local `.dev.vars` | Server-only Siteverify credential shared across forms |
 | `N8N_WEBHOOK_BASE_URL` | **Secret** | Yes for n8n-backed forms | Worker runtime secret; local `.dev.vars` | Server-only base URL; allowlisted form routes append their fixed n8n path |
 | `N8N_WEBHOOK_SECRET` | **Secret** | Yes for n8n-backed forms | Worker runtime secret; local `.dev.vars` | Shared `X-SCS-Webhook-Key` value sent only from the Worker to n8n |
@@ -49,10 +49,10 @@ Apply migrations in filename order (`0000_create_whiteboard_library.sql`, `0001_
 | Kind | How |
 |------|-----|
 | Build vars | Cloudflare dashboard → Worker `scsfoxchase-tech` → Workers Builds / Variables: `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`, `NODE_VERSION=22` |
-| Runtime vars | Same dashboard variables so the Worker process can read Clerk public config |
-| Secrets | `npx wrangler secret put CLERK_SECRET_KEY` (never in git or plaintext dashboard dumps committed to the repo). Optional: `WHITEBOARD_ADMIN_SECRET` for the Durable Object wipe route. |
+| Runtime vars | Worker settings: Clerk public config plus `PUBLIC_TURNSTILE_SITEKEY`. The Turnstile sitekey is public and is served by `/api/forms/config`, so it does not need to be duplicated in Workers Builds. |
+| Secrets | Worker runtime secrets: `CLERK_SECRET_KEY`, `TURNSTILE_SECRET`, `N8N_WEBHOOK_BASE_URL`, and `N8N_WEBHOOK_SECRET`. Optional: `WHITEBOARD_ADMIN_SECRET` for the Durable Object wipe route. Never commit their values. |
 
-`PUBLIC_*` values used by Astro must be present at **build** time so they are inlined into client bundles. The Worker also reads `PUBLIC_CLERK_*` and `CLERK_SECRET_KEY` at **runtime** for `/api/whiteboard/*` auth.
+`PUBLIC_CLERK_*` values used by Astro must be present at **build** time so they are inlined into client bundles. `PUBLIC_TURNSTILE_SITEKEY` is different: the Worker reads it at runtime and returns it from the same-origin `/api/forms/config` endpoint. The Turnstile secret remains server-only.
 
 ### Local development
 
@@ -69,12 +69,16 @@ cp .dev.vars.example .dev.vars
 # Edit both with real keys. Keep secrets out of git.
 ```
 
-`.dev.vars.example` mirrors the Worker-needed Clerk trio:
+`.dev.vars.example` mirrors the Worker-needed Clerk and public-form variables. For local Turnstile testing, use Cloudflare's official test key pair rather than the production widget, whose hostname policy excludes localhost.
 
 ```
 CLERK_SECRET_KEY=
 PUBLIC_CLERK_PUBLISHABLE_KEY=
 PUBLIC_CLERK_ALLOWED_DOMAINS=stceciliafc.com
+PUBLIC_TURNSTILE_SITEKEY=
+TURNSTILE_SECRET=
+N8N_WEBHOOK_BASE_URL=
+N8N_WEBHOOK_SECRET=
 ```
 
 ## Clerk domains
@@ -99,7 +103,7 @@ Authorized parties checked by the Worker include `https://scsfoxchase.tech`, `ht
 
 ## Observability configuration
 
-`wrangler.jsonc` enables structured Worker logs, disables invocation logs (`invocation_logs: false`), and sets production head sampling to `0.05` (5%). The application logger is allow-listed and emits only low-cardinality admission/auth transitions, throttles, scene rejection/persistence failures, and bounded storage-failure categories. It does not emit board/session IDs, IPs, URLs/paths, host secrets, JWTs, arbitrary exception strings, or scene contents.
+`wrangler.jsonc` persists structured Worker logs and automatic traces at `0.05` (5%) sampling while leaving invocation logs disabled (`invocation_logs: false`). The application logger is allow-listed and emits only low-cardinality admission/auth transitions, throttles, scene rejection/persistence failures, and bounded storage-failure categories. It does not emit board/session IDs, IPs, URLs/paths, host secrets, JWTs, arbitrary exception strings, or scene contents.
 
 ## Related config files
 

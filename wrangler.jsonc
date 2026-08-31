@@ -7,10 +7,17 @@
   "preview_urls": true,
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 0.05,
+    "head_sampling_rate": 1,
     "logs": {
       "enabled": true,
+      "head_sampling_rate": 0.05,
+      "persist": true,
       "invocation_logs": false
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+      "head_sampling_rate": 0.05
     }
   },
   // Custom entry: Astro handler + /api/whiteboard/* (Durable Objects)

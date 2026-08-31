@@ -4,7 +4,6 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import { Button, Card, Dialog, Feedback, TextField } from '../components/ui';
 import { iconPrint, iconQrCode, iconSearch } from '../scripts/icons';
 import '../styles/inventory.css';
-const turnstileSitekey = import.meta.env.PUBLIC_TURNSTILE_SITEKEY || '';
 ---
 <BaseLayout title="Inventory Lookup | St. Cecilia Technology" bodyClass="asset-lookup-page">
   <meta
@@ -49,7 +48,6 @@ const turnstileSitekey = import.meta.env.PUBLIC_TURNSTILE_SITEKEY || '';
               <div
                 id="assetTurnstile"
                 class="asset-turnstile"
-                data-sitekey={turnstileSitekey}
                 data-action="inventory_lookup"
               ></div>
             </div>

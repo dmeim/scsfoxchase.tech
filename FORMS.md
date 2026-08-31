@@ -87,6 +87,8 @@ Form intro (under title) covers: school-appropriate requirement, no multi-game h
 
 `/inventory` is the first live form proxy. Public forms use one shared Turnstile widget and one shared n8n Header Auth credential; users do not need Clerk. Browser submissions go to an allowlisted `/api/forms/{form}` Worker route. The Worker verifies a form-specific Turnstile action, validates and rate-limits the payload, then forwards clean fields to `${N8N_WEBHOOK_BASE_URL}/{fixedPath}` with `X-SCS-Webhook-Key`.
 
+The public sitekey is loaded at runtime from `/api/forms/config`; prerendered pages do not need a duplicate Workers Builds variable. The endpoint exposes only `PUBLIC_TURNSTILE_SITEKEY`, never the Turnstile or n8n secrets.
+
 When wiring another form:
 
 - Add an explicit form ID → Turnstile action → n8n path entry and a strict schema in `src/worker/formRoutes.ts`; never append a caller-supplied path.

@@ -17,6 +17,7 @@ declare global {
 }
 
 const ASSET_LOOKUP_ENDPOINT = '/api/forms/inventory';
+const FORM_CONFIG_ENDPOINT = '/api/forms/config';
 const TURNSTILE_ACTION = 'inventory_lookup';
 const REQUEST_SERIAL_FIELD = 'serial';
 const NO_DATA_LABEL = 'No Data';
@@ -100,6 +101,7 @@ const state = {
     turnstileScript: null,
     turnstileWidgetId: null,
     turnstileToken: '',
+    turnstileUnavailable: false,
     pendingAutoLookup: false,
     lookupActive: false
 };
@@ -130,6 +132,8 @@ function init() {
 
     if (!state.form || !state.input || !state.result || !state.message) return;
 
+    if (state.button) state.button.disabled = true;
+
     state.form.addEventListener('submit', event => {
         event.preventDefault();
         lookupFromInput();
@@ -156,46 +160,94 @@ function init() {
 
 class InventoryLookupError extends Error {}
 
-function setupTurnstile() {
+async function setupTurnstile() {
     const container = state.turnstileContainer;
-    const sitekey = container?.dataset.sitekey?.trim() || '';
-    if (!container || !sitekey) {
-        if (state.configNotice) {
-            state.configNotice.hidden = false;
-            state.configNotice.textContent = 'Inventory lookup is temporarily unavailable because security verification is not configured.';
-        }
+    if (!container) {
+        markTurnstileUnavailable();
         return;
     }
 
-    const render = () => {
-        if (!window.turnstile || state.turnstileWidgetId) return;
-        state.turnstileWidgetId = window.turnstile.render(container, {
-            sitekey,
-            action: TURNSTILE_ACTION,
-            appearance: 'interaction-only',
-            size: 'flexible',
-            callback: token => {
-                state.turnstileToken = token;
-                maybeRunPendingLookup();
-            },
-            'expired-callback': () => {
-                state.turnstileToken = '';
-                resetTurnstile();
-            },
-            'error-callback': () => {
-                state.turnstileToken = '';
-                showMessage('Security verification could not load. Refresh the page and try again.', 'error');
-            },
-            'timeout-callback': () => {
-                state.turnstileToken = '';
-            }
+    state.turnstileScript?.addEventListener('error', markTurnstileUnavailable, { once: true });
+
+    let sitekey = '';
+    try {
+        const response = await fetch(FORM_CONFIG_ENDPOINT, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            credentials: 'same-origin',
+            cache: 'no-store'
         });
+        const contentType = response.headers.get('Content-Type') || '';
+        if (!response.ok || !contentType.toLowerCase().includes('application/json')) {
+            throw new Error('form-config-unavailable');
+        }
+        const config = await response.json();
+        sitekey = typeof config?.turnstileSitekey === 'string'
+            ? config.turnstileSitekey.trim()
+            : '';
+        if (!sitekey || sitekey.length > 256) {
+            throw new Error('form-config-invalid');
+        }
+    } catch {
+        markTurnstileUnavailable();
+        return;
+    }
+
+    if (state.turnstileUnavailable) return;
+
+    const renderTimeout = window.setTimeout(() => {
+        if (!state.turnstileWidgetId) markTurnstileUnavailable();
+    }, 10_000);
+
+    const render = () => {
+        if (state.turnstileUnavailable || !window.turnstile || state.turnstileWidgetId) return;
+        try {
+            state.turnstileWidgetId = window.turnstile.render(container, {
+                sitekey,
+                action: TURNSTILE_ACTION,
+                appearance: 'interaction-only',
+                size: 'flexible',
+                callback: token => {
+                    state.turnstileToken = token;
+                    if (state.button) state.button.disabled = false;
+                    maybeRunPendingLookup();
+                },
+                'expired-callback': () => {
+                    state.turnstileToken = '';
+                    if (state.button) state.button.disabled = true;
+                    resetTurnstile();
+                },
+                'error-callback': () => {
+                    state.turnstileToken = '';
+                    if (state.button) state.button.disabled = true;
+                    showMessage('Security verification could not load. Refresh the page and try again.', 'error');
+                },
+                'timeout-callback': () => {
+                    state.turnstileToken = '';
+                    if (state.button) state.button.disabled = true;
+                }
+            });
+            window.clearTimeout(renderTimeout);
+        } catch {
+            window.clearTimeout(renderTimeout);
+            markTurnstileUnavailable();
+        }
     };
 
     if (window.turnstile) {
         render();
     } else {
         state.turnstileScript?.addEventListener('load', render, { once: true });
+    }
+}
+
+function markTurnstileUnavailable() {
+    state.turnstileUnavailable = true;
+    state.turnstileToken = '';
+    if (state.button) state.button.disabled = true;
+    if (state.configNotice) {
+        state.configNotice.hidden = false;
+        state.configNotice.textContent = 'Inventory lookup is temporarily unavailable because security verification is not configured.';
     }
 }
 
@@ -207,6 +259,7 @@ function maybeRunPendingLookup() {
 
 function resetTurnstile() {
     state.turnstileToken = '';
+    if (state.button) state.button.disabled = true;
     if (window.turnstile && state.turnstileWidgetId) {
         window.turnstile.reset(state.turnstileWidgetId);
     }
@@ -222,6 +275,7 @@ async function lookupFromInput(options = {}) {
         state.input.focus();
         return;
     }
+    if (state.turnstileUnavailable) return;
     if (!state.turnstileToken) {
         showMessage('Security verification is still loading. Wait a moment and try again.', 'error');
         return;
