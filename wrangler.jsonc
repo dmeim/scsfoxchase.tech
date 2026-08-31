@@ -1,5 +1,9 @@
 {
   "name": "scsfoxchase-tech",
+  // Runtime text variables are managed in the dashboard; preserve them when
+  // Workers Builds runs `wrangler deploy`. Encrypted secrets are preserved
+  // independently by Cloudflare.
+  "keep_vars": true,
   "compatibility_date": "2026-07-14",
   "compatibility_flags": ["nodejs_compat"],
   // Ensure workers.dev route is published (DNS must resolve for preview)

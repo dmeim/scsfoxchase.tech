@@ -65,6 +65,8 @@ Do **not** use an empty Pages build command or publish directory `/`.
 
 **This is the single production deployer.** Every push to `main` builds and deploys the Worker.
 
+`wrangler.jsonc` sets `keep_vars: true` because runtime text variables are managed under **Settings → Variables and Secrets**. Without it, `wrangler deploy` treats the file as the complete source of truth and deletes dashboard text variables that are not declared under `vars`. Encrypted secrets are preserved separately by Cloudflare.
+
 In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → create/connect Worker **`scsfoxchase-tech`**:
 
 | Setting | Value |
@@ -77,7 +79,9 @@ In [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** �
 | Node version | **22+** (set `NODE_VERSION=22` in Workers Builds vars, or rely on `.nvmrc` / `package.json` `engines`) |
 | Build / runtime env | `PUBLIC_CLERK_PUBLISHABLE_KEY` — Clerk publishable key (client + Worker `authenticateRequest`) |
 | Build / runtime env | `PUBLIC_CLERK_ALLOWED_DOMAINS` — optional allowlist, e.g. `stceciliafc.com` or `stceciliafc.com,you@gmail.com` |
+| Runtime variable | `PUBLIC_TURNSTILE_SITEKEY` — public Turnstile sitekey served by `/api/forms/config` |
 | Worker secret | `CLERK_SECRET_KEY` — `npx wrangler secret put CLERK_SECRET_KEY` (never commit) |
+| Worker secrets | `TURNSTILE_SECRET`, `N8N_WEBHOOK_BASE_URL`, `N8N_WEBHOOK_SECRET` |
 
 **Important:** Workers Builds must use Node **≥ 20.17** (prefer **22**). Older Node can fail to upload nested static dirs like `/_astro/`, which leaves HTML unstyled (header logo at full 1000×1000). Keep the Builds **Deploy command** as `npx wrangler deploy` for this asset-heavy static site. From a laptop, use `npx wrangler versions upload` for pre-merge preview URLs — not as a production deploy.
 

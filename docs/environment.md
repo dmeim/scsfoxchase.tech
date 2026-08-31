@@ -54,6 +54,8 @@ Apply migrations in filename order (`0000_create_whiteboard_library.sql`, `0001_
 
 `PUBLIC_CLERK_*` values used by Astro must be present at **build** time so they are inlined into client bundles. `PUBLIC_TURNSTILE_SITEKEY` is different: the Worker reads it at runtime and returns it from the same-origin `/api/forms/config` endpoint. The Turnstile secret remains server-only.
 
+The root Wrangler configuration sets `keep_vars: true`, so Git-driven `wrangler deploy` operations preserve dashboard-managed runtime text variables. Without that setting, Wrangler deletes text variables absent from the checked-in `vars` object; encrypted secrets are unaffected.
+
 ### Local development
 
 | File | Gitignored? | Use |
