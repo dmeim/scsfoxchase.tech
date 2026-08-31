@@ -14,9 +14,10 @@ Title: “Inventory Lookup | St. Cecilia Technology”; `bodyClass="asset-lookup
 ## User-visible flow
 
 1. Enter a serial in `#assetSerialInput` (input is forced uppercase on each keystroke), or use **Scan QR**, or open `/inventory?serial=…` (also accepts `serviceTag` / `tag` query params).
-2. **Lookup** POSTs the serial to the inventory webhook and renders a report, or shows an error if nothing matches / the request fails.
-3. Successful lookup enables **Print Report** (`window.print()`); print chrome includes “St. Cecilia Inventory Report” and a timestamp.
-4. On success, the URL is updated via `history.replaceState` to include `?serial=<SERIAL>`.
+2. Turnstile issues a single-use `inventory_lookup` token without requiring Clerk sign-in.
+3. **Lookup** POSTs the serial and token to the same-origin form proxy, which verifies Turnstile and forwards only the serial to n8n.
+4. Successful lookup enables **Print Report** (`window.print()`); print chrome includes “St. Cecilia Inventory Report” and a timestamp.
+5. On success, the URL is updated via `history.replaceState` to include `?serial=<SERIAL>`.
 
 Page copy: QR tags should store **only the serial as plain text** (e.g. `ABC123XYZ`). The scanner also accepts a URL whose query includes `serial`, `serviceTag`, or `tag`, or text prefixed with `serial` / `serial:` / similar.
 
@@ -24,14 +25,15 @@ Page copy: QR tags should store **only the serial as plain text** (e.g. `ABC123X
 
 ### Request
 
-`src/scripts/inventory.ts` POSTs JSON to:
+`src/scripts/inventory.ts` POSTs JSON to the same-origin Worker route:
 
 ```text
-import.meta.env.PUBLIC_INVENTORY_WEBHOOK
-  || 'https://n8n.mlabz.io/webhook/scs-inventory'
+/api/forms/inventory
 ```
 
-Body shape: `{ "serial": "<NORMALIZED_SERIAL>" }` (`Content-Type: application/json`). Serial normalization: trim + uppercase.
+Browser body shape: `{ "serial": "<NORMALIZED_SERIAL>", "turnstileToken": "<TOKEN>" }` (`Content-Type: application/json`). Serial normalization: trim + uppercase.
+
+The Worker enforces the production hostname and `inventory_lookup` action, limits submissions, validates an 8 KiB JSON body and serial shape, and then forwards `{ "serial": "<NORMALIZED_SERIAL>" }` to `${N8N_WEBHOOK_BASE_URL}/inventory`. The upstream request carries `X-SCS-Webhook-Key: <N8N_WEBHOOK_SECRET>`. Neither the n8n URL nor its credential is sent to the browser.
 
 There is no inventory dataset in the Astro repo; matching happens on the webhook side (n8n / sheet workflow). The browser does not filter a local CSV or JSON file.
 
@@ -44,9 +46,7 @@ There is no inventory dataset in the Astro repo; matching happens on the webhook
 - Nested object under `asset`, `row`, `rows`, `result`, `results`, `items`, `data`, or `json` → unwrap recursively  
 - Otherwise treat the object as the asset row  
 
-Missing / empty result shows: “No device found for \<serial\>…”.
-
-If the webhook URL constant were empty and `USE_MOCK_WHEN_NO_WEBHOOK` is true, the script returns a hardcoded demo row keyed to the entered serial (and can show a config notice). With the built-in fallback URL above, live lookups go to that endpoint unless `PUBLIC_INVENTORY_WEBHOOK` overrides it.
+Missing / empty result shows: “No device found for \<serial\>…”. The Turnstile widget is reset after every completed request so a spent token is never reused.
 
 ### Field mapping
 
@@ -80,6 +80,8 @@ Known models map to fixed assets (e.g. Dell Chromebook 3100 → `/images/dell-ch
 |------|------|
 | `src/pages/inventory.astro` | Markup, modal, script imports |
 | `src/scripts/inventory.ts` | Lookup, QR, print, field aliases |
+| `src/worker/formRoutes.ts` | Public form allowlist, rate limit, validation, n8n forwarding |
+| `src/worker/turnstile.ts` | Bounded Siteverify contract |
 | `src/styles/inventory.css` | Layout + print styles |
 | `public/vendor/jsQR.min.js` | QR decode |
 | `public/_redirects` | `/inventory/` → `/inventory` |

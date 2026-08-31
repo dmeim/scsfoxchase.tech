@@ -83,12 +83,15 @@ Submit currently only runs browser validation and `preventDefault` (no network c
 
 Form intro (under title) covers: school-appropriate requirement, no multi-game hosts (Poki/CrazyGames), and that requests are for review only.
 
-## Future: n8n webhooks
+## n8n webhook foundation
 
-Each form will submit to an n8n webhook (one workflow per form or a shared router with a `formId` field). When wiring:
+`/inventory` is the first live form proxy. Public forms use one shared Turnstile widget and one shared n8n Header Auth credential; users do not need Clerk. Browser submissions go to an allowlisted `/api/forms/{form}` Worker route. The Worker verifies a form-specific Turnstile action, validates and rate-limits the payload, then forwards clean fields to `${N8N_WEBHOOK_BASE_URL}/{fixedPath}` with `X-SCS-Webhook-Key`.
 
-- Prefer a Cloudflare Worker/API route or Astro action that proxies to n8n so the webhook URL/secret never ships to the browser.
-- Record webhook URL env var names here when created (e.g. `N8N_WEBHOOK_GAME_REQUEST`).
-- Do not put production webhook URLs in client-side code or git.
+When wiring another form:
 
-Until then, help-tech / help-account stubs stay as placeholders; game-request is UI-only (no network submit).
+- Add an explicit form ID → Turnstile action → n8n path entry and a strict schema in `src/worker/formRoutes.ts`; never append a caller-supplied path.
+- Reuse `PUBLIC_TURNSTILE_SITEKEY`, `TURNSTILE_SECRET`, `N8N_WEBHOOK_BASE_URL`, and `N8N_WEBHOOK_SECRET`; do not add per-form secrets.
+- Reset the exact Turnstile widget after every Ajax submission.
+- Do not put production webhook URLs or credentials in client-side code or git.
+
+Help-tech / help-account remain placeholders; game-request is still UI-only.

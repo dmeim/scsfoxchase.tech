@@ -4,6 +4,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import { Button, Card, Dialog, Feedback, TextField } from '../components/ui';
 import { iconPrint, iconQrCode, iconSearch } from '../scripts/icons';
 import '../styles/inventory.css';
+const turnstileSitekey = import.meta.env.PUBLIC_TURNSTILE_SITEKEY || '';
 ---
 <BaseLayout title="Inventory Lookup | St. Cecilia Technology" bodyClass="asset-lookup-page">
   <meta
@@ -44,6 +45,14 @@ import '../styles/inventory.css';
               <Button id="assetScanButton" class="asset-scan-button" type="button" variant="secondary" icon={iconQrCode}>Scan QR</Button>
               <Button id="assetPrintButton" class="asset-print-button" type="button" variant="outline" icon={iconPrint} disabled>Print Report</Button>
             </div>
+            <div class="asset-turnstile-row">
+              <div
+                id="assetTurnstile"
+                class="asset-turnstile"
+                data-sitekey={turnstileSitekey}
+                data-action="inventory_lookup"
+              ></div>
+            </div>
           </form>
 
           <Feedback id="assetConfigNotice" tone="info" class="asset-config-notice" hidden />
@@ -76,6 +85,13 @@ import '../styles/inventory.css';
   </Dialog>
 
   <script is:inline src="/vendor/jsQR.min.js"></script>
+  <script
+    is:inline
+    id="inventoryTurnstileScript"
+    src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+    async
+    defer
+  ></script>
   <script>
     import '../scripts/inventory';
   </script>

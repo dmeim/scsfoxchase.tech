@@ -20,6 +20,7 @@ import { handleLibraryRequest } from './worker/libraryRoutes'
 import { handleForceFollowRequest } from './worker/forceFollowRoutes'
 import { handleParticipantRequest } from './worker/participantRoutes'
 import { handleAdminRequest } from './worker/adminRoutes'
+import { handleFormRequest } from './worker/formRoutes'
 import { handleNotificationRequest } from './worker/notificationRoutes'
 import { cleanupExpiredNotifications } from './worker/notificationStore'
 import { WhiteboardBoard } from './worker/WhiteboardBoard'
@@ -58,6 +59,11 @@ export default {
 		ctx: ExecutionContext,
 	): Promise<Response> {
 		const url = new URL(request.url)
+
+		if (url.pathname.startsWith('/api/forms/')) {
+			const formResponse = await handleFormRequest(request, env)
+			if (formResponse) return formResponse
+		}
 
 		if (url.pathname.startsWith('/api/notifications')) {
 			const notificationResponse = await handleNotificationRequest(request, env)

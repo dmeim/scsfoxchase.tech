@@ -12,7 +12,10 @@ Runtime and build configuration for Worker `scsfoxchase-tech`. Bindings (DO / D1
 | `PUBLIC_CLERK_ALLOWED_DOMAINS` | Public | No | Workers Builds vars; local `.env` / `.dev.vars` | Optional allowlist: comma-separated email domains and/or full emails |
 | `CLERK_SECRET_KEY` | **Secret** | Yes for cloud library / `google:*` writes | `npx wrangler secret put`; local `.dev.vars` only | Worker verifies Clerk sessions via `@clerk/backend` |
 | `WHITEBOARD_ADMIN_SECRET` | **Secret** | Only for Durable Object storage wipe | `npx wrangler secret put WHITEBOARD_ADMIN_SECRET` | Bearer token for `POST /api/whiteboard/admin/wipe-storage` (`deleteAll` on listed object hex IDs). Omit locally unless testing wipe. |
-| `PUBLIC_INVENTORY_WEBHOOK` | Public | No | Build env / `.env` if overriding default | Inventory form webhook URL; defaults in code to the n8n inventory endpoint |
+| `PUBLIC_TURNSTILE_SITEKEY` | Public | Yes for public forms | Workers Builds build variable; local `.env` | Shared Turnstile sitekey rendered by every public form |
+| `TURNSTILE_SECRET` | **Secret** | Yes for public forms | Worker runtime secret; local `.dev.vars` | Server-only Siteverify credential shared across forms |
+| `N8N_WEBHOOK_BASE_URL` | **Secret** | Yes for n8n-backed forms | Worker runtime secret; local `.dev.vars` | Server-only base URL; allowlisted form routes append their fixed n8n path |
+| `N8N_WEBHOOK_SECRET` | **Secret** | Yes for n8n-backed forms | Worker runtime secret; local `.dev.vars` | Shared `X-SCS-Webhook-Key` value sent only from the Worker to n8n |
 
 There is no whiteboard license key (`PUBLIC_TLDRAW_LICENSE_KEY` is gone). Excalidraw 0.18.1 is MIT.
 

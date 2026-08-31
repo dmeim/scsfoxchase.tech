@@ -21,6 +21,14 @@
 	},
 	"ratelimits": [
 		{
+			"name": "FORM_SUBMISSION_LIMITER",
+			"namespace_id": "2026083101",
+			"simple": {
+				"limit": 60,
+				"period": 60
+			}
+		},
+		{
 			"name": "WHITEBOARD_CONNECT_LIMITER",
 			"namespace_id": "1001",
 			"simple": {

@@ -14,6 +14,7 @@ declare module 'cloudflare:test' {
 		NOTIFICATIONS: D1Database
 		WHITEBOARD_CONNECT_LIMITER?: RateLimit
 		WHITEBOARD_BOARD_CONNECT_LIMITER?: RateLimit
+		FORM_SUBMISSION_LIMITER?: RateLimit
 		TEST_MIGRATIONS: Array<{ name: string; queries: string[] }>
 		NOTIFICATION_MIGRATIONS: Array<{ name: string; queries: string[] }>
 	}
@@ -28,6 +29,7 @@ declare module 'cloudflare:workers' {
 		NOTIFICATIONS: D1Database
 		WHITEBOARD_CONNECT_LIMITER?: RateLimit
 		WHITEBOARD_BOARD_CONNECT_LIMITER?: RateLimit
+		FORM_SUBMISSION_LIMITER?: RateLimit
 		TEST_MIGRATIONS: Array<{ name: string; queries: string[] }>
 		NOTIFICATION_MIGRATIONS: Array<{ name: string; queries: string[] }>
 	}

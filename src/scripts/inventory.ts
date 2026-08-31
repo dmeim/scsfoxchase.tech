@@ -9,13 +9,15 @@ declare global {
       height: number,
       options?: { inversionAttempts?: string },
     ) => { data: string } | null;
+    turnstile?: {
+      render: (container: HTMLElement, options: Record<string, unknown>) => string;
+      reset: (widgetId: string) => void;
+    };
   }
 }
 
-// Test n8n webhook. The site POSTs: { "serial": "ABC123XYZ" }
-const ASSET_LOOKUP_WEBHOOK_URL =
-    import.meta.env.PUBLIC_INVENTORY_WEBHOOK || 'https://n8n.mlabz.io/webhook/scs-inventory';
-const USE_MOCK_WHEN_NO_WEBHOOK = true;
+const ASSET_LOOKUP_ENDPOINT = '/api/forms/inventory';
+const TURNSTILE_ACTION = 'inventory_lookup';
 const REQUEST_SERIAL_FIELD = 'serial';
 const NO_DATA_LABEL = 'No Data';
 const NOT_APPLICABLE_LABEL = 'Does Not Apply';
@@ -76,27 +78,6 @@ const DEVICE_STATUS_COLORS = {
     'Retired': { bg: '#D9D9D9', text: '#434343' }
 };
 
-const demoAsset = serial => ({
-    'Device Status': 'Warranty',
-    'Assigned To': 'Student Name',
-    'Device Number': '3A-18',
-    'Serial Number / Service Tag': serial,
-    'Express Service Code': '12345678901',
-    'Make / Model': 'Dell Chromebook 3100',
-    'Year Purchased': '2020',
-    'Grant': 'ESSER',
-    'Case': 'Cosmetic',
-    'Chassis': 'Ok',
-    'Hinges': 'Ok',
-    'Display': 'Ok',
-    'Keyboard / Buttons': 'Loose',
-    'Trackpad / Mouse': 'Ok',
-    'Battery / Charging': 'Ok',
-    'Ports': 'Ok',
-    'Camera / Audio': 'Ok',
-    'Notes': 'Demo mode is active because the n8n webhook URL is not configured yet. Replace PUBLIC_INVENTORY_WEBHOOK or the fallback URL in inventory.ts when the workflow is ready.'
-});
-
 const state = {
     form: null,
     input: null,
@@ -114,7 +95,13 @@ const state = {
     scannerCancel: null,
     scannerStream: null,
     scannerFrameRequest: null,
-    scannerActive: false
+    scannerActive: false,
+    turnstileContainer: null,
+    turnstileScript: null,
+    turnstileWidgetId: null,
+    turnstileToken: '',
+    pendingAutoLookup: false,
+    lookupActive: false
 };
 
 if (document.readyState === 'loading') {
@@ -138,6 +125,8 @@ function init() {
     state.scannerStatus = document.getElementById('assetScannerStatus');
     state.scannerClose = document.getElementById('assetScannerClose');
     state.scannerCancel = document.getElementById('assetScannerCancel');
+    state.turnstileContainer = document.getElementById('assetTurnstile');
+    state.turnstileScript = document.getElementById('inventoryTurnstileScript');
 
     if (!state.form || !state.input || !state.result || !state.message) return;
 
@@ -153,22 +142,78 @@ function init() {
     state.printButton?.addEventListener('click', printReport);
 
     setupScannerControls();
-
-    if (!ASSET_LOOKUP_WEBHOOK_URL && USE_MOCK_WHEN_NO_WEBHOOK && state.configNotice) {
-        state.configNotice.hidden = false;
-        state.configNotice.textContent = 'Demo mode: the n8n webhook is not configured yet, so lookups render sample data using the serial number you enter.';
-    }
+    setupTurnstile();
 
     const serialFromUrl = getSerialFromUrl();
     if (serialFromUrl) {
         state.input.value = normalizeSerial(serialFromUrl);
-        lookupFromInput({ updateUrl: false });
+        state.pendingAutoLookup = true;
+        maybeRunPendingLookup();
     } else {
         state.input.focus();
     }
 }
 
+class InventoryLookupError extends Error {}
+
+function setupTurnstile() {
+    const container = state.turnstileContainer;
+    const sitekey = container?.dataset.sitekey?.trim() || '';
+    if (!container || !sitekey) {
+        if (state.configNotice) {
+            state.configNotice.hidden = false;
+            state.configNotice.textContent = 'Inventory lookup is temporarily unavailable because security verification is not configured.';
+        }
+        return;
+    }
+
+    const render = () => {
+        if (!window.turnstile || state.turnstileWidgetId) return;
+        state.turnstileWidgetId = window.turnstile.render(container, {
+            sitekey,
+            action: TURNSTILE_ACTION,
+            appearance: 'interaction-only',
+            size: 'flexible',
+            callback: token => {
+                state.turnstileToken = token;
+                maybeRunPendingLookup();
+            },
+            'expired-callback': () => {
+                state.turnstileToken = '';
+                resetTurnstile();
+            },
+            'error-callback': () => {
+                state.turnstileToken = '';
+                showMessage('Security verification could not load. Refresh the page and try again.', 'error');
+            },
+            'timeout-callback': () => {
+                state.turnstileToken = '';
+            }
+        });
+    };
+
+    if (window.turnstile) {
+        render();
+    } else {
+        state.turnstileScript?.addEventListener('load', render, { once: true });
+    }
+}
+
+function maybeRunPendingLookup() {
+    if (!state.pendingAutoLookup || !state.turnstileToken) return;
+    state.pendingAutoLookup = false;
+    lookupFromInput({ updateUrl: false });
+}
+
+function resetTurnstile() {
+    state.turnstileToken = '';
+    if (window.turnstile && state.turnstileWidgetId) {
+        window.turnstile.reset(state.turnstileWidgetId);
+    }
+}
+
 async function lookupFromInput(options = {}) {
+    if (state.lookupActive) return;
     const serial = normalizeSerial(state.input.value);
     state.input.value = serial;
 
@@ -177,12 +222,20 @@ async function lookupFromInput(options = {}) {
         state.input.focus();
         return;
     }
+    if (!state.turnstileToken) {
+        showMessage('Security verification is still loading. Wait a moment and try again.', 'error');
+        return;
+    }
+
+    const turnstileToken = state.turnstileToken;
+    state.turnstileToken = '';
+    state.lookupActive = true;
 
     setLoading(true, `Looking up ${serial}...`);
     clearResult();
 
     try {
-        const responsePayload = await fetchAsset(serial);
+        const responsePayload = await fetchAsset(serial, turnstileToken);
         const asset = normalizeLookupResponse(responsePayload);
 
         if (!asset) {
@@ -195,10 +248,17 @@ async function lookupFromInput(options = {}) {
         hideMessage();
         updateUrlSerial(getField(asset, FIELD_ALIASES.serial, serial), options.updateUrl !== false);
     } catch (error) {
-        console.error('Asset lookup failed:', error);
-        showMessage('The asset lookup failed. Check the webhook URL, CORS settings, and browser console for details.', 'error');
+        console.error('Asset lookup failed.');
+        showMessage(
+            error instanceof InventoryLookupError
+                ? error.message
+                : 'The inventory service is temporarily unavailable. Try again.',
+            'error'
+        );
     } finally {
+        state.lookupActive = false;
         setLoading(false);
+        resetTurnstile();
     }
 }
 
@@ -358,26 +418,29 @@ function setScannerStatus(message) {
     if (state.scannerStatus) state.scannerStatus.textContent = message;
 }
 
-async function fetchAsset(serial) {
-    if (!ASSET_LOOKUP_WEBHOOK_URL) {
-        if (!USE_MOCK_WHEN_NO_WEBHOOK) {
-            throw new Error('ASSET_LOOKUP_WEBHOOK_URL is not configured.');
-        }
-
-        await delay(450);
-        return { found: true, asset: demoAsset(serial) };
-    }
-
-    const response = await fetch(ASSET_LOOKUP_WEBHOOK_URL, {
+async function fetchAsset(serial, turnstileToken) {
+    const response = await fetch(ASSET_LOOKUP_ENDPOINT, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ [REQUEST_SERIAL_FIELD]: serial })
+        body: JSON.stringify({
+            [REQUEST_SERIAL_FIELD]: serial,
+            turnstileToken
+        })
     });
 
     if (!response.ok) {
-        throw new Error(`Webhook responded with ${response.status}`);
+        if (response.status === 400) {
+            throw new InventoryLookupError('Enter a valid serial number or service tag.');
+        }
+        if (response.status === 403) {
+            throw new InventoryLookupError('Security verification failed. Refresh the page and try again.');
+        }
+        if (response.status === 429) {
+            throw new InventoryLookupError('Too many lookups were submitted. Wait a minute and try again.');
+        }
+        throw new InventoryLookupError('The inventory service is temporarily unavailable. Try again.');
     }
 
     const text = await response.text();
@@ -758,8 +821,4 @@ function escapeHtml(value) {
 
 function escapeAttribute(value) {
     return escapeHtml(value).replace(/`/g, '&#096;');
-}
-
-function delay(ms) {
-    return new Promise(resolve => window.setTimeout(resolve, ms));
 }

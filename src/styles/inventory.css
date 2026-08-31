@@ -93,6 +93,16 @@ body.asset-lookup-page {
     gap: 12px;
 }
 
+.asset-turnstile-row {
+    display: flex;
+    justify-content: flex-end;
+    min-height: 0;
+}
+
+.asset-turnstile {
+    width: min(100%, 300px);
+}
+
 .asset-serial-field {
     min-width: 0;
 }
