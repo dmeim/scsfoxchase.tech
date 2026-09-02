@@ -179,6 +179,68 @@
     grid-column: auto;
 }
 
+/* Compact resource link between the homepage app cards and footer. */
+.home-resource-badge-row {
+    display: flex;
+    justify-content: center;
+    padding: 0 20px clamp(2px, .8vh, 8px);
+}
+
+.home-resource-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 5px 14px 5px 7px;
+    border: 2px solid var(--border-color);
+    border-radius: 999px;
+    color: var(--text-color);
+    background: rgba(249, 249, 249, .7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    font-weight: 750;
+    line-height: 1;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.home-resource-badge img {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+}
+
+.home-resource-badge:hover,
+.home-resource-badge:focus-visible {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+    outline: none;
+}
+
+[data-theme="dark"] .home-resource-badge {
+    background: rgba(45, 45, 45, .7);
+}
+
+[data-theme="dark"] .home-resource-badge:hover,
+[data-theme="dark"] .home-resource-badge:focus-visible {
+    color: var(--secondary-color);
+}
+
+@media (max-height: 800px) and (min-width: 901px) {
+    .home-resource-badge-row {
+        padding-bottom: 0;
+    }
+
+    .home-resource-badge {
+        min-height: 36px;
+        padding: 4px 12px 4px 6px;
+        font-size: .9rem;
+    }
+
+}
+
 /* One homepage search bar with every search destination in one grouped menu. */
 .home-unified-search-row {
     position: relative;
