@@ -19,7 +19,7 @@ Title: “Inventory Lookup | St. Cecilia Technology”; `bodyClass="asset-lookup
 4. Successful lookup enables **Print Report** (`window.print()`); print chrome includes “St. Cecilia Inventory Report” and a timestamp.
 5. On success, the URL is updated via `history.replaceState` to include `?serial=<SERIAL>`.
 
-Page copy: QR tags should store **only the serial as plain text** (e.g. `ABC123XYZ`). The scanner also accepts a URL whose query includes `serial`, `serviceTag`, or `tag`, or text prefixed with `serial` / `serial:` / similar.
+The field and camera scanner accept a plain serial (e.g. `ABC123XYZ`), a URL whose query includes `serial`, `serviceTag`, or `tag`, or text prefixed with `serial` / `serial:` / similar. Query parameter names are case-insensitive so URLs uppercased by keyboard-style scanners still work.
 
 ## Data source and matching
 

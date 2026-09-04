@@ -1,6 +1,10 @@
 // Inventory lookup page (Astro ESM port)
 import { iconSearch } from './icons';
 import { setUiButtonLoading, uiClassNames } from '../components/ui/dom';
+import {
+    extractInventorySerial,
+    getInventorySerialFromSearch,
+} from '../lib/inventory-serial';
 declare global {
   interface Window {
     jsQR?: (
@@ -150,7 +154,7 @@ function init() {
 
     const serialFromUrl = getSerialFromUrl();
     if (serialFromUrl) {
-        state.input.value = normalizeSerial(serialFromUrl);
+        state.input.value = serialFromUrl;
         state.pendingAutoLookup = true;
         maybeRunPendingLookup();
     } else {
@@ -267,7 +271,7 @@ function resetTurnstile() {
 
 async function lookupFromInput(options = {}) {
     if (state.lookupActive) return;
-    const serial = normalizeSerial(state.input.value);
+    const serial = extractInventorySerial(state.input.value);
     state.input.value = serial;
 
     if (!serial) {
@@ -421,18 +425,7 @@ function fillSerialFromQr(rawQrValue) {
 }
 
 function extractSerialFromQr(rawQrValue) {
-    const value = String(rawQrValue || '').trim();
-    if (!value) return '';
-
-    try {
-        const url = new URL(value);
-        const serialFromUrl = url.searchParams.get('serial') || url.searchParams.get('serviceTag') || url.searchParams.get('tag');
-        if (serialFromUrl) return normalizeSerial(serialFromUrl);
-    } catch (error) {
-        // QR tags are expected to be plain serial text, not URLs.
-    }
-
-    return normalizeSerial(value.replace(/^serial\s*[:#-]?\s*/i, ''));
+    return extractInventorySerial(rawQrValue);
 }
 
 function stopScanner(options = {}) {
@@ -786,8 +779,7 @@ function clearResult() {
 }
 
 function getSerialFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('serial') || params.get('serviceTag') || params.get('tag') || '';
+    return getInventorySerialFromSearch(window.location.search);
 }
 
 function updateUrlSerial(serial, shouldUpdate = true) {
@@ -796,10 +788,6 @@ function updateUrlSerial(serial, shouldUpdate = true) {
     const url = new URL(window.location.href);
     url.searchParams.set('serial', serial);
     window.history.replaceState({}, '', url);
-}
-
-function normalizeSerial(serial) {
-    return String(serial || '').trim().toUpperCase();
 }
 
 function formatPrintedDate() {
