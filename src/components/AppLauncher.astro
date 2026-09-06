@@ -4,9 +4,14 @@ import { displayImage } from '../lib/display-images';
 ---
 <section class="newhome-groups">
   <div class="container">
-    <div class="newhome-workflow-grid newhome-workflow-grid-2">
-      <Card class="newhome-group-card">
-        <h2 class="app-row-header">G-Suite</h2>
+    <div class="home-launcher-grid">
+      <Card role="group" class="newhome-group-card home-launcher-column home-launcher-left" aria-label="Learning apps">
+        <a href="https://portal.follettdestiny.com/portal?appId=destiny-RZXK-3JKZ&siteGuid=0B91A465-AC66-4839-A810-FBE8955C907E&app=Destiny%20Discover" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/scs-destiny-logo.png")} alt="Destiny">Destiny</a>
+        <a href="https://www.ixl.com/signin/saintcecilia" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/ixl-square.png")} alt="IXL">IXL</a>
+        <a href="https://www.tinkercad.com/login" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src="/images/tinkercad-icon.svg" alt="TinkerCAD">TinkerCAD</a>
+        <a href="https://play.sumdog.com/sch/stcecilia8" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/sumdog-square.png")} alt="Sumdog">Sumdog</a>
+      </Card>
+      <Card role="group" class="newhome-group-card home-launcher-suite" aria-label="G-Suite">
         <div class="newhome-group-links newhome-group-links-rows">
           <div class="newhome-link-row newhome-link-row-2">
             <a href="https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fclassroom.google.com&passive=true" target="_blank" rel="noopener noreferrer" class="mockup-link newhome-feature-link"><img src={displayImage("/images/google-classroom-logo-clean.png")} alt="Google Classroom">Classroom</a>
@@ -29,29 +34,21 @@ import { displayImage } from '../lib/display-images';
           </div>
         </div>
       </Card>
-      <Card class="newhome-group-card">
+      <Card role="group" class="newhome-group-card home-launcher-column home-launcher-right" aria-label="Creative and typing apps">
+        <a href="https://www.canva.com/login/" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/canva-square.png")} alt="Canva">Canva</a>
+        <a href="https://typesetgo.app" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/typesetgo.png")} alt="TypeSetGo">TypeSetGo</a>
+        <a href="https://www.typing.com/student/lessons" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/typing-com-logo.png")} alt="Typing.com">Typing.com</a>
+        <a href="https://monkeytype.com?testSettings=NoIgLglgtgpiA0IAMCB2BXANp+AzAhpgM4x6EmIyoDmmERAFgiKgPYBOUhaWmAukA" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/monkeytype-logo.png")} alt="Monkeytype">Monkeytype</a>
+      </Card>
+      {/* Temporarily hidden; keep these links for future use.
+      <Card class="newhome-group-card home-launcher-extras">
         <h2 class="app-row-header">Sites</h2>
-        <div class="newhome-group-links newhome-group-links-rows">
-          <div class="newhome-link-row newhome-link-row-2">
-            <a href="https://www.ixl.com/signin/saintcecilia" target="_blank" rel="noopener noreferrer" class="mockup-link newhome-main-link"><img src={displayImage("/images/ixl-square.png")} alt="IXL">IXL</a>
-            <a href="https://typesetgo.app" target="_blank" rel="noopener noreferrer" class="mockup-link newhome-main-link"><img src={displayImage("/images/typesetgo.png")} alt="TypeSetGo">TypeSetGo</a>
-          </div>
-          <div class="newhome-link-row">
-            <a href="https://play.sumdog.com/sch/stcecilia8" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/sumdog-square.png")} alt="Sumdog">Sumdog</a>
-            <a href="https://www.tinkercad.com/login" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src="/images/tinkercad-icon.svg" alt="TinkerCAD">TinkerCAD</a>
-            <a href="https://www.typing.com/student/lessons" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/typing-com-logo.png")} alt="Typing.com">Typing.com</a>
-          </div>
-          <div class="newhome-link-row">
-            <a href="https://sso.prodigygame.com/game/login" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src="/images/prodigy-math-icon.svg" alt="Prodigy">Prodigy</a>
-            <a href="https://www.hellosmart.com/link/" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/lumio-logo.png")} alt="Lumio">Lumio</a>
-            <a href="https://monkeytype.com?testSettings=NoIgLglgtgpiA0IAMCB2BXANp+AzAhpgM4x6EmIyoDmmERAFgiKgPYBOUhaWmAukA" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/monkeytype-logo.png")} alt="Monkeytype">Monkeytype</a>
-          </div>
-          <div class="newhome-link-row newhome-link-row-2">
-            <a href="https://www.canva.com/login/" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/canva-square.png")} alt="Canva">Canva</a>
-            <a href="https://portal.follettdestiny.com/portal?appId=destiny-RZXK-3JKZ&siteGuid=0B91A465-AC66-4839-A810-FBE8955C907E&app=Destiny%20Discover" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/scs-destiny-logo.png")} alt="Destiny">Destiny</a>
-          </div>
+        <div class="newhome-link-row newhome-link-row-2">
+          <a href="https://sso.prodigygame.com/game/login" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src="/images/prodigy-math-icon.svg" alt="Prodigy">Prodigy</a>
+          <a href="https://www.hellosmart.com/link/" target="_blank" rel="noopener noreferrer" class="mockup-link"><img src={displayImage("/images/lumio-logo.png")} alt="Lumio">Lumio</a>
         </div>
       </Card>
+      */}
     </div>
   </div>
 </section>

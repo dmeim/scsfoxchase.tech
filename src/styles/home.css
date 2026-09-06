@@ -179,6 +179,66 @@
     grid-column: auto;
 }
 
+/* Center Google apps between single-column learning and typing launchers. */
+.home-launcher-grid {
+    display: grid;
+    grid-template-columns: minmax(130px, 1fr) minmax(0, 3fr) minmax(130px, 1fr);
+    grid-template-areas: "left suite right" ". extras .";
+    gap: clamp(10px, 1.4vw, 20px);
+    max-width: 1000px;
+    margin: 0 auto;
+    align-items: start;
+}
+
+.home-launcher-suite { grid-area: suite; }
+.home-launcher-left { grid-area: left; }
+.home-launcher-right { grid-area: right; }
+.home-launcher-extras { grid-area: extras; }
+
+.home-launcher-column {
+    display: grid;
+    gap: clamp(7px, .9vw, 12px);
+}
+
+.home-launcher-column .mockup-link {
+    min-height: clamp(82px, 8vw, 116px);
+    padding: 10px 6px;
+    flex-direction: column;
+    font-size: clamp(.8rem, 1vw, 1rem);
+}
+
+.home-launcher-column .mockup-link img {
+    width: clamp(40px, 4vw, 56px);
+    height: clamp(40px, 4vw, 56px);
+}
+
+.home-launcher-extras .mockup-link {
+    min-height: 68px;
+}
+
+@media (max-height: 800px) and (min-width: 769px) {
+    .home-launcher-grid { gap: 10px; }
+    .home-launcher-grid .newhome-group-card { padding: 9px; }
+    .home-launcher-grid .newhome-link-row .mockup-link {
+        min-height: 54px;
+        padding: 5px 6px;
+        gap: 5px;
+        line-height: 1.2;
+    }
+    .home-launcher-grid .mockup-link img { width: 30px; height: 30px; }
+    .home-launcher-grid .newhome-link-row .newhome-feature-link { min-height: 74px; }
+    .home-launcher-grid .newhome-feature-link img { width: 42px; height: 42px; }
+    .home-launcher-column .mockup-link { min-height: 78px; padding: 6px; gap: 6px; line-height: 1.2; }
+    .home-launcher-column .mockup-link img { width: 36px; height: 36px; }
+}
+
+@media (max-width: 768px) {
+    .home-launcher-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "suite suite" "left right" "extras extras";
+    }
+}
+
 /* Compact resource link between the homepage app cards and footer. */
 .home-resource-badge-row {
     display: flex;
