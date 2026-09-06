@@ -125,7 +125,7 @@
     transform: scale(1.07);
 }
 
-.ng-hero-bg::after {
+.ng-hero-link::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -746,3 +746,7 @@
         grid-template-columns: 1fr;
     }
 }
+
+.game-card[hidden] { display: none; }
+img.ng-hero-bg { width: 100%; height: 100%; object-fit: cover; }
+[data-ng-hero-pause] { padding: 3px 6px; font-size: 0.75rem; }

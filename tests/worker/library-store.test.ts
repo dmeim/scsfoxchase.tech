@@ -11,6 +11,7 @@ import {
 	listLibraryAssets,
 	listLibraryBoards,
 	patchLibraryBoardPreview,
+	touchLibraryBoard,
 	upsertLibraryAsset,
 	upsertLibraryBoard,
 	LibraryStoreError,
@@ -129,6 +130,22 @@ describe('D1 whiteboard library store', () => {
 	beforeAll(async () => {
 		await bootWorker()
 	})
+
+  it('touches recents without overwriting names, crossing owners, or resurrecting deleted boards', async () => {
+    const owner = `google:touch-${crypto.randomUUID()}`
+    const other = `google:other-${crypto.randomUUID()}`
+    const id = crypto.randomUUID()
+    const old = '2020-01-01T00:00:00.000Z'
+    await upsertLibraryBoard(workerEnv, owner, board(id, { title: 'Renamed in another tab', lastAccessedAt: old }))
+    expect(await touchLibraryBoard(workerEnv, other, id)).toBe(false)
+    expect(await touchLibraryBoard(workerEnv, owner, id)).toBe(true)
+    const result = await getLibraryBoard(workerEnv, owner, id)
+    expect(result?.title).toBe('Renamed in another tab')
+    expect(Date.parse(result!.lastAccessedAt)).toBeGreaterThan(Date.parse(old))
+    await deleteLibraryBoard(workerEnv, owner, id)
+    expect(await touchLibraryBoard(workerEnv, owner, id)).toBe(false)
+    expect(await getLibraryBoard(workerEnv, owner, id)).toBeNull()
+  })
 
 	it('supports owner-isolated CRUD, monotonic recents, preview retention, and asset DTO fields', async () => {
 		const owner = `google:test-${crypto.randomUUID()}`

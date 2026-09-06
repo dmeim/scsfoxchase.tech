@@ -2704,3 +2704,7 @@ footer {
         font-size: clamp(0.78rem, min(1vw, 2vh), 1rem);
     }
 }
+
+.game-card-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.game-card-image { position: relative; overflow: hidden; }
+.game-card-image img { position: absolute; inset: 0; }

@@ -8,6 +8,7 @@ interface Props {
     href: string;
     label: string;
     iconHtml: string;
+    statusLabel?: string;
   }[];
   emptyMessage?: string;
   ariaLabel?: string;
@@ -52,6 +53,7 @@ const {
             titleClass="forms-tile-label"
             icon={tile.iconHtml}
             title={tile.label}
+            description={tile.statusLabel}
           />
         ))}
       </div>

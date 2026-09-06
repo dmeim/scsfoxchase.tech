@@ -21,6 +21,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const centers = [...document.querySelectorAll<HTMLElement>('[data-notification-center]')];
 let notifications: NotificationRecord[] = [];
 let usingCloud = false;
+let mutationBusy = false;
+let syncGeneration = 0;
+let renderedIdentity: string | undefined;
 
 function validRecord(value: unknown): value is NotificationRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -134,6 +137,7 @@ function render(): void {
       dismiss.dataset.notificationDismiss = item.id;
       dismiss.setAttribute('aria-label', `Dismiss ${item.title}`);
       dismiss.innerHTML = iconTimes;
+      dismiss.disabled = mutationBusy;
       row.appendChild(icon);
       row.appendChild(copy);
       row.appendChild(dismiss);
@@ -142,85 +146,119 @@ function render(): void {
 
     list.hidden = notifications.length === 0;
     empty.hidden = notifications.length > 0;
-    clear.disabled = notifications.length === 0;
+    clear.disabled = notifications.length === 0 || mutationBusy;
+    center.setAttribute('aria-busy', String(mutationBusy));
     badge.hidden = unread === 0;
     badge.textContent = unread > 99 ? '99+' : String(unread);
   }
 }
 
 async function claimLocalAndLoadCloud(): Promise<void> {
-  const local = loadLocal();
-  if (local.length > 0) {
-    const response = await api('/claim', {
-      method: 'POST',
-      body: JSON.stringify({ notifications: local }),
-    });
-    if (!response?.ok) {
-      usingCloud = false;
-      notifications = local;
-      render();
-      return;
+  const generation = ++syncGeneration;
+  const identity = getActiveIdentity()?.clerkUserId;
+  const current = () => generation === syncGeneration && identity === getActiveIdentity()?.clerkUserId;
+  try {
+    const local = loadLocal();
+    if (local.length > 0) {
+      const response = await api('/claim', {
+        method: 'POST',
+        body: JSON.stringify({ notifications: local }),
+      });
+      if (!current()) return;
+      if (!response?.ok) {
+        usingCloud = false;
+        notifications = local;
+        render();
+        return;
+      }
+      const body = await response.json() as { claimedIds?: unknown };
+      if (!current()) return;
+      const claimed = new Set(Array.isArray(body.claimedIds) ? body.claimedIds : []);
+      saveLocal(local.filter((item) => !claimed.has(item.id)));
     }
-    const body = await response.json() as { claimedIds?: unknown };
-    const claimed = new Set(Array.isArray(body.claimedIds) ? body.claimedIds : []);
-    saveLocal(local.filter((item) => !claimed.has(item.id)));
-  }
 
-  const response = await api();
-  if (!response?.ok) {
-    usingCloud = false;
-    notifications = loadLocal();
+    const response = await api();
+    if (!current()) return;
+    if (!response?.ok) throw new Error('Could not refresh notifications');
+    const body = await response.json() as { notifications?: unknown };
+    if (!current()) return;
+    usingCloud = true;
+    notifications = Array.isArray(body.notifications)
+      ? body.notifications.filter(validRecord)
+      : [];
     render();
-    return;
+  } catch {
+    // Keep the last rendered list available during a transient connection failure.
+    if (current()) render();
   }
-  const body = await response.json() as { notifications?: unknown };
-  usingCloud = true;
-  notifications = Array.isArray(body.notifications)
-    ? body.notifications.filter(validRecord)
-    : [];
-  render();
 }
 
 async function syncForIdentity(): Promise<void> {
-  if (getActiveIdentity()) {
-    await claimLocalAndLoadCloud();
-  } else {
+  const identity = getActiveIdentity()?.clerkUserId;
+  if (identity !== renderedIdentity) {
+    ++syncGeneration;
+    renderedIdentity = identity;
     usingCloud = false;
     notifications = loadLocal();
+    render();
+  }
+  if (identity) {
+    await claimLocalAndLoadCloud();
+  } else {
+    ++syncGeneration;
+    usingCloud = false;
+    notifications = loadLocal();
+    render();
+  }
+}
+
+async function commitChange(path: string, method: string, apply: () => void): Promise<void> {
+  if (mutationBusy) return;
+  const identity = getActiveIdentity()?.clerkUserId;
+  const cloud = usingCloud;
+  mutationBusy = true;
+  ++syncGeneration; // A stale list response must not undo a completed action.
+  render();
+  try {
+    if (cloud) {
+      const response = await api(path, { method });
+      if (!response?.ok) throw new Error('Notification update failed');
+    }
+    if (identity !== getActiveIdentity()?.clerkUserId) return;
+    ++syncGeneration;
+    apply();
+    if (!cloud) saveLocal(notifications);
+  } catch {
+    if (identity === getActiveIdentity()?.clerkUserId) showToast({
+      kind: 'error', icon: 'triangle-alert', title: 'Notifications were not updated',
+      description: 'Check your connection and try again. Your notifications are still here.',
+    });
+  } finally {
+    mutationBusy = false;
     render();
   }
 }
 
 async function markAllRead(): Promise<void> {
-  if (!notifications.some((item) => !item.readAt)) return;
+  const ids = new Set(notifications.filter(item => !item.readAt).map(item => item.id));
+  if (ids.size === 0) return;
   const now = new Date().toISOString();
-  notifications = notifications.map((item) => item.readAt ? item : { ...item, readAt: now });
-  render();
-  if (usingCloud) {
-    await api('/read-all', { method: 'POST' });
-  } else {
-    saveLocal(notifications);
-  }
+  await commitChange('/read-all', 'POST', () => {
+    notifications = notifications.map(item => ids.has(item.id) ? { ...item, readAt: now } : item);
+  });
 }
 
 async function dismiss(id: string): Promise<void> {
-  notifications = notifications.filter((item) => item.id !== id);
-  render();
-  if (usingCloud) {
-    await api(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  } else {
-    saveLocal(notifications);
-  }
+  await commitChange(`/${encodeURIComponent(id)}`, 'DELETE', () => {
+    notifications = notifications.filter(item => item.id !== id);
+  });
 }
 
 async function clearAll(): Promise<void> {
-  notifications = [];
-  render();
-  if (usingCloud) {
-    await api('/clear', { method: 'POST' });
-  } else {
-    saveLocal([]);
-  }
+  const ids = new Set(notifications.map(item => item.id));
+  await commitChange('/clear', 'POST', () => {
+    notifications = notifications.filter(item => !ids.has(item.id));
+  });
 }
 
 function setOpen(center: HTMLElement, open: boolean): void {

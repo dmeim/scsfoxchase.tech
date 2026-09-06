@@ -865,6 +865,27 @@ export async function patchLibraryBoardPreview(
 	})
 }
 
+/** Touch existing membership only; never overwrite a title or restore a deletion. */
+export async function touchLibraryBoard(
+  env: LibraryStoreEnvironment,
+  ownerKey: string,
+  boardId: string,
+  legacyOwnerKeys: string[] = [],
+): Promise<boolean> {
+  return withOwnerLock(ownerKey, async () => {
+    await ensureOwnerImportedUnlocked(env, ownerKey, legacyOwnerKeys)
+    const result = await runD1(() => databaseSession(env).prepare(
+      `UPDATE library_boards SET last_accessed_at = ?
+       WHERE owner_key = ? AND board_id = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM library_board_tombstones
+         WHERE owner_key = library_boards.owner_key AND board_id = library_boards.board_id
+       )`,
+    ).bind(new Date().toISOString(), ownerKey, boardId).run())
+    return (result.meta.changes ?? 0) > 0
+  })
+}
+
 export async function deleteLibraryBoard(
 	env: LibraryStoreEnvironment,
 	ownerKey: string,

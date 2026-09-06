@@ -80,3 +80,27 @@ describe('library board deletion authorization boundary', () => {
 		)
 	})
 })
+
+
+describe('library recent access route', () => {
+  it('accepts an authenticated timestamp-only PATCH and rejects missing membership', async () => {
+    const suffix = crypto.randomUUID()
+    const ownerKey = `google:access-${suffix}`
+    vi.spyOn(clerkAuth, 'requireClerkWhiteboardAuth').mockResolvedValue({
+      ok: true,
+      auth: { clerkUserId: suffix, accountId: suffix, ownerKey, email: 'test@example.com', displayName: 'Test' },
+    })
+    const boardId = crypto.randomUUID()
+    await upsertLibraryBoard(env as unknown as Env, ownerKey, {
+      id: boardId, title: 'Keep my title', lastAccessedAt: '2020-01-01T00:00:00.000Z',
+    })
+    const request = (id: string, method = 'PATCH') => new Request(
+      `${WORKER_ORIGIN}/api/whiteboard/library/boards/${id}/access`, { method },
+    )
+    const updated = await handleLibraryRequest(request(boardId), env as unknown as Env)
+    expect(updated?.status).toBe(200)
+    expect(await updated?.json()).toEqual({ ok: true })
+    expect((await handleLibraryRequest(request(crypto.randomUUID()), env as unknown as Env))?.status).toBe(404)
+    expect((await handleLibraryRequest(request(boardId, 'DELETE'), env as unknown as Env))?.status).toBe(405)
+  })
+})

@@ -7,6 +7,7 @@ import {
 import { fetchCloudAssets } from '../lib/whiteboard-cloud';
 import { lookupShareCode } from '../lib/whiteboard-codes';
 import {
+  getActiveIdentity,
   isClerkConfigured,
   isSignedIn,
   onAuthChange,
@@ -16,7 +17,6 @@ import {
   createBoardActive,
   formatAccessedDate,
   getDeviceInstallId,
-  getRecentsActive,
   listBoardsActive,
   parseJoinInput,
   removeBoardActive,
@@ -231,77 +231,118 @@ function setCloudListsVisible(visible: boolean) {
   if (lists) lists.hidden = !visible;
 }
 
-async function renderAssets() {
-  const row = document.querySelector<HTMLElement>('[data-wb-assets-row]');
-  const empty = document.querySelector<HTMLElement>('[data-wb-assets-empty]');
-  if (!row || !empty) return;
-  if (!isSignedIn()) {
-    row.innerHTML = '';
-    row.hidden = true;
-    empty.hidden = false;
-    return;
+let libraryGeneration = 0;
+let renderedIdentity: string | undefined;
+
+function listFeedback(key: string, message: string, retry = false) {
+  const grid = document.querySelector<HTMLElement>(`[data-wb-${key}]`);
+  if (!grid) return;
+  let feedback = document.querySelector<HTMLElement>(`[data-wb-list-feedback="${key}"]`);
+  if (!feedback) {
+    feedback = document.createElement('div');
+    feedback.dataset.wbListFeedback = key;
+    feedback.setAttribute('role', 'status');
+    grid.after(feedback);
   }
-  let entries: WhiteboardAssetEntry[] = [];
-  try {
-    entries = await fetchCloudAssets();
-  } catch {
-    entries = [];
+  feedback.replaceChildren(document.createTextNode(message));
+  feedback.hidden = !message;
+  if (retry) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = uiClassNames.button('outline', 'small');
+    button.textContent = 'Retry';
+    button.addEventListener('click', () => { void renderLibrary(); });
+    feedback.append(' ', button);
   }
-  if (entries.length === 0) {
-    row.innerHTML = '';
-    row.hidden = true;
-    empty.hidden = false;
-    empty.textContent =
-      'Images and videos you place on a saved board show up here.';
-    return;
-  }
-  empty.hidden = true;
-  row.hidden = false;
-  row.innerHTML = entries.map(assetCardHtml).join('');
 }
 
 async function renderLibrary() {
+  const generation = ++libraryGeneration;
+  const identity = getActiveIdentity()?.clerkUserId;
+  const current = () => generation === libraryGeneration && identity === getActiveIdentity()?.clerkUserId;
+  const recentsGrid = document.querySelector<HTMLElement>('[data-wb-recents-grid]');
+  const libraryGrid = document.querySelector<HTMLElement>('[data-wb-library-grid]');
+  const assetsRow = document.querySelector<HTMLElement>('[data-wb-assets-row]');
+  const recentsEmpty = document.querySelector<HTMLElement>('[data-wb-recents-empty]');
+  const libraryEmpty = document.querySelector<HTMLElement>('[data-wb-library-empty]');
+  const assetsEmpty = document.querySelector<HTMLElement>('[data-wb-assets-empty]');
+  if (renderedIdentity !== identity) {
+    for (const grid of [recentsGrid, libraryGrid, assetsRow]) {
+      grid?.replaceChildren();
+      if (grid) grid.hidden = true;
+    }
+    renderedIdentity = identity;
+  }
   if (!isSignedIn()) {
     setCloudListsVisible(false);
     setHubNote(NOTE_SIGNED_OUT);
     return;
   }
-
   setCloudListsVisible(true);
   setHubNote(NOTE_SIGNED_IN);
+  for (const empty of [recentsEmpty, libraryEmpty, assetsEmpty]) if (empty) empty.hidden = true;
+  listFeedback('recents-grid', 'Loading boards…');
+  listFeedback('library-grid', 'Loading boards…');
+  listFeedback('assets-row', 'Loading assets…');
 
-  let recents: WhiteboardLibraryEntry[] = [];
-  let library: WhiteboardLibraryEntry[] = [];
+  // One board request feeds both lists. Assets never delay board rendering.
+  await Promise.all([
+    (async () => {
+      try {
+        const boards = await listBoardsActive();
+        if (!current()) return;
+        if (recentsEmpty) recentsEmpty.textContent = 'No recent boards in your Google library yet. Create one to get started.';
+        if (libraryEmpty) libraryEmpty.textContent = 'Boards you create while signed in are saved here automatically. Join by code or link does not add a board until you Save.';
+        renderSection(recentsGrid, recentsEmpty, boards.slice(0, 8));
+        renderSection(libraryGrid, libraryEmpty, boards);
+        listFeedback('recents-grid', '');
+        listFeedback('library-grid', '');
+      } catch {
+        if (!current()) return;
+        listFeedback('recents-grid', 'Could not refresh your boards. Check your connection and try again.', true);
+        listFeedback('library-grid', 'Could not refresh your library. Check your connection and try again.', true);
+      }
+    })(),
+    (async () => {
+      try {
+        const entries = await fetchCloudAssets();
+        if (!current() || !assetsRow || !assetsEmpty) return;
+        assetsRow.innerHTML = entries.map(assetCardHtml).join('');
+        assetsRow.hidden = entries.length === 0;
+        assetsEmpty.hidden = entries.length > 0;
+        assetsEmpty.textContent = 'No saved assets. New image and video insertion is currently unavailable.';
+        listFeedback('assets-row', '');
+      } catch {
+        if (current()) listFeedback('assets-row', 'Could not refresh your assets. Check your connection and try again.', true);
+      }
+    })(),
+  ]);
+}
+
+async function runCardAction(card: HTMLElement, action: () => Promise<unknown>) {
+  if (card.getAttribute('aria-busy') === 'true') return;
+  const buttons = [...card.querySelectorAll<HTMLButtonElement>('button')];
+  card.setAttribute('aria-busy', 'true');
+  buttons.forEach(button => { button.disabled = true; });
+  let error = card.querySelector<HTMLElement>('[data-wb-card-error]');
+  if (!error) {
+    error = document.createElement('p');
+    error.dataset.wbCardError = '';
+    error.setAttribute('role', 'alert');
+    card.querySelector('[data-wb-card-menu-panel]')?.append(error);
+  }
+  error.hidden = true;
   try {
-    recents = await getRecentsActive(8);
-    library = await listBoardsActive();
-  } catch {
-    recents = [];
-    library = [];
+    await action();
+    closeCardMenus();
+    await renderLibrary();
+  } catch (cause) {
+    error.textContent = cause instanceof Error ? cause.message : 'Could not complete this action. Check your connection and try again.';
+    error.hidden = false;
+  } finally {
+    card.removeAttribute('aria-busy');
+    buttons.forEach(button => { button.disabled = false; });
   }
-
-  const recentsEmpty = document.querySelector<HTMLElement>('[data-wb-recents-empty]');
-  const libraryEmpty = document.querySelector<HTMLElement>('[data-wb-library-empty]');
-  if (recentsEmpty) {
-    recentsEmpty.textContent =
-      'No recent boards in your Google library yet. Create one to get started.';
-  }
-  if (libraryEmpty) {
-    libraryEmpty.textContent =
-      'Boards you create while signed in are saved here automatically. Join by code or link does not add a board until you Save.';
-  }
-
-  renderSection(
-    document.querySelector('[data-wb-recents-grid]'),
-    recentsEmpty,
-    recents,
-  );
-  await renderAssets();
-  renderSection(
-    document.querySelector('[data-wb-library-grid]'),
-    libraryEmpty,
-    library,
-  );
 }
 
 type CardKind = 'board' | 'asset';
@@ -426,17 +467,7 @@ function bindCardMenus(root: Element) {
     }
 
     if (target.closest('[data-wb-card-delete-yes]')) {
-      if (kind === 'asset') {
-        void removeAssetActive(id).then(() => {
-          closeCardMenus();
-          void renderLibrary();
-        });
-      } else {
-        void removeBoardActive(id).then(() => {
-          closeCardMenus();
-          void renderLibrary();
-        });
-      }
+      void runCardAction(card, () => kind === 'asset' ? removeAssetActive(id) : removeBoardActive(id));
       return;
     }
   });
@@ -473,21 +504,11 @@ function bindCardMenus(root: Element) {
     }
     input?.setCustomValidity('');
 
-    // Gate on auth-ready so a pre-AuthBridge rename does not miss the cloud library.
-    void (async () => {
+    void runCardAction(card, async () => {
       await whenAuthReady();
-      try {
-        if (kind === 'asset') {
-          await setAssetTitleActive(id, nextTitle);
-        } else {
-          await renameBoardActive(id, nextTitle);
-        }
-      } catch {
-        // Live meta:title PATCH failed; Recents was not mirrored.
-      }
-      closeCardMenus();
-      void renderLibrary();
-    })();
+      if (kind === 'asset') await setAssetTitleActive(id, nextTitle);
+      else await renameBoardActive(id, nextTitle);
+    });
   });
 }
 

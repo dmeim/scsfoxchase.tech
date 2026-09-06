@@ -1,5 +1,6 @@
 ---
 import ClerkAuth from './ClerkAuth';
+import { displayImage } from '../lib/display-images';
 import TempNotificationMenu from './TempNotificationMenu.astro';
 import NotificationCenter from './NotificationCenter.astro';
 import {
@@ -39,7 +40,7 @@ const notificationDemo = pathname === '/temp';
   <div class="container">
     <div class="header-left">
       <a href="/" class="header-brand" aria-label="St. Cecilia Technology home">
-        <img src="/images/scs-logo.png" alt="SCS Logo" class="header-logo" width="32" height="32">
+        <img src={displayImage("/images/scs-logo.png")} alt="SCS Logo" class="header-logo" width="32" height="32">
         <h1>St. Cecilia Technology</h1>
       </a>
       <SegmentedControl

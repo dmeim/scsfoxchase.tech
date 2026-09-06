@@ -17,7 +17,8 @@
     "verify:whiteboard": "npm run typecheck:whiteboard && npm test && npm run build",
     "build": "astro build",
     "preview": "astro preview",
-    "preview:upload": "npm run verify:whiteboard && wrangler versions upload"
+    "preview:upload": "npm run verify:whiteboard && wrangler versions upload",
+    "images:generate": "node scripts/generate-display-images.mjs"
   },
   "keywords": [],
   "author": "",
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260804.1",
+    "sharp": "0.35.4",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.127.0"

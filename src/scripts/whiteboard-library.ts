@@ -9,6 +9,7 @@
 import {
   deleteCloudBoard,
   fetchCloudBoards,
+  touchCloudBoard,
   markBoardSavedToLibrary,
   upsertCloudBoard,
 } from '../lib/whiteboard-cloud';
@@ -368,8 +369,8 @@ export async function touchBoardActive(
   const hostSecret = getHostSecret(boardId);
   if (existing) {
     if (title === undefined) {
-      // Hello / page-load must not PUT existing.title (often Untitled) over a
-      // concurrent Owner Save. lastAccessedAt updates when a title is provided.
+      // Touch only the timestamp so opening never overwrites a concurrent rename.
+      await touchCloudBoard(boardId);
       scheduleSavedToLibrary(boardId, hostSecret);
       return existing;
     }
@@ -506,8 +507,7 @@ export async function renameBoardActive(
   try {
     return await setBoardTitleActive(boardId, liveTitle);
   } catch {
-    // Recents is an optional Owner index; the live room already has the name.
-    return untitledEntry(boardId, liveTitle);
+    throw new Error('The board was renamed, but the library could not update. Try Save again to update the library.');
   }
 }
 

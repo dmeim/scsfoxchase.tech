@@ -21,6 +21,7 @@ import {
 	listLibraryAssets,
 	listLibraryBoards,
 	patchLibraryBoardPreview,
+	touchLibraryBoard,
 	upsertLibraryAsset,
 	upsertLibraryBoard,
 	LibraryStoreError,
@@ -377,6 +378,19 @@ export async function handleLibraryRequest(
 	const assetOne = url.pathname.match(
 		/^\/api\/whiteboard\/library\/assets\/([^/]+)\/?$/i,
 	)
+
+  const boardAccess = url.pathname.match(/^\/api\/whiteboard\/library\/boards\/([^/]+)\/access\/?$/i)
+  if (boardAccess) {
+    const boardId = boardAccess[1].toLowerCase()
+    if (!UUID_RE.test(boardId)) return json(400, { error: 'Invalid board id' }, request)
+    if (request.method !== 'PATCH') return json(405, { error: 'Method not allowed' }, request)
+    try {
+      const touched = await touchLibraryBoard(env, ownerKey, boardId, legacyOwnerKeys)
+      return touched ? json(200, { ok: true }, request) : json(404, { error: 'Board not in library' }, request)
+    } catch (error) {
+      return libraryStoreError(request, error)
+    }
+  }
 
 	if (boardsList) {
 		if (request.method === 'GET') {

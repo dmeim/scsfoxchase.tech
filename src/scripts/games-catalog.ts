@@ -71,6 +71,7 @@ class GamesManager {
   detailOpener: HTMLElement | null = null;
   detailEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
   previousBodyOverflow = '';
+  prerenderedCards: HTMLElement[] = [];
 
   constructor(games: Game[], trendingIds: string[]) {
     this.gamesGrid = document.getElementById('games-grid');
@@ -86,6 +87,16 @@ class GamesManager {
 
   init() {
     try {
+      this.prerenderedCards = [...(this.gamesGrid?.querySelectorAll<HTMLElement>('[data-game-id]') ?? [])];
+      this.gamesGrid?.addEventListener('click', (event) => {
+        const title = (event.target as Element).closest<HTMLElement>('[data-game-details]');
+        if (!title) return;
+        const game = this.allGames.find((item) => item.id === title.closest<HTMLElement>('[data-game-id]')?.dataset.gameId);
+        if (!game) return;
+        event.preventDefault();
+        this.openGameDetail(game, title);
+      });
+      document.querySelectorAll('[data-games-clear]').forEach((button) => button.addEventListener('click', () => this.clearFilters()));
       this.initCarousel();
       this.initFilters();
       this.renderGamesGrid();
@@ -133,6 +144,23 @@ class GamesManager {
     bindGroup(this.secondaryCategoryChipsContainer, this.selectedSecondaryCategories, String);
   }
 
+  clearFilters() {
+    this.searchQuery = '';
+    if (this.searchInput) this.searchInput.value = '';
+    this.selectedGrades.clear();
+    this.selectedPrimaryCategories.clear();
+    this.selectedSecondaryCategories.clear();
+    for (const group of [this.gradeChipsContainer, this.primaryCategoryChipsContainer, this.secondaryCategoryChipsContainer]) {
+      group?.querySelectorAll('[data-ui-chip-value]').forEach((chip) => {
+        chip.classList.remove('is-selected');
+        chip.setAttribute('aria-pressed', 'false');
+      });
+    }
+    this.filterGames();
+    this.renderGamesGrid();
+    this.searchInput?.focus();
+  }
+
   filterGames() {
     this.filteredGames = this.allGames.filter((game) => {
       if (this.searchQuery) {
@@ -174,6 +202,13 @@ class GamesManager {
 
   renderGamesGrid() {
     if (!this.gamesGrid) return;
+    if (this.prerenderedCards.length > 0) {
+      const visible = new Set(this.filteredGames.map((game) => game.id));
+      this.prerenderedCards.forEach((card) => { card.hidden = !visible.has(card.dataset.gameId!); });
+      this.gamesGrid.querySelector('.no-games-message')?.remove();
+      if (visible.size === 0) this.renderNoGamesMessage();
+      return;
+    }
     this.gamesGrid.innerHTML = '';
 
     if (this.filteredGames.length === 0) {
@@ -202,7 +237,12 @@ class GamesManager {
 
     const cardImage = document.createElement('div');
     cardImage.classList.add('game-card-image');
-    cardImage.style.backgroundImage = `url(${game.image})`;
+    const thumbnail = document.createElement('img');
+    thumbnail.src = game.thumbnail || game.image;
+    thumbnail.alt = '';
+    thumbnail.loading = 'lazy';
+    thumbnail.decoding = 'async';
+    cardImage.appendChild(thumbnail);
 
     const cardContent = document.createElement('div');
     cardContent.classList.add('game-card-content');
@@ -265,7 +305,12 @@ class GamesManager {
 
     const cardImage = document.createElement('a');
     cardImage.classList.add('game-card-image');
-    cardImage.style.backgroundImage = `url(${game.image})`;
+    const thumbnail = document.createElement('img');
+    thumbnail.src = game.thumbnail || game.image;
+    thumbnail.alt = '';
+    thumbnail.loading = 'lazy';
+    thumbnail.decoding = 'async';
+    cardImage.appendChild(thumbnail);
     cardImage.href = game.url;
     cardImage.target = '_blank';
     cardImage.rel = 'noopener noreferrer';
@@ -317,6 +362,7 @@ class GamesManager {
     if (titleEl) titleEl.textContent = game.name;
 
     if (imageEl) {
+      delete imageEl.dataset.fallback;
       imageEl.src = game.image;
       imageEl.alt = '';
     }
@@ -392,8 +438,15 @@ class GamesManager {
     message.innerHTML = `
       ${iconExclamationCircle}
       <h3>No Games Found</h3>
-      <p>There are no games available for the selected grade level.</p>
+      <p>No games match your search and filters.</p>
     `;
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = uiClassNames.button('primary', 'small');
+    clear.textContent = 'Clear filters';
+    clear.addEventListener('click', () => this.clearFilters());
+    message.appendChild(clear);
+    message.setAttribute('role', 'status');
     this.gamesGrid.appendChild(message);
   }
 

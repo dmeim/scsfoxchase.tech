@@ -1,55 +1,24 @@
 ---
 title: How to use this Help site
-description: Reference guide for Forms, Guides, and how we cite external sources
+description: Find instructions, get technology help, and suggest a game
 featured: true
-sources:
-  - id: "1"
-    title: "Astro Content Collections"
-    url: "https://docs.astro.build/en/guides/content-collections/"
-    note: "How we store guide articles as Markdown with typed frontmatter."
-  - id: "2"
-    title: "MDN — Citing sources / footnotes pattern"
-    url: "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/sup"
-    note: "Superscript markers link in-body claims to the Sources list."
+sources: []
 ---
 
-This page is the **authoring reference** for future Help guides. Copy its structure when you add a new article under `src/content/guides/`.
+## Find instructions
 
-## Forms vs Guides
+Open [Guides](/guides) for step-by-step help with Google Drive, finding files, sharing documents, and other school technology tasks. Choose the article that matches what you are trying to do.
 
-- **Forms** are interactive requests (game suggestions, tech help, account help). Open one from Help or the Forms catalog, fill it in, and submit.
-- **Guides** are short articles that explain how to do something. They may include material adapted from external docs or articles.
+## Get help from a person
 
-Use a form when you need staff to take action. Use a guide when you need instructions or background.
+The online request forms are **coming soon** and cannot send messages yet. If something is preventing you from doing your schoolwork, ask your teacher or school technology staff directly.
 
-## How Guides are structured
+Explain what you were trying to do, what happened instead, and any error message you see. Include your device number if you know it. Never share your password.
 
-Each guide is a Markdown file with frontmatter:
+## Suggest a game
 
-1. `title` and `description` — used for catalogs, the browser tab, and the guide title card
-2. `featured` — when `true`, the guide appears on the Help hub
-3. `sources` — list of external citations (optional)
+Until the [game-request form](/form/game-request) is available, tell your technology teacher the game's name, website link, and a short description. Suggestions must be school appropriate; submitting a suggestion does not guarantee it will be added.
 
-The article body uses normal headings and paragraphs. When a sentence draws on an outside source, mark it with a superscript that matches a `sources` entry.
+## Join your classroom
 
-## Citing external sources
-
-Claims adapted from elsewhere get a superscript number in the text, like this statement about content collections<sup class="guide-fn"><a href="#source-1">1</a></sup> and this note about superscript markup<sup class="guide-fn"><a href="#source-2">2</a></sup>.
-
-Rules for authors:
-
-- Only cite material that came from an external page or document
-- Keep school-written instructions unmarked
-- Every superscript `N` must have a matching `sources` entry with `id: "N"`
-- Prefer a stable URL; add a short `note` when the title alone is unclear
-
-The **Sources** section at the bottom of the page is generated from frontmatter — do not duplicate it in the Markdown body.
-
-## Adding a new guide later
-
-1. Create `src/content/guides/<slug>.md` using this file as the template
-2. Set `featured: true` only if it should appear on `/help`
-3. Link footnotes in the body with `<sup class="guide-fn"><a href="#source-N">N</a></sup>`
-4. Fill `sources` in frontmatter so the rendered Sources list stays accurate
-
-The guide will show up automatically on `/guides` and at `/guide/<slug>`.
+Use [Google Classroom Codes](/google-classroom-codes) to find the available class invite links. Choose your own class and use your school Google account.

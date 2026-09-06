@@ -1,0 +1,528 @@
+{
+  "/images/2048.png": {
+    "src": "/images/optimized/2048-1a39e73c58e4-full.webp",
+    "thumbnail": "/images/optimized/2048-1a39e73c58e4-thumb.webp"
+  },
+  "/images/abcya.png": {
+    "src": "/images/optimized/abcya-2370e30c9160-full.webp",
+    "thumbnail": "/images/optimized/abcya-2370e30c9160-thumb.webp"
+  },
+  "/images/agario.jpg": {
+    "src": "/images/agario.jpg",
+    "thumbnail": "/images/agario.jpg"
+  },
+  "/images/angrybirdsfriends.jpg": {
+    "src": "/images/angrybirdsfriends.jpg",
+    "thumbnail": "/images/angrybirdsfriends.jpg"
+  },
+  "/images/arcademics.png": {
+    "src": "/images/optimized/arcademics-4d24a9396224-full.webp",
+    "thumbnail": "/images/optimized/arcademics-4d24a9396224-thumb.webp"
+  },
+  "/images/asteroids.png": {
+    "src": "/images/optimized/asteroids-5da9fbe12cd2-full.webp",
+    "thumbnail": "/images/optimized/asteroids-5da9fbe12cd2-thumb.webp"
+  },
+  "/images/autodraw.png": {
+    "src": "/images/optimized/autodraw-93bf2ea75fba-full.webp",
+    "thumbnail": "/images/optimized/autodraw-93bf2ea75fba-thumb.webp"
+  },
+  "/images/awale.png": {
+    "src": "/images/optimized/awale-e6276ff8af05-full.webp",
+    "thumbnail": "/images/optimized/awale-e6276ff8af05-thumb.webp"
+  },
+  "/images/baseballbros.jpg": {
+    "src": "/images/baseballbros.jpg",
+    "thumbnail": "/images/optimized/baseballbros-45e169a96ae4-thumb.webp"
+  },
+  "/images/basketballbros.jpg": {
+    "src": "/images/basketballbros.jpg",
+    "thumbnail": "/images/basketballbros.jpg"
+  },
+  "/images/block-blast.png": {
+    "src": "/images/optimized/block-blast-fe1131af1f3d-full.webp",
+    "thumbnail": "/images/optimized/block-blast-fe1131af1f3d-thumb.webp"
+  },
+  "/images/blockbreaker-new.jpg": {
+    "src": "/images/blockbreaker-new.jpg",
+    "thumbnail": "/images/blockbreaker-new.jpg"
+  },
+  "/images/blooket.png": {
+    "src": "/images/optimized/blooket-c0e58474b2fc-full.webp",
+    "thumbnail": "/images/optimized/blooket-c0e58474b2fc-thumb.webp"
+  },
+  "/images/bloxdio.png": {
+    "src": "/images/optimized/bloxdio-c35a30c0d6d7-full.webp",
+    "thumbnail": "/images/optimized/bloxdio-c35a30c0d6d7-thumb.webp"
+  },
+  "/images/bomomo.jpg": {
+    "src": "/images/bomomo.jpg",
+    "thumbnail": "/images/bomomo.jpg"
+  },
+  "/images/bonk-io.jpg": {
+    "src": "/images/bonk-io.jpg",
+    "thumbnail": "/images/bonk-io.jpg"
+  },
+  "/images/buildroyale.png": {
+    "src": "/images/optimized/buildroyale-63133a6074f2-thumb.webp",
+    "thumbnail": "/images/optimized/buildroyale-63133a6074f2-thumb.webp"
+  },
+  "/images/canva-square.png": {
+    "src": "/images/optimized/canva-square-5c9f32749539-icon.webp"
+  },
+  "/images/checkers.png": {
+    "src": "/images/optimized/checkers-35e8944a341a-full.webp",
+    "thumbnail": "/images/optimized/checkers-35e8944a341a-thumb.webp"
+  },
+  "/images/chess-com.png": {
+    "src": "/images/optimized/chess-com-0e4106e9e989-full.webp",
+    "thumbnail": "/images/chess-com.png"
+  },
+  "/images/chrome-dino-run.jpeg": {
+    "src": "/images/chrome-dino-run.jpeg",
+    "thumbnail": "/images/optimized/chrome-dino-run-3e2749e8d89c-thumb.webp"
+  },
+  "/images/chrome-music-lab.jpg": {
+    "src": "/images/chrome-music-lab.jpg",
+    "thumbnail": "/images/optimized/chrome-music-lab-c6bff23d5dca-thumb.webp"
+  },
+  "/images/combinations2.png": {
+    "src": "/images/optimized/combinations2-cc020f420a9d-full.webp",
+    "thumbnail": "/images/optimized/combinations2-cc020f420a9d-thumb.webp"
+  },
+  "/images/connect4.jpg": {
+    "src": "/images/connect4.jpg",
+    "thumbnail": "/images/optimized/connect4-17f05dac036b-thumb.webp"
+  },
+  "/images/connections-new.png": {
+    "src": "/images/optimized/connections-new-2f152bff8278-thumb.webp",
+    "thumbnail": "/images/optimized/connections-new-2f152bff8278-thumb.webp"
+  },
+  "/images/contexto.png": {
+    "src": "/images/optimized/contexto-c1d0e260267e-thumb.webp",
+    "thumbnail": "/images/optimized/contexto-c1d0e260267e-thumb.webp"
+  },
+  "/images/cookie-clicker.png": {
+    "src": "/images/optimized/cookie-clicker-da752718bc96-full.webp",
+    "thumbnail": "/images/optimized/cookie-clicker-da752718bc96-thumb.webp"
+  },
+  "/images/coolmathgames.jpg": {
+    "src": "/images/coolmathgames.jpg",
+    "thumbnail": "/images/coolmathgames.jpg"
+  },
+  "/images/crosswordle.png": {
+    "src": "/images/optimized/crosswordle-dfec1da71c18-full.webp",
+    "thumbnail": "/images/optimized/crosswordle-dfec1da71c18-thumb.webp"
+  },
+  "/images/diep-io.png": {
+    "src": "/images/optimized/diep-io-af1c2acbd872-thumb.webp",
+    "thumbnail": "/images/optimized/diep-io-af1c2acbd872-thumb.webp"
+  },
+  "/images/digdig-io.png": {
+    "src": "/images/digdig-io.png",
+    "thumbnail": "/images/digdig-io.png"
+  },
+  "/images/digipuzzle.jpg": {
+    "src": "/images/digipuzzle.jpg",
+    "thumbnail": "/images/digipuzzle.jpg"
+  },
+  "/images/dominoes.jpg": {
+    "src": "/images/dominoes.jpg",
+    "thumbnail": "/images/dominoes.jpg"
+  },
+  "/images/donkey-kong-new.png": {
+    "src": "/images/optimized/donkey-kong-new-d140d3a0cc92-thumb.webp",
+    "thumbnail": "/images/optimized/donkey-kong-new-d140d3a0cc92-thumb.webp"
+  },
+  "/images/flagle.png": {
+    "src": "/images/optimized/flagle-e1aa14ac8e1c-full.webp",
+    "thumbnail": "/images/optimized/flagle-e1aa14ac8e1c-thumb.webp"
+  },
+  "/images/flappybird.png": {
+    "src": "/images/optimized/flappybird-08d77001f6f9-full.webp",
+    "thumbnail": "/images/optimized/flappybird-08d77001f6f9-thumb.webp"
+  },
+  "/images/foodle.jpg": {
+    "src": "/images/foodle.jpg",
+    "thumbnail": "/images/foodle.jpg"
+  },
+  "/images/footballbros.jpg": {
+    "src": "/images/footballbros.jpg",
+    "thumbnail": "/images/footballbros.jpg"
+  },
+  "/images/funbrain.jpeg": {
+    "src": "/images/funbrain.jpeg",
+    "thumbnail": "/images/funbrain.jpeg"
+  },
+  "/images/gartic-phone.png": {
+    "src": "/images/optimized/gartic-phone-65158ba6f296-full.webp",
+    "thumbnail": "/images/optimized/gartic-phone-65158ba6f296-thumb.webp"
+  },
+  "/images/gimkit.jpg": {
+    "src": "/images/gimkit.jpg",
+    "thumbnail": "/images/optimized/gimkit-ce5b1f7704ad-thumb.webp"
+  },
+  "/images/globle-new.png": {
+    "src": "/images/optimized/globle-new-4c83f1211beb-full.webp",
+    "thumbnail": "/images/optimized/globle-new-4c83f1211beb-thumb.webp"
+  },
+  "/images/gonoodle.jpg": {
+    "src": "/images/gonoodle.jpg",
+    "thumbnail": "/images/optimized/gonoodle-d07233bdea51-thumb.webp"
+  },
+  "/images/goober-dash.png": {
+    "src": "/images/optimized/goober-dash-0c0fe4eeafb0-full.webp",
+    "thumbnail": "/images/optimized/goober-dash-0c0fe4eeafb0-thumb.webp"
+  },
+  "/images/google-classroom-logo-clean.png": {
+    "src": "/images/optimized/google-classroom-logo-clean-58ed1edde4b6-icon.webp"
+  },
+  "/images/google-santa-tracker.png": {
+    "src": "/images/optimized/google-santa-tracker-4632f21fc5bd-full.webp",
+    "thumbnail": "/images/google-santa-tracker.png"
+  },
+  "/images/google-snake.png": {
+    "src": "/images/optimized/google-snake-2814577545d0-full.webp",
+    "thumbnail": "/images/optimized/google-snake-2814577545d0-thumb.webp"
+  },
+  "/images/hexanaut-io.jpg": {
+    "src": "/images/hexanaut-io.jpg",
+    "thumbnail": "/images/hexanaut-io.jpg"
+  },
+  "/images/hextris.png": {
+    "src": "/images/optimized/hextris-cce128640562-full.webp",
+    "thumbnail": "/images/optimized/hextris-cce128640562-thumb.webp"
+  },
+  "/images/ixl-square.png": {
+    "src": "/images/optimized/ixl-square-a4a80aa5a7a9-icon.webp"
+  },
+  "/images/jigsaw-puzzles.png": {
+    "src": "/images/optimized/jigsaw-puzzles-bbc21bba7a95-full.webp",
+    "thumbnail": "/images/optimized/jigsaw-puzzles-bbc21bba7a95-thumb.webp"
+  },
+  "/images/kahoot.png": {
+    "src": "/images/optimized/kahoot-933ff4d0cc6b-full.webp",
+    "thumbnail": "/images/optimized/kahoot-933ff4d0cc6b-thumb.webp"
+  },
+  "/images/kleki.png": {
+    "src": "/images/optimized/kleki-10bd4a0dde60-thumb.webp",
+    "thumbnail": "/images/optimized/kleki-10bd4a0dde60-thumb.webp"
+  },
+  "/images/letterboxed.png": {
+    "src": "/images/optimized/letterboxed-6def1f433bbc-full.webp",
+    "thumbnail": "/images/optimized/letterboxed-6def1f433bbc-thumb.webp"
+  },
+  "/images/little-alchemy-2.jpg": {
+    "src": "/images/little-alchemy-2.jpg",
+    "thumbnail": "/images/little-alchemy-2.jpg"
+  },
+  "/images/little-alchemy.png": {
+    "src": "/images/optimized/little-alchemy-de24d9bf4169-full.webp",
+    "thumbnail": "/images/little-alchemy.png"
+  },
+  "/images/littlebigsnake.png": {
+    "src": "/images/optimized/littlebigsnake-53563af21592-full.webp",
+    "thumbnail": "/images/optimized/littlebigsnake-53563af21592-thumb.webp"
+  },
+  "/images/lol-beans.png": {
+    "src": "/images/optimized/lol-beans-79b7bc2b5b1d-full.webp",
+    "thumbnail": "/images/optimized/lol-beans-79b7bc2b5b1d-thumb.webp"
+  },
+  "/images/lumio-logo.png": {
+    "src": "/images/optimized/lumio-logo-eee80c7b8bfa-icon.webp"
+  },
+  "/images/mahjong-new.png": {
+    "src": "/images/optimized/mahjong-new-4ac30d31633f-full.webp",
+    "thumbnail": "/images/optimized/mahjong-new-4ac30d31633f-thumb.webp"
+  },
+  "/images/math-playground.png": {
+    "src": "/images/optimized/math-playground-35828e6e5178-thumb.webp",
+    "thumbnail": "/images/optimized/math-playground-35828e6e5178-thumb.webp"
+  },
+  "/images/minecraft.jpg": {
+    "src": "/images/minecraft.jpg",
+    "thumbnail": "/images/minecraft.jpg"
+  },
+  "/images/minesweeper.jpg": {
+    "src": "/images/minesweeper.jpg",
+    "thumbnail": "/images/minesweeper.jpg"
+  },
+  "/images/monkeytype-logo.png": {
+    "src": "/images/optimized/monkeytype-logo-27ea5315ed58-icon.webp"
+  },
+  "/images/ms-js-paint.png": {
+    "src": "/images/optimized/ms-js-paint-5b33aafe179d-full.webp",
+    "thumbnail": "/images/optimized/ms-js-paint-5b33aafe179d-thumb.webp"
+  },
+  "/images/narrow-one.png": {
+    "src": "/images/optimized/narrow-one-ecdc500809f7-full.webp",
+    "thumbnail": "/images/narrow-one.png"
+  },
+  "/images/nat-geo-kids.jpg": {
+    "src": "/images/nat-geo-kids.jpg",
+    "thumbnail": "/images/nat-geo-kids.jpg"
+  },
+  "/images/neal-fun.jpg": {
+    "src": "/images/neal-fun.jpg",
+    "thumbnail": "/images/neal-fun.jpg"
+  },
+  "/images/nerdle.png": {
+    "src": "/images/optimized/nerdle-fbba8f863ba1-full.webp",
+    "thumbnail": "/images/nerdle.png"
+  },
+  "/images/nugget-royale.png": {
+    "src": "/images/optimized/nugget-royale-0419fb570888-full.webp",
+    "thumbnail": "/images/optimized/nugget-royale-0419fb570888-thumb.webp"
+  },
+  "/images/nyt-crosswords.png": {
+    "src": "/images/optimized/nyt-crosswords-d0226295881b-full.webp",
+    "thumbnail": "/images/optimized/nyt-crosswords-d0226295881b-thumb.webp"
+  },
+  "/images/openguessr.jpg": {
+    "src": "/images/openguessr.jpg",
+    "thumbnail": "/images/openguessr.jpg"
+  },
+  "/images/pacman-new.png": {
+    "src": "/images/optimized/pacman-new-d88b8e6c47dd-full.webp",
+    "thumbnail": "/images/optimized/pacman-new-d88b8e6c47dd-thumb.webp"
+  },
+  "/images/paper-io-new.jpg": {
+    "src": "/images/optimized/paper-io-new-78397e288601-thumb.webp",
+    "thumbnail": "/images/optimized/paper-io-new-78397e288601-thumb.webp"
+  },
+  "/images/pbs-kids.jpg": {
+    "src": "/images/optimized/pbs-kids-cf757ef2d9fb-full.webp",
+    "thumbnail": "/images/optimized/pbs-kids-cf757ef2d9fb-thumb.webp"
+  },
+  "/images/phrazle.png": {
+    "src": "/images/optimized/phrazle-d9b2c7769e5f-thumb.webp",
+    "thumbnail": "/images/optimized/phrazle-d9b2c7769e5f-thumb.webp"
+  },
+  "/images/piskel.png": {
+    "src": "/images/optimized/piskel-bcb53a1fdc0d-full.webp",
+    "thumbnail": "/images/optimized/piskel-bcb53a1fdc0d-thumb.webp"
+  },
+  "/images/pixilnumber.png": {
+    "src": "/images/optimized/pixilnumber-872f14254586-full.webp",
+    "thumbnail": "/images/pixilnumber.png"
+  },
+  "/images/pixton.jpg": {
+    "src": "/images/pixton.jpg",
+    "thumbnail": "/images/pixton.jpg"
+  },
+  "/images/pong.jpg": {
+    "src": "/images/optimized/pong-9f5558a2d641-full.webp",
+    "thumbnail": "/images/optimized/pong-9f5558a2d641-thumb.webp"
+  },
+  "/images/quick-draw.jpg": {
+    "src": "/images/quick-draw.jpg",
+    "thumbnail": "/images/quick-draw.jpg"
+  },
+  "/images/redactle.png": {
+    "src": "/images/optimized/redactle-fa66b5c59286-full.webp",
+    "thumbnail": "/images/optimized/redactle-fa66b5c59286-thumb.webp"
+  },
+  "/images/retrobowl.jpg": {
+    "src": "/images/retrobowl.jpg",
+    "thumbnail": "/images/retrobowl.jpg"
+  },
+  "/images/rocker-bot-royale.png": {
+    "src": "/images/optimized/rocker-bot-royale-9749c31041e5-full.webp",
+    "thumbnail": "/images/optimized/rocker-bot-royale-9749c31041e5-thumb.webp"
+  },
+  "/images/rocketgoal-io.png": {
+    "src": "/images/optimized/rocketgoal-io-28a985f39a5a-full.webp",
+    "thumbnail": "/images/optimized/rocketgoal-io-28a985f39a5a-thumb.webp"
+  },
+  "/images/sandspiel.png": {
+    "src": "/images/optimized/sandspiel-c71e2316079f-thumb.webp",
+    "thumbnail": "/images/optimized/sandspiel-c71e2316079f-thumb.webp"
+  },
+  "/images/scs-destiny-logo.png": {
+    "src": "/images/optimized/scs-destiny-logo-8def1406c436-icon.webp"
+  },
+  "/images/scs-logo.png": {
+    "src": "/images/optimized/scs-logo-789a829c78d0-icon.webp"
+  },
+  "/images/semantle.png": {
+    "src": "/images/optimized/semantle-e24b0cbada08-full.webp",
+    "thumbnail": "/images/optimized/semantle-e24b0cbada08-thumb.webp"
+  },
+  "/images/sesame-street.png": {
+    "src": "/images/optimized/sesame-street-47914ed880ba-thumb.webp",
+    "thumbnail": "/images/optimized/sesame-street-47914ed880ba-thumb.webp"
+  },
+  "/images/shadybears.jpg": {
+    "src": "/images/shadybears.jpg",
+    "thumbnail": "/images/shadybears.jpg"
+  },
+  "/images/skribblio.jpg": {
+    "src": "/images/skribblio.jpg",
+    "thumbnail": "/images/skribblio.jpg"
+  },
+  "/images/slither-io.jpg": {
+    "src": "/images/slither-io.jpg",
+    "thumbnail": "/images/slither-io.jpg"
+  },
+  "/images/slope-run.png": {
+    "src": "/images/optimized/slope-run-99adcfc77bd7-thumb.webp",
+    "thumbnail": "/images/optimized/slope-run-99adcfc77bd7-thumb.webp"
+  },
+  "/images/smash-karts.jpg": {
+    "src": "/images/smash-karts.jpg",
+    "thumbnail": "/images/smash-karts.jpg"
+  },
+  "/images/snake-game-new.png": {
+    "src": "/images/optimized/snake-game-new-12fd354e7cd3-full.webp",
+    "thumbnail": "/images/optimized/snake-game-new-12fd354e7cd3-thumb.webp"
+  },
+  "/images/soccerbros.jpg": {
+    "src": "/images/soccerbros.jpg",
+    "thumbnail": "/images/soccerbros.jpg"
+  },
+  "/images/solitaire.jpg": {
+    "src": "/images/solitaire.jpg",
+    "thumbnail": "/images/solitaire.jpg"
+  },
+  "/images/spellingbee.png": {
+    "src": "/images/optimized/spellingbee-4492f98d17c4-full.webp",
+    "thumbnail": "/images/optimized/spellingbee-4492f98d17c4-thumb.webp"
+  },
+  "/images/splix-io.jpg": {
+    "src": "/images/splix-io.jpg",
+    "thumbnail": "/images/splix-io.jpg"
+  },
+  "/images/sprunki-new.png": {
+    "src": "/images/optimized/sprunki-new-a9b614add9d7-full.webp",
+    "thumbnail": "/images/optimized/sprunki-new-a9b614add9d7-thumb.webp"
+  },
+  "/images/squares-new.png": {
+    "src": "/images/optimized/squares-new-4a6ae1dfc299-full.webp",
+    "thumbnail": "/images/optimized/squares-new-4a6ae1dfc299-thumb.webp"
+  },
+  "/images/starfall.jpg": {
+    "src": "/images/starfall.jpg",
+    "thumbnail": "/images/starfall.jpg"
+  },
+  "/images/strands-new.png": {
+    "src": "/images/optimized/strands-new-fa849a444292-full.webp",
+    "thumbnail": "/images/optimized/strands-new-fa849a444292-thumb.webp"
+  },
+  "/images/stumbleguys.jpg": {
+    "src": "/images/stumbleguys.jpg",
+    "thumbnail": "/images/stumbleguys.jpg"
+  },
+  "/images/sudoku.png": {
+    "src": "/images/optimized/sudoku-c2c7697941f4-full.webp",
+    "thumbnail": "/images/optimized/sudoku-c2c7697941f4-thumb.webp"
+  },
+  "/images/suika.jpg": {
+    "src": "/images/suika.jpg",
+    "thumbnail": "/images/suika.jpg"
+  },
+  "/images/sumdog-square.png": {
+    "src": "/images/optimized/sumdog-square-8434e2990e6f-icon.webp"
+  },
+  "/images/suroibattleroyale.png": {
+    "src": "/images/optimized/suroibattleroyale-a602a12ed91d-full.webp",
+    "thumbnail": "/images/optimized/suroibattleroyale-a602a12ed91d-thumb.webp"
+  },
+  "/images/taming-io.png": {
+    "src": "/images/optimized/taming-io-1358bc2c4006-full.webp",
+    "thumbnail": "/images/taming-io.png"
+  },
+  "/images/tank-trouble.jpg": {
+    "src": "/images/tank-trouble.jpg",
+    "thumbnail": "/images/tank-trouble.jpg"
+  },
+  "/images/tetris.png": {
+    "src": "/images/optimized/tetris-3a35b5eba6f1-full.webp",
+    "thumbnail": "/images/optimized/tetris-3a35b5eba6f1-thumb.webp"
+  },
+  "/images/thelastroyale.png": {
+    "src": "/images/optimized/thelastroyale-ec2941575426-full.webp",
+    "thumbnail": "/images/optimized/thelastroyale-ec2941575426-thumb.webp"
+  },
+  "/images/thisissand.png": {
+    "src": "/images/optimized/thisissand-3290b0358d1c-thumb.webp",
+    "thumbnail": "/images/optimized/thisissand-3290b0358d1c-thumb.webp"
+  },
+  "/images/tictactoe.png": {
+    "src": "/images/optimized/tictactoe-79f43621aea1-full.webp",
+    "thumbnail": "/images/optimized/tictactoe-79f43621aea1-thumb.webp"
+  },
+  "/images/tiles.png": {
+    "src": "/images/optimized/tiles-095321f8ff04-full.webp",
+    "thumbnail": "/images/optimized/tiles-095321f8ff04-thumb.webp"
+  },
+  "/images/timeguessr.png": {
+    "src": "/images/optimized/timeguessr-4567e46504b6-full.webp",
+    "thumbnail": "/images/optimized/timeguessr-4567e46504b6-thumb.webp"
+  },
+  "/images/travle-earth.png": {
+    "src": "/images/optimized/travle-earth-14001fe1bc92-full.webp",
+    "thumbnail": "/images/optimized/travle-earth-14001fe1bc92-thumb.webp"
+  },
+  "/images/turtlediary.jpg": {
+    "src": "/images/turtlediary.jpg",
+    "thumbnail": "/images/turtlediary.jpg"
+  },
+  "/images/twoplayergames.jpg": {
+    "src": "/images/twoplayergames.jpg",
+    "thumbnail": "/images/twoplayergames.jpg"
+  },
+  "/images/typesetgo.png": {
+    "src": "/images/optimized/typesetgo-4e4699e3515d-icon.webp"
+  },
+  "/images/typing-com-logo.png": {
+    "src": "/images/optimized/typing-com-logo-2b915d3c475a-icon.webp"
+  },
+  "/images/unicornsrun.png": {
+    "src": "/images/optimized/unicornsrun-de207ed0b242-full.webp",
+    "thumbnail": "/images/optimized/unicornsrun-de207ed0b242-thumb.webp"
+  },
+  "/images/waffle.png": {
+    "src": "/images/optimized/waffle-df34d9418926-full.webp",
+    "thumbnail": "/images/optimized/waffle-df34d9418926-thumb.webp"
+  },
+  "/images/weave-silk.jpg": {
+    "src": "/images/weave-silk.jpg",
+    "thumbnail": "/images/weave-silk.jpg"
+  },
+  "/images/weaver.png": {
+    "src": "/images/optimized/weaver-0a38cb206c23-thumb.webp",
+    "thumbnail": "/images/optimized/weaver-0a38cb206c23-thumb.webp"
+  },
+  "/images/wigglepaint.png": {
+    "src": "/images/optimized/wigglepaint-742073e81df0-full.webp",
+    "thumbnail": "/images/optimized/wigglepaint-742073e81df0-thumb.webp"
+  },
+  "/images/wings-io.jpg": {
+    "src": "/images/wings-io.jpg",
+    "thumbnail": "/images/wings-io.jpg"
+  },
+  "/images/wordly.png": {
+    "src": "/images/optimized/wordly-f86c50883312-full.webp",
+    "thumbnail": "/images/optimized/wordly-f86c50883312-thumb.webp"
+  },
+  "/images/wordsearch.png": {
+    "src": "/images/optimized/wordsearch-c2ae1d6dc04a-full.webp",
+    "thumbnail": "/images/optimized/wordsearch-c2ae1d6dc04a-thumb.webp"
+  },
+  "/images/worldle-new.png": {
+    "src": "/images/optimized/worldle-new-aa1fd0f31010-full.webp",
+    "thumbnail": "/images/optimized/worldle-new-aa1fd0f31010-thumb.webp"
+  },
+  "/images/wormate-io.png": {
+    "src": "/images/optimized/wormate-io-01956b75b96e-thumb.webp",
+    "thumbnail": "/images/optimized/wormate-io-01956b75b96e-thumb.webp"
+  },
+  "/images/yohoho.jpg": {
+    "src": "/images/yohoho.jpg",
+    "thumbnail": "/images/optimized/yohoho-6b8a9c957679-thumb.webp"
+  },
+  "/images/zombs-royale.png": {
+    "src": "/images/optimized/zombs-royale-54f8d06077de-full.webp",
+    "thumbnail": "/images/zombs-royale.png"
+  }
+}

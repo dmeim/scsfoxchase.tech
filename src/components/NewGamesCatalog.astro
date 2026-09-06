@@ -1,11 +1,13 @@
 ---
 import { getCollection } from 'astro:content';
 import trending from '../data/trending.json';
-import { ChipGroup, IconButton, ProgressTabs, SearchField } from './ui';
+import { gameDisplayImages } from '../lib/display-images';
+import { Button, ChipGroup, IconButton, ProgressTabs, SearchField } from './ui';
 import { iconChevronLeft, iconChevronRight } from '../scripts/icons';
 import GameDetailDialog from './GameDetailDialog.astro';
+import GameCard from './GameCard.astro';
 
-const games = (await getCollection('games')).map((entry) => entry.data);
+const games = (await getCollection('games')).map((entry) => gameDisplayImages(entry.data));
 const trendingIds = trending as string[];
 const catalogPayload = JSON.stringify({ games, trendingIds });
 
@@ -30,6 +32,7 @@ const secondaryCategories = [...new Set(games.flatMap((game) => game.secondaryCa
       <aside class="newgames-sidebar" aria-label="Game filters">
         <div class="filter-container">
           <SearchField type="text" id="game-search" label="Search games" placeholder={`Search All ${games.length} Games...`} class="search-bar" autocomplete="off" />
+          <Button variant="ghost" size="small" data-games-clear>Clear filters</Button>
           <div class="filter-group">
             <span class="filter-group-label">Grade</span>
             <ChipGroup id="grade-chips" class="filter-chips-row" chipClass="filter-chip" options={gradeOptions} selected={[]} multiple ariaLabel="Filter by grade" />
@@ -56,17 +59,14 @@ const secondaryCategories = [...new Set(games.flatMap((game) => game.secondaryCa
                 rel="noopener noreferrer"
                 data-ng-hero-link
               >
-                <div
-                  class="ng-hero-bg"
-                  data-ng-hero-bg
-                  style={`background-image:url('${featured.image}')`}
-                />
+                <img class="ng-hero-bg" data-ng-hero-bg src={featured.image} alt="" decoding="async" fetchpriority="high" />
                 <div class="ng-hero-body">
                   <h3 data-ng-hero-title>{featured.name}</h3>
                   <p data-ng-hero-desc>{featured.description}</p>
                 </div>
               </a>
               <div class="ng-hero-pager">
+                <Button variant="glass" size="small" data-ng-hero-pause aria-label="Pause trending rotation" aria-pressed="false">Pause</Button>
                 <div class="ng-hero-pager-btns">
                   <IconButton icon={iconChevronLeft} label="Previous" size="small" data-ng-hero-prev />
                   <IconButton icon={iconChevronRight} label="Next" size="small" data-ng-hero-next />
@@ -86,10 +86,7 @@ const secondaryCategories = [...new Set(games.flatMap((game) => game.secondaryCa
         }
 
         <div class="games-grid games-grid--max" id="games-grid" data-card-style="max">
-          <div class="loading-container">
-            <div class="loading-spinner"></div>
-            <p>Loading games...</p>
-          </div>
+          {games.map((game) => <GameCard game={game} />)}
         </div>
       </div>
     </div>
@@ -114,106 +111,6 @@ const secondaryCategories = [...new Set(games.flatMap((game) => game.secondaryCa
     initGamesCatalog(games, trendingIds);
   }
 
-  type HeroGame = {
-    id: string;
-    name: string;
-    url: string;
-    image: string;
-    description: string;
-  };
-
-  const heroEl = document.getElementById('ng-hero-data');
-  const heroGames: HeroGame[] = heroEl?.textContent ? JSON.parse(heroEl.textContent) : [];
-  const root = document.querySelector<HTMLElement>('[data-ng-hero]');
-
-  if (root && heroGames.length > 0) {
-    const AUTO_MS = 5000;
-    const bg = root.querySelector<HTMLElement>('[data-ng-hero-bg]');
-    const title = root.querySelector('[data-ng-hero-title]');
-    const desc = root.querySelector('[data-ng-hero-desc]');
-    const link = root.querySelector<HTMLAnchorElement>('[data-ng-hero-link]');
-    const progress = root.querySelector<HTMLElement>('[data-ng-hero-progress]');
-    let index = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    if (progress) {
-      progress.style.setProperty('--ng-hero-autoplay', `${AUTO_MS}ms`);
-      if (heroGames.length <= 1) {
-        progress.hidden = true;
-      } else {
-        progress.querySelectorAll<HTMLButtonElement>('[data-ui-progress-tab]').forEach((btn, i) => {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            go(i);
-            restart();
-          });
-        });
-      }
-    }
-
-    const paint = () => {
-      const g = heroGames[index]!;
-      if (bg) bg.style.backgroundImage = `url('${g.image}')`;
-      if (title) title.textContent = g.name;
-      if (desc) desc.textContent = g.description;
-      if (link) {
-        link.href = g.url;
-        link.setAttribute('aria-label', `Play ${g.name}`);
-      }
-
-      progress?.querySelectorAll<HTMLButtonElement>('.ng-hero-progress-seg').forEach((seg, i) => {
-        const fill = seg.querySelector<HTMLElement>('.ng-hero-progress-fill');
-        const active = i === index;
-        seg.classList.toggle('is-active', active);
-        seg.setAttribute('aria-selected', String(active));
-        seg.tabIndex = active ? 0 : -1;
-        if (active) seg.setAttribute('aria-current', 'true');
-        else seg.removeAttribute('aria-current');
-        // Reset fill so only the current segment restarts its animation.
-        fill?.classList.remove('is-animating');
-      });
-    };
-
-    const go = (i: number) => {
-      index = (i + heroGames.length) % heroGames.length;
-      paint();
-    };
-
-    const restart = () => {
-      if (timer) clearTimeout(timer);
-      timer = null;
-      if (heroGames.length <= 1) return;
-
-      const active = progress?.querySelector<HTMLElement>(
-        '.ng-hero-progress-seg.is-active .ng-hero-progress-fill',
-      );
-      if (active) {
-        // Force a reflow so removing/adding is-animating restarts the fill.
-        void active.offsetWidth;
-        active.classList.add('is-animating');
-      }
-
-      timer = setTimeout(() => {
-        go(index + 1);
-        restart();
-      }, AUTO_MS);
-    };
-
-    root.querySelector('[data-ng-hero-prev]')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      go(index - 1);
-      restart();
-    });
-    root.querySelector('[data-ng-hero-next]')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      go(index + 1);
-      restart();
-    });
-
-    paint();
-    restart();
-  }
+  import { initTrendingHero } from '../scripts/trending-hero';
+  initTrendingHero();
 </script>

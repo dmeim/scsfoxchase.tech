@@ -31,6 +31,7 @@ const icons = {
           titleClass="forms-tile-label"
           icon={icons[form.icon]}
           title={form.label}
+          description={form.status === 'stub' ? 'Coming soon' : undefined}
         />
       ))
     }

@@ -15,8 +15,8 @@ export function initDotWaves(): void {
   if (!canvas || canvas.dataset.dotWavesInit === '1') return;
   canvas.dataset.dotWavesInit = '1';
 
-  const reduceMotion =
-    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduceMotion = motion.matches;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -43,7 +43,7 @@ export function initDotWaves(): void {
     ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     buildDots();
-    draw(0);
+    paint(0);
   }
 
   function buildDots() {
@@ -66,7 +66,7 @@ export function initDotWaves(): void {
     }
   }
 
-  function draw(time: number) {
+  function paint(time: number) {
     ctx!.clearRect(0, 0, width, height);
 
     dots.forEach((dot) => {
@@ -81,13 +81,16 @@ export function initDotWaves(): void {
       ctx!.fill();
     });
 
-    if (!reduceMotion) {
-      animationFrame = requestAnimationFrame(draw);
-    }
+  }
+
+  function draw(time: number) {
+    animationFrame = null;
+    paint(time);
+    start();
   }
 
   function start() {
-    if (!reduceMotion && animationFrame === null) {
+    if (!reduceMotion && !document.hidden && animationFrame === null) {
       animationFrame = requestAnimationFrame(draw);
     }
   }
@@ -99,6 +102,12 @@ export function initDotWaves(): void {
     }
   }
 
+  motion.addEventListener('change', () => {
+    reduceMotion = motion.matches;
+    stop();
+    paint(0);
+    start();
+  });
   window.addEventListener('resize', resize);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {

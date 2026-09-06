@@ -3,6 +3,7 @@ export interface Game {
   name: string;
   url: string;
   image: string;
+  thumbnail?: string;
   description: string;
   minGrade: number;
   maxGrade: number;
@@ -75,9 +76,12 @@ export class Carousel {
     link.href = item.url;
     link.target = '_blank';
 
-    const slideBg = document.createElement('div');
+    const slideBg = document.createElement('img');
     slideBg.classList.add('carousel-slide-bg');
-    slideBg.style.backgroundImage = `url(${item.image})`;
+    slideBg.src = item.image;
+    slideBg.alt = '';
+    slideBg.loading = 'lazy';
+    slideBg.decoding = 'async';
 
     const slideContent = document.createElement('div');
     slideContent.classList.add('carousel-slide-content');

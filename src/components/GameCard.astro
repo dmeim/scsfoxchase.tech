@@ -1,0 +1,12 @@
+---
+import type { Game } from '../scripts/games-catalog';
+import { uiClassNames } from './ui/dom';
+interface Props { game: Game }
+const { game } = Astro.props;
+---
+<div class={uiClassNames.card('game-card game-card--max', { transparent: true })} data-game-id={game.id}>
+  <a class="game-card-image" href={game.url} target="_blank" rel="noopener noreferrer" aria-label={`Play ${game.name}`}>
+    <img src={game.thumbnail || game.image} alt="" loading="lazy" decoding="async" width="960" height="540" />
+  </a>
+  <a class={uiClassNames.button('ghost', 'small', 'game-card-title')} href={game.url} target="_blank" rel="noopener noreferrer" data-game-details aria-label={`Details for ${game.name}`}>{game.name}</a>
+</div>

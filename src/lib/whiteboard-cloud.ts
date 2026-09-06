@@ -106,6 +106,12 @@ export async function patchCloudBoardPreview(
 	return body.board
 }
 
+export async function touchCloudBoard(boardId: string): Promise<void> {
+  const response = await libraryFetch(`/api/whiteboard/library/boards/${encodeURIComponent(boardId)}/access`, { method: 'PATCH' })
+  if (response.status === 404) return // A deletion must win over a late page-open.
+  await readJson(response)
+}
+
 export async function deleteCloudBoard(boardId: string): Promise<void> {
 	await readJson(
 		await libraryFetch(

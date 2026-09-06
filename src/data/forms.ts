@@ -21,7 +21,7 @@ export const forms: FormEntry[] = [
     description: 'Suggest a new educational game for the catalog',
     icon: 'iconGamepad2',
     featured: true,
-    status: 'live',
+    status: 'stub',
   },
   {
     slug: 'help-tech',

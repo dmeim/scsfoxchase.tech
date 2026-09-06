@@ -11,6 +11,9 @@ import {
 } from '../scripts/icons';
 import { getCollection } from 'astro:content';
 
+// Keep the unfinished catalogs off the Help hub until they are ready to publish.
+const showDraftSections = false;
+
 const formIcons = {
   iconGamepad2,
   iconWrench,
@@ -20,6 +23,7 @@ const formIcons = {
 const formTiles = featuredForms().map((form) => ({
   href: formHref(form.slug),
   label: form.label,
+  statusLabel: form.status === 'stub' ? 'Coming soon' : undefined,
   description: form.description,
   iconHtml: formIcons[form.icon],
 }));
@@ -39,7 +43,7 @@ const guideTiles = featuredGuides.map((g) => ({
   <meta
     slot="head"
     name="description"
-    content="Forms and guides for technology help at St. Cecilia School"
+    content="Technology help and Google Classroom links for St. Cecilia School"
   />
 
   <div class="help-hub">
@@ -57,21 +61,21 @@ const guideTiles = featuredGuides.map((g) => ({
         </a>
       </section>
 
-      <HelpSection
+      {showDraftSections && <HelpSection
         title="Forms"
         viewAllHref="/forms"
         tiles={formTiles}
         emptyMessage="No featured forms yet."
         ariaLabel="Featured forms"
-      />
+      />}
 
-      <HelpSection
+      {showDraftSections && <HelpSection
         title="Guides"
         viewAllHref="/guides"
         tiles={guideTiles}
         emptyMessage="No featured guides yet."
         ariaLabel="Featured guides"
-      />
+      />}
     </div>
   </div>
 </BaseLayout>

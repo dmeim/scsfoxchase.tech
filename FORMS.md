@@ -9,10 +9,10 @@ Student/staff technology help on scsfoxchase.tech: a Help hub, Forms and Guides 
 | `/help` | Help hub — featured Forms + Guides | Live |
 | `/forms` | Forms catalog (all forms) | Live |
 | `/guides` | Guides catalog (all guides) | Live |
-| `/form/game-request` | Request A Game | UI form (no webhook yet) |
+| `/form/game-request` | Request A Game | Coming soon (no input accepted) |
 | `/form/help-tech` | General Technology Help | Stub |
 | `/form/help-account` | Google/Account Help | Stub |
-| `/guide/how-to-use-help` | How to use this Help site | Sample / authoring reference |
+| `/guide/how-to-use-help` | How to use this Help site | Live visitor guidance |
 | `/guide/recover-deleted-file-google-drive` | Recover a deleted file in Google Drive | Live |
 | `/guide/find-files-google-drive` | Find files in Google Drive | Live |
 | `/guide/delete-files-google-drive` | Delete files in Google Drive | Live |
@@ -64,7 +64,7 @@ Nav label is **Help** → `/help`. Active for `/help`, `/forms`, `/guides`, `/fo
 
 ## Adding a guide
 
-1. Create `src/content/guides/<slug>.md` using `how-to-use-help.md` as the template.
+1. Create `src/content/guides/<slug>.md` following `docs/guide-authoring.md`.
 2. Set frontmatter: `title`, `description`, `featured`, and optional `sources`.
 3. For external/scraped claims, insert `<sup class="guide-fn"><a href="#source-N">N</a></sup>` and a matching `sources` entry with `id: "N"`.
 4. The Sources footer renders as favicon chips (title label); do not duplicate it in the Markdown body.
@@ -79,9 +79,9 @@ Fields:
 | URL | `gameUrl` | url | required; hint: full link to game site; placeholder `https://` |
 | Game Description | `gameDescription` | textarea | required; hint: keep under a paragraph |
 
-Submit currently only runs browser validation and `preventDefault` (no network call). Wire to n8n later via a Worker/API proxy.
+The public page clearly states that requests are unavailable and directs students to their technology teacher. It accepts no input. The fields above describe the planned form; wire it to n8n via a Worker/API proxy before enabling them.
 
-Form intro (under title) covers: school-appropriate requirement, no multi-game hosts (Poki/CrazyGames), and that requests are for review only.
+The planned form intro should cover: school-appropriate requirement, no multi-game hosts (Poki/CrazyGames), and that requests are for review only.
 
 ## n8n webhook foundation
 
@@ -96,4 +96,4 @@ When wiring another form:
 - Reset the exact Turnstile widget after every Ajax submission.
 - Do not put production webhook URLs or credentials in client-side code or git.
 
-Help-tech / help-account remain placeholders; game-request is still UI-only.
+Help-tech / help-account remain placeholders; game-request is marked coming soon.

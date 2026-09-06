@@ -1,7 +1,7 @@
 ---
 export const prerender = true;
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { Button, Card, TextareaField, TextField } from '../../components/ui';
+import { Button, Card } from '../../components/ui';
 import { iconForm } from '../../scripts/icons';
 ---
 <BaseLayout title="Request A Game - St. Cecilia Technology" bodyClass="forms-page">
@@ -18,67 +18,13 @@ import { iconForm } from '../../scripts/icons';
           <h2 id="game-request-title">Request A Game</h2>
         </div>
 
-        <div class="form-intro">
-          <p>
-            Please submit this form with all information to request a new game to be added.
-          </p>
-          <ul>
-            <li>Game must be school appropriate</li>
-            <li>No websites that host multiple games on them at once (Poki, CrazyGames, etc)</li>
-          </ul>
-          <p class="form-intro-note">
-            <strong>Note:</strong> Requesting a game does not mean that it will be added. This is just for reviewing. If it's approved, it will be added. If not, it will not be added.
-          </p>
-        </div>
+        <p role="status">Game requests are coming soon. This page cannot send a request yet.</p>
+        <p>For now, tell your technology teacher the game's name, website link, and why you would like it added.</p>
+        <div class="form-actions"><Button href="/forms" variant="outline" class="page-nav-btn" icon={iconForm}>Back to Forms</Button></div>
 
-        <form id="game-request-form" class="tech-form">
-          <TextField
-            class="form-field"
-            label="Game Name"
-            description="Official name of the game, if you know it. If not, just the name you know."
-            id="game-name"
-            name="gameName"
-            autocomplete="off"
-            required
-          />
-
-          <TextField
-            class="form-field"
-            label="URL"
-            description="Full link to game site"
-            id="game-url"
-            name="gameUrl"
-            type="url"
-            inputmode="url"
-            placeholder="https://"
-            autocomplete="off"
-            required
-          />
-
-          <TextareaField
-            class="form-field"
-            label="Game Description"
-            description="Please keep this to under a paragraph."
-            id="game-description"
-            name="gameDescription"
-            rows={4}
-            required
-          />
-
-          <div class="form-actions">
-            <Button href="/forms" variant="outline" class="page-nav-btn" icon={iconForm}>Back to Forms</Button>
-            <Button class="form-submit" type="submit">Submit</Button>
-          </div>
-        </form>
       </Card>
     </div>
   </section>
 
-  <script>
-    // UI only for now — n8n webhook comes later.
-    // Native required/type checks still run; this only blocks page navigation.
-    document.getElementById('game-request-form')?.addEventListener('submit', (event) => {
-      event.preventDefault();
-    });
-  </script>
+
 </BaseLayout>

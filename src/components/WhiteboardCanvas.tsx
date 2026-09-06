@@ -1,3 +1,4 @@
+import { bindUnsavedChangesGuard, whiteboardSaveStatus } from '../lib/whiteboard-save-status'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CaptureUpdateAction,
@@ -132,6 +133,10 @@ export default function WhiteboardCanvas({
 }: WhiteboardCanvasProps) {
   const boardId = boardIdProp ?? readBoardIdFromLocation() ?? ''
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const [connected, setConnected] = useState(false)
+  const [hasPending, setHasPending] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  const saveFailedRef = useRef(false)
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const applyingRemoteRef = useRef(false)
@@ -146,6 +151,13 @@ export default function WhiteboardCanvas({
   const outboxRef = useRef<
     SceneOutboxState<OutboxMutation, PendingSceneMutation>
   >({ inFlight: null, pending: null })
+  const setOutbox = useCallback((next: SceneOutboxState<OutboxMutation, PendingSceneMutation>) => {
+    outboxRef.current = next
+    setHasPending(Boolean(next.pending || next.inFlight))
+  }, [])
+  useEffect(() => bindUnsavedChangesGuard(window, () => Boolean(
+    outboxRef.current.pending || outboxRef.current.inFlight || saveFailedRef.current,
+  )), [])
   const mutationSocketRef = useRef<WebSocket | null>(null)
   const flushTimerRef = useRef<number | null>(null)
   const fullSyncCounterRef = useRef(0)
@@ -324,6 +336,8 @@ export default function WhiteboardCanvas({
 
   const showClientSceneError = useCallback(
     (code: 'scene_too_large' | 'malformed_scene' | 'edit_not_allowed') => {
+      saveFailedRef.current = true
+      setSaveFailed(true)
       const now = Date.now()
       if (now - persistErrorToastAtRef.current < 5000) return
       persistErrorToastAtRef.current = now
@@ -437,7 +451,7 @@ export default function WhiteboardCanvas({
       }
       const sendResult = sendMutationFrame(mutation, ws)
       if (sendResult !== 'sent') return sendResult
-      outboxRef.current = sceneOutboxStart(outboxRef.current, mutation)
+      setOutbox(sceneOutboxStart(outboxRef.current, mutation))
       rememberElementVersions(payload, observedElementVersionsRef.current)
       lastSceneVersionRef.current = version
       return 'sent'
@@ -455,7 +469,7 @@ export default function WhiteboardCanvas({
         if (ws && mutationSocketRef.current !== ws) {
           const replay = sendMutationFrame(inFlight, ws)
           if (replay === 'terminal') {
-            outboxRef.current = sceneOutboxTerminalFailure(outboxRef.current)
+            setOutbox(sceneOutboxTerminalFailure(outboxRef.current))
             mutationSocketRef.current = null
             queueMicrotask(() => flushNowRef.current(false))
           }
@@ -473,7 +487,7 @@ export default function WhiteboardCanvas({
       )
       if (sent === 'sent' || sent === 'terminal') {
         if (sent === 'terminal') {
-          outboxRef.current = sceneOutboxClearPending(outboxRef.current)
+          setOutbox(sceneOutboxClearPending(outboxRef.current))
         }
       }
     },
@@ -552,7 +566,7 @@ export default function WhiteboardCanvas({
       if (!sceneHydratedRef.current) return
       const version = getSceneVersion(elements)
       if (version === lastSceneVersionRef.current) return
-      outboxRef.current = sceneOutboxQueue(outboxRef.current, {
+      setOutbox(sceneOutboxQueue(outboxRef.current, {
         // Excalidraw reuses/mutates scene objects between callbacks. Keep one
         // immutable queued snapshot so a retry cannot change underneath it.
         elements: immutableSceneElements(
@@ -560,7 +574,7 @@ export default function WhiteboardCanvas({
         ) as unknown as readonly OrderedExcalidrawElement[],
         appState: { ...appState },
         baseRevision: sceneRevisionRef.current,
-      })
+      }))
       schedulePreviewCapture()
       if (flushTimerRef.current != null) return
       flushTimerRef.current = window.setTimeout(() => {
@@ -735,6 +749,7 @@ export default function WhiteboardCanvas({
         userId: identity.userId,
       })
 
+      setConnected(false)
       authSentRef.current = false
       helloOnSocketRef.current = false
       lastAuthTokenSent = ''
@@ -791,6 +806,7 @@ export default function WhiteboardCanvas({
         lastSocketJsAt = Date.now()
 
         if (data.type === 'wb:hello') {
+          setConnected(true)
           helloOnSocketRef.current = true
           authSentRef.current = true
           clearAuthRetry()
@@ -814,10 +830,12 @@ export default function WhiteboardCanvas({
           }
           const inFlight = outboxRef.current.inFlight
           if (inFlight?.mutationId === data.mutationId) {
-            outboxRef.current = sceneOutboxAcknowledge(
+            saveFailedRef.current = false
+            setSaveFailed(false)
+            setOutbox(sceneOutboxAcknowledge(
               outboxRef.current,
               (flight) => flight.mutationId === data.mutationId,
-            )
+            ))
             mutationSocketRef.current = null
             rememberElementVersions(
               inFlight.elements,
@@ -829,6 +847,10 @@ export default function WhiteboardCanvas({
         }
 
         if (data.type === 'wb:error') {
+          if (isMutationId(data.mutationId) || [SCENE_EDIT_NOT_ALLOWED_CODE, SCENE_TOO_LARGE_CODE, SCENE_MALFORMED_CODE].some(code => code === data.code)) {
+            saveFailedRef.current = true
+            setSaveFailed(true)
+          }
           const message =
             typeof data.message === 'string' && data.message.trim()
               ? data.message
@@ -858,16 +880,16 @@ export default function WhiteboardCanvas({
               // the rejected payload may have contained elements unknown to
               // the server (for example, an over-4000 scene).
               forceFullNextRef.current = true
-              outboxRef.current = sceneOutboxTerminalFailure(
+              setOutbox(sceneOutboxTerminalFailure(
                 outboxRef.current,
                 (flight) => flight.mutationId === errorMutationId,
-              )
+              ))
               mutationSocketRef.current = null
               if (data.code === SCENE_EDIT_NOT_ALLOWED_CODE) {
                 // A coalesced snapshot was made under the same permission that
                 // rejected the flight. Report it as unsaved and rehydrate from
                 // the server before any later edit can leave this tab.
-                outboxRef.current = sceneOutboxClearPending(outboxRef.current)
+                setOutbox(sceneOutboxClearPending(outboxRef.current))
                 if (flushTimerRef.current != null) {
                   window.clearTimeout(flushTimerRef.current)
                   flushTimerRef.current = null
@@ -883,7 +905,7 @@ export default function WhiteboardCanvas({
               // Keep the immutable mutation. A reconnect (with the normal
               // bounded backoff) is the only retry trigger.
               preserveReconnectBackoff = true
-              outboxRef.current = sceneOutboxRetry(outboxRef.current)
+              setOutbox(sceneOutboxRetry(outboxRef.current))
               try {
                 ws.close(1011, 'retry scene persistence')
               } catch {
@@ -920,6 +942,7 @@ export default function WhiteboardCanvas({
       })
 
       ws.addEventListener('close', () => {
+        if (!cancelled) setConnected(false)
         clearTimers()
         clearAuthRetry()
         if (wsRef.current === ws) {
@@ -933,13 +956,13 @@ export default function WhiteboardCanvas({
           ) {
             const elements = api.getSceneElementsIncludingDeleted()
             if (getSceneVersion(elements) !== lastSceneVersionRef.current) {
-              outboxRef.current = sceneOutboxQueue(outboxRef.current, {
+              setOutbox(sceneOutboxQueue(outboxRef.current, {
                 elements: immutableSceneElements(
                   elements as unknown as SceneElement[],
                 ) as unknown as readonly OrderedExcalidrawElement[],
                 appState: { ...api.getAppState() },
                 baseRevision: sceneRevisionRef.current,
-              })
+              }))
             }
           }
           wsRef.current = null
@@ -1028,7 +1051,7 @@ export default function WhiteboardCanvas({
       sceneHydratedRef.current = false
       const discardedPendingEdit =
         !canEditRef.current && outboxRef.current.pending !== null
-      outboxRef.current = sceneOutboxClearPending(outboxRef.current)
+      setOutbox(sceneOutboxClearPending(outboxRef.current))
       if (discardedPendingEdit) {
         showClientSceneError(SCENE_EDIT_NOT_ALLOWED_CODE)
       }
@@ -1125,6 +1148,9 @@ export default function WhiteboardCanvas({
           }}
         />
       ) : null}
+      <div className="whiteboard-save-status" role="status" aria-live="polite" data-wb-save-status>
+        {whiteboardSaveStatus(connected, hasPending, saveFailed)}
+      </div>
       {!roles.helloReceived ? (
         <div
           style={{
