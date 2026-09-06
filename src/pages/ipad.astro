@@ -1,0 +1,196 @@
+---
+export const prerender = true;
+import { displayImage } from '../lib/display-images';
+import SegmentedControl from '../components/ui/SegmentedControl.astro';
+import { iconSun, iconSunMoon, iconMoon } from '../scripts/icons';
+
+// Add destinations here when the iPad app links are ready.
+const apps = [
+  { name: 'Google Classroom', icon: displayImage('/images/google-classroom-logo-clean.png') },
+  { name: 'Google Drive', icon: '/images/new-google-drive.svg' },
+];
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#125F31" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="St. Cecilia" />
+    <title>iPad | St. Cecilia Technology</title>
+    <script is:inline>
+      let preference = 'system';
+      try {
+        const stored = localStorage.getItem('theme');
+        if (['light', 'system', 'dark'].includes(stored)) preference = stored;
+      } catch {}
+      document.documentElement.dataset.themePref = preference;
+      document.documentElement.dataset.theme = preference === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : preference;
+    </script>
+    <link rel="icon" type="image/png" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  </head>
+  <body class="ipad-page">
+    <header>
+      <img src={displayImage('/images/scs-logo.png')} alt="" width="40" height="40" />
+      <span>St. Cecilia Technology</span>
+      <SegmentedControl
+        id="theme-toggle"
+        class="ipad-theme-toggle"
+        ariaLabel="Color theme"
+        selected="system"
+        options={[
+          { label: 'Light', value: 'light', icon: iconSun },
+          { label: 'System', value: 'system', icon: iconSunMoon },
+          { label: 'Dark', value: 'dark', icon: iconMoon },
+        ]}
+      />
+    </header>
+    <main>
+      <section aria-label="iPad apps">
+        <div class="apps">
+          {apps.map((app) => (
+            <button type="button" disabled>
+              <img src={app.icon} alt="" width="96" height="96" />
+              <span class="app-name">{app.name}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </main>
+    <script>
+      import '../scripts/theme-toggle';
+    </script>
+  </body>
+</html>
+
+<style>
+  :global(:root) {
+    color-scheme: light;
+    --primary-color: #125f31;
+    --secondary-color: #f6d724;
+    --ipad-background: #f9f9f9;
+    --ipad-text: #26372c;
+    --ipad-card: #fff;
+    --ipad-border: #d6ded8;
+    --ipad-muted: #eef3ef;
+    --ipad-muted-text: #506555;
+  }
+  :global(:root[data-theme='dark']) {
+    color-scheme: dark;
+    --primary-color: #85d6a3;
+    --ipad-background: #171c19;
+    --ipad-text: #e5eee8;
+    --ipad-card: #232b26;
+    --ipad-border: #435348;
+    --ipad-muted: #313e35;
+    --ipad-muted-text: #becfc3;
+  }
+  :global(*) { box-sizing: border-box; }
+  :global(body) {
+    margin: 0;
+    min-height: 100vh;
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    background: var(--ipad-background);
+    color: var(--ipad-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 20px 32px;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-left: max(32px, env(safe-area-inset-left));
+    padding-right: max(32px, env(safe-area-inset-right));
+    color: var(--primary-color);
+    font-size: 18px;
+    font-weight: 650;
+    border-bottom: 3px solid #f6d724;
+  }
+  header img { object-fit: contain; }
+  :global(.ipad-theme-toggle) {
+    margin-left: auto;
+    flex-shrink: 0;
+    gap: 0;
+    padding: 3px;
+    border-color: var(--ipad-border);
+    background: var(--ipad-muted);
+  }
+  :global(.ipad-theme-toggle::before) {
+    content: '';
+    position: absolute;
+    inset: 3px auto 3px 3px;
+    width: 44px;
+    border-radius: 999px;
+    background: var(--ipad-card);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 14%);
+    transform: translateX(44px);
+    transition: transform 0.2s ease;
+    pointer-events: none;
+  }
+  :global([data-theme-pref='light'] .ipad-theme-toggle::before) { transform: translateX(0); }
+  :global([data-theme-pref='dark'] .ipad-theme-toggle::before) { transform: translateX(88px); }
+  :global(.ipad-theme-toggle .ui-segmented-option) {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    color: var(--ipad-muted-text);
+  }
+  :global(.ipad-theme-toggle .ui-segmented-option[aria-checked='true']) {
+    background: transparent;
+    box-shadow: none;
+    color: var(--primary-color);
+  }
+  :global(.ipad-theme-toggle .ui-segmented-option svg) { width: 20px; height: 20px; }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.ipad-theme-toggle::before) { transition: none; }
+  }
+  main {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    padding: 32px;
+    padding-bottom: max(32px, env(safe-area-inset-bottom));
+  }
+  section { width: min(100%, 680px); text-align: center; }
+  .apps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  .apps button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    min-height: 280px;
+    padding: 32px 20px;
+    border: 1px solid var(--ipad-border);
+    border-top: 4px solid #125f31;
+    border-radius: 2px;
+    background: var(--ipad-card);
+    color: inherit;
+    font: inherit;
+    opacity: 1;
+    -webkit-text-fill-color: currentColor;
+  }
+  button img { object-fit: contain; }
+  .app-name { font-size: 24px; font-weight: 650; }
+  @media (max-width: 540px) {
+    header { padding: 16px; font-size: 16px; flex-wrap: wrap; }
+    main { padding: 24px 16px; }
+    .apps { gap: 12px; }
+    .apps button { min-height: 220px; padding: 24px 12px; gap: 16px; }
+    button img { width: 64px; height: 64px; }
+    .app-name { font-size: 18px; }
+  }
+  @media (max-height: 600px) {
+    main { padding-top: 20px; padding-bottom: 20px; }
+    .apps button { min-height: 200px; gap: 12px; padding: 20px; }
+    button img { width: 64px; height: 64px; }
+  }
+</style>
