@@ -1,6 +1,7 @@
 {
   "id": "unicorns-run",
   "name": "Unicorns Run",
+  "hidden": true,
   "url": "https://www.unicornsrun.com/",
   "image": "/images/unicornsrun.png",
   "description": "Explore themed lands in a pixel platform adventure.",
