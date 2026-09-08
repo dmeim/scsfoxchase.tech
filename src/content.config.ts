@@ -6,6 +6,7 @@ const games = defineCollection({
   schema: z.object({
     id: z.string(),
     name: z.string(),
+    hidden: z.boolean().default(false),
     url: z.string(),
     image: z.string(),
     description: z.string(),

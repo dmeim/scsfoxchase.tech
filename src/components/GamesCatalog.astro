@@ -5,7 +5,7 @@ import { gameDisplayImages } from '../lib/display-images';
 import { ChipGroup, IconButton, ProgressTabs, SearchField } from './ui';
 import { iconChevronLeft, iconChevronRight } from '../scripts/icons';
 
-const games = (await getCollection('games')).map((entry) => gameDisplayImages(entry.data));
+const games = (await getCollection('games', ({ data }) => !data.hidden)).map((entry) => gameDisplayImages(entry.data));
 const trendingIds = trending as string[];
 const catalogPayload = JSON.stringify({ games, trendingIds });
 const trendingGames = trendingIds

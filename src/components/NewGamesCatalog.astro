@@ -7,7 +7,7 @@ import { iconChevronLeft, iconChevronRight } from '../scripts/icons';
 import GameDetailDialog from './GameDetailDialog.astro';
 import GameCard from './GameCard.astro';
 
-const games = (await getCollection('games')).map((entry) => gameDisplayImages(entry.data));
+const games = (await getCollection('games', ({ data }) => !data.hidden)).map((entry) => gameDisplayImages(entry.data));
 const trendingIds = trending as string[];
 const catalogPayload = JSON.stringify({ games, trendingIds });
 

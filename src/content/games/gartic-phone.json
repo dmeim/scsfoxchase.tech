@@ -1,6 +1,7 @@
 {
   "id": "gartic-phone",
   "name": "Gartic Phone",
+  "hidden": true,
   "url": "https://garticphone.com/",
   "image": "/images/gartic-phone.png",
   "description": "Telephone with drawings—write a sentence, draw it, and watch it hilariously evolve.",
