@@ -1,8 +1,7 @@
 ---
 export const prerender = true;
 import { displayImage } from '../lib/display-images';
-import SegmentedControl from '../components/ui/SegmentedControl.astro';
-import { iconSun, iconSunMoon, iconMoon } from '../scripts/icons';
+import ThemeToggle from '../components/ThemeToggle.astro';
 
 // Add destinations here when the iPad app links are ready.
 const apps = [
@@ -37,17 +36,7 @@ const apps = [
     <header>
       <img src={displayImage('/images/scs-logo.png')} alt="" width="40" height="40" />
       <span>St. Cecilia Technology</span>
-      <SegmentedControl
-        id="theme-toggle"
-        class="ipad-theme-toggle"
-        ariaLabel="Color theme"
-        selected="system"
-        options={[
-          { label: 'Light', value: 'light', icon: iconSun },
-          { label: 'System', value: 'system', icon: iconSunMoon },
-          { label: 'Dark', value: 'dark', icon: iconMoon },
-        ]}
-      />
+      <div class="ipad-theme-selector"><ThemeToggle /></div>
     </header>
     <main>
       <section aria-label="iPad apps">
@@ -115,43 +104,7 @@ const apps = [
     border-bottom: 3px solid #f6d724;
   }
   header img { object-fit: contain; }
-  :global(.ipad-theme-toggle) {
-    margin-left: auto;
-    flex-shrink: 0;
-    gap: 0;
-    padding: 3px;
-    border-color: var(--ipad-border);
-    background: var(--ipad-muted);
-  }
-  :global(.ipad-theme-toggle::before) {
-    content: '';
-    position: absolute;
-    inset: 3px auto 3px 3px;
-    width: 44px;
-    border-radius: 999px;
-    background: var(--ipad-card);
-    box-shadow: 0 1px 4px rgb(0 0 0 / 14%);
-    transform: translateX(44px);
-    transition: transform 0.2s ease;
-    pointer-events: none;
-  }
-  :global([data-theme-pref='light'] .ipad-theme-toggle::before) { transform: translateX(0); }
-  :global([data-theme-pref='dark'] .ipad-theme-toggle::before) { transform: translateX(88px); }
-  :global(.ipad-theme-toggle .ui-segmented-option) {
-    position: relative;
-    width: 44px;
-    height: 44px;
-    color: var(--ipad-muted-text);
-  }
-  :global(.ipad-theme-toggle .ui-segmented-option[aria-checked='true']) {
-    background: transparent;
-    box-shadow: none;
-    color: var(--primary-color);
-  }
-  :global(.ipad-theme-toggle .ui-segmented-option svg) { width: 20px; height: 20px; }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.ipad-theme-toggle::before) { transition: none; }
-  }
+  .ipad-theme-selector { margin-left: auto; flex-shrink: 0; }
   main {
     flex: 1;
     display: grid;

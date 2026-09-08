@@ -1405,7 +1405,6 @@ nav ul li a {
 /* Frosted chips: brand (logo+title), nav links, theme toggle, fullscreen */
 .header-brand,
 nav ul li a,
-.theme-toggle,
 .header-fullscreen-btn {
     background: rgba(255, 255, 255, 0.72);
     backdrop-filter: blur(12px);
@@ -1416,7 +1415,6 @@ nav ul li a,
 
 [data-theme="dark"] .header-brand,
 [data-theme="dark"] nav ul li a,
-[data-theme="dark"] .theme-toggle,
 [data-theme="dark"] .header-fullscreen-btn {
     background: rgba(0, 0, 0, 0.58);
     border-color: rgba(255, 255, 255, 0.12);
@@ -1460,85 +1458,6 @@ header .header-right nav .ui-button:hover {
     border-color: var(--secondary-color);
     background: var(--secondary-color);
     color: #2f343a;
-}
-
-/* Theme switch: Light · System · Dark */
-.theme-toggle {
-    color: var(--primary-color);
-    width: 108px;
-    height: 36px;
-    flex-shrink: 0;
-    box-sizing: border-box;
-    font-size: 0.9rem;
-    line-height: 1;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    align-items: center;
-    position: relative;
-    padding: 0;
-    transition: var(--transition);
-}
-
-.theme-toggle-thumb {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: calc((100% - 4px) / 3);
-    height: calc(100% - 4px);
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
-    pointer-events: none;
-    transition: transform 0.2s ease;
-    z-index: 0;
-}
-
-[data-theme-pref="system"] .theme-toggle-thumb {
-    transform: translateX(100%);
-}
-
-[data-theme-pref="dark"] .theme-toggle-thumb {
-    transform: translateX(200%);
-}
-
-[data-theme="dark"] .theme-toggle-thumb {
-    background: rgba(255, 255, 255, 0.14);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-
-.theme-toggle-option {
-    all: unset;
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    width: 100%;
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    color: inherit;
-    opacity: 0.55;
-}
-
-.theme-toggle-option[aria-checked="true"] {
-    opacity: 1;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
-}
-
-[data-theme="dark"] .theme-toggle-option[aria-checked="true"] {
-    background: rgba(255, 255, 255, 0.14);
-}
-
-.theme-toggle-option:focus-visible {
-    outline: 2px solid var(--secondary-color);
-    outline-offset: -2px;
-}
-
-[data-theme="dark"] .theme-toggle {
-    color: var(--light-text);
 }
 
 /* Hero Section */
@@ -2343,7 +2262,7 @@ footer {
         font-size: 0.85rem;
     }
 
-    .theme-toggle {
+    header .theme-toggle.ui-segmented {
         width: 84px;
         height: 28px;
         font-size: 0.75rem;

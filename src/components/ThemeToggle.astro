@@ -1,0 +1,18 @@
+---
+import SegmentedControl from "./ui/SegmentedControl.astro";
+import { iconSun, iconSunMoon, iconMoon } from "../scripts/icons";
+import "../styles/theme-toggle.css";
+---
+
+<SegmentedControl
+        id="theme-toggle"
+        class="theme-toggle"
+        optionClass="theme-toggle-option"
+        ariaLabel="Color theme"
+        selected="system"
+        options={[
+          { label: 'Light', value: 'light', icon: iconSun },
+          { label: 'System', value: 'system', icon: iconSunMoon },
+          { label: 'Dark', value: 'dark', icon: iconMoon },
+        ]}
+      />

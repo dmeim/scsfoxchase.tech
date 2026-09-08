@@ -1,4 +1,5 @@
 ---
+import ThemeToggle from './ThemeToggle.astro';
 import ClerkAuth from './ClerkAuth';
 import { displayImage } from '../lib/display-images';
 import TempNotificationMenu from './TempNotificationMenu.astro';
@@ -7,7 +8,6 @@ import {
   Button,
   Card,
   Feedback,
-  SegmentedControl,
   SelectField,
   TextField,
   Toggle,
@@ -23,9 +23,6 @@ import {
   iconPencil,
   iconClipboard,
   iconLogIn,
-  iconMoon,
-  iconSun,
-  iconSunMoon,
 } from '../scripts/icons';
 
 interface Props {
@@ -43,18 +40,7 @@ const notificationDemo = pathname === '/temp';
         <img src={displayImage("/images/scs-logo.png")} alt="SCS Logo" class="header-logo" width="32" height="32">
         <h1>St. Cecilia Technology</h1>
       </a>
-      <SegmentedControl
-        id="theme-toggle"
-        class="theme-toggle"
-        optionClass="theme-toggle-option"
-        ariaLabel="Color theme"
-        selected="system"
-        options={[
-          { label: 'Light', value: 'light', icon: iconSun },
-          { label: 'System', value: 'system', icon: iconSunMoon },
-          { label: 'Dark', value: 'dark', icon: iconMoon },
-        ]}
-      />
+      <ThemeToggle />
       <Button
         type="button"
         id="header-fullscreen-btn"

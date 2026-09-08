@@ -1,0 +1,60 @@
+/* Theme switch: Light · System · Dark */
+.theme-toggle.ui-segmented {
+    color: var(--primary-color);
+    width: 108px;
+    height: 36px;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    font-size: 0.9rem;
+    line-height: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+    position: relative;
+    padding: 3px;
+    gap: 0;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: background 0.2s ease;
+}
+
+.theme-toggle .theme-toggle-option {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    color: inherit;
+    opacity: 0.55;
+}
+
+.theme-toggle .theme-toggle-option[aria-checked="true"] {
+    opacity: 1;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+}
+
+[data-theme="dark"] .theme-toggle .theme-toggle-option[aria-checked="true"] {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.theme-toggle .theme-toggle-option:focus-visible {
+    outline: 2px solid var(--secondary-color);
+    outline-offset: -2px;
+}
+
+[data-theme="dark"] .theme-toggle.ui-segmented {
+    color: var(--light-text, #e5eee8);
+    background: rgba(0, 0, 0, 0.58);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
