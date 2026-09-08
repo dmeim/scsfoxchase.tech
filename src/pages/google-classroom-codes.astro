@@ -6,15 +6,56 @@ import { iconMessageCircleQuestion } from '../scripts/icons';
 
 const technologyClassrooms = [
   {
-    name: '8A Tech (26-27)',
+    name: '3A',
+    href: 'https://classroom.google.com/c/ODc4MjIyMjM0ODcx?cjc=5yhdf7li',
+  },
+  {
+    name: '3B',
+    href: 'https://classroom.google.com/c/ODc4MjMwMzk0OTI2?cjc=34ztkaa5',
+  },
+  {
+    name: '4A',
+    href: 'https://classroom.google.com/c/ODc4MjI1MTY1NDk4?cjc=kyqd6g4x',
+  },
+  {
+    name: '4B',
+    href: 'https://classroom.google.com/c/ODc4MjI0OTkyMDA1?cjc=mmczy5fy',
+  },
+  {
+    name: '5A',
+    href: 'https://classroom.google.com/c/ODc4MjIzNTc5MDU4?cjc=egrz2j56',
+  },
+  {
+    name: '5B',
+    href: 'https://classroom.google.com/c/ODc4MjI2MTQ1NTU0?cjc=ml6wch7n',
+  },
+  {
+    name: '6A',
+    href: 'https://classroom.google.com/c/ODY5NTA1MzY4MTg5?cjc=thplczlx',
+  },
+  {
+    name: '6B',
+    href: 'https://classroom.google.com/c/ODc4MjIyMTg3MzMw?cjc=53nev7dv',
+  },
+  {
+    name: '7A',
+    href: 'https://classroom.google.com/c/ODc2Mzk3Mjc1MzU0?cjc=khtvny6o',
+  },
+  {
+    name: '7B',
+    href: 'https://classroom.google.com/c/ODc4MjIzODc2MDQ5?cjc=5yxokpml',
+  },
+
+  {
+    name: '8A',
     href: 'https://classroom.google.com/c/ODc2Mzk1NTIwNDE0?cjc=egvjhukc',
   },
   {
-    name: '8B Tech (26-27)',
+    name: '8B',
     href: 'https://classroom.google.com/c/ODcyNDQ3Nzc5ODQ4?cjc=iutjkbu2',
   },
   {
-    name: '8C Tech (26-27)',
+    name: '8C',
     href: 'https://classroom.google.com/c/ODc2Mzk2MTY5OTQ0?cjc=nwst22fw',
   },
 ];
@@ -35,8 +76,18 @@ const technologyClassrooms = [
         <Button href="/help" variant="outline" class="page-nav-btn" icon={iconMessageCircleQuestion}>Back to Help</Button>
       </header>
 
-      <section class="classroom-codes-group" aria-labelledby="technology-classrooms-title">
-        <h3 id="technology-classrooms-title" class="classroom-codes-group-title">Technology</h3>
+      <a
+        class="classroom-code-button schoolwide-classroom"
+        href="https://classroom.google.com/c/NzEzMjI0MTcxNTI2?cjc=52fwzmz"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <img src="/images/google-classroom-logo-clean.png" alt="" width="282" height="243" aria-hidden="true" />
+        <span>Saint Cecilia School<small>Schoolwide; all teachers and students</small></span>
+      </a>
+
+      <details class="classroom-codes-group" open>
+        <summary class="classroom-codes-group-title">Technology and 3D Printing (26-27)</summary>
         <div class="classroom-codes-grid">
           {
             technologyClassrooms.map((classroom) => (
@@ -58,7 +109,42 @@ const technologyClassrooms = [
             ))
           }
         </div>
-      </section>
+      </details>
     </div>
   </div>
 </BaseLayout>
+
+<style>
+  summary.classroom-codes-group-title {
+    cursor: pointer;
+    font-weight: 700;
+    padding-block: 6px;
+  }
+
+  summary.classroom-codes-group-title:focus-visible {
+    outline: 3px solid var(--secondary-color);
+    outline-offset: 3px;
+  }
+
+  .schoolwide-classroom {
+    margin-bottom: 16px;
+  }
+
+  .schoolwide-classroom small {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.85rem;
+    font-weight: 400;
+  }
+
+  @media (min-width: 769px) and (max-height: 800px) {
+    .classroom-code-button {
+      min-height: 52px;
+      padding: 6px 12px;
+    }
+
+    .classroom-codes-grid {
+      gap: 10px;
+    }
+  }
+</style>
