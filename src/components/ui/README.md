@@ -64,4 +64,8 @@ Client-rendered collections should import `uiClassNames` from `./dom` so their g
 
 Use `<Card transparent>` (or `uiClassNames.card(extra, { transparent: true })` for client-rendered collections) when content needs the card layout contract without a surface fill.
 
+Use `<SearchField variant="embedded">` inside an existing search surface, such as the homepage search bar. The default variant owns its border, background, padding, and focus outline; the embedded variant leaves those to its parent. That parent must provide a visible `:focus-within` treatment. Keep page layout sizing on the page class rather than resetting the shared field's surface.
+
+Header navigation uses `Button variant="glass"` with the `header-nav-link` class. Header-specific rules target `.header-nav-link.ui-button`, not generic `nav a` elements, so the frosted treatment does not depend on stylesheet order.
+
 The event value is available at `event.detail.value`.

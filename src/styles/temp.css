@@ -46,8 +46,8 @@ body.temp-notification-page {
   border: 2px solid var(--notification-panel-border);
   border-radius: 2px;
   background: var(--notification-panel);
-  backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   box-shadow: var(--notification-shadow);
   box-sizing: border-box;
 }
@@ -345,8 +345,8 @@ body.temp-notification-page {
   border-radius: 2px;
   color: var(--primary-color);
   background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   box-sizing: border-box;
 }
 

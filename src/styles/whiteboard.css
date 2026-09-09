@@ -17,8 +17,8 @@ body.whiteboard-hub-page {
   padding: clamp(16px, 2.5vw, 28px);
   box-sizing: border-box;
   background: rgba(249, 249, 249, 0.72);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 2px solid var(--border-color);
   border-radius: 2px;
 }
@@ -133,8 +133,8 @@ body.whiteboard-hub-page {
   border-radius: 999px;
   border: 1px solid rgba(18, 95, 49, 0.28);
   background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: var(--text-color);
   font-size: 0.9rem;
   box-sizing: border-box;
@@ -204,8 +204,8 @@ body.whiteboard-hub-page {
   border-radius: 2px;
   border: 1px dashed rgba(18, 95, 49, 0.28);
   background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: var(--text-color);
   font-size: 0.9rem;
 }
@@ -265,8 +265,8 @@ body.whiteboard-hub-page {
   flex-direction: column;
   color: var(--text-color);
   background: rgba(249, 249, 249, 0.58);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 2px solid var(--border-color);
   border-radius: 2px;
   overflow: visible;
@@ -371,8 +371,8 @@ body.whiteboard-hub-page {
   border: 1px solid rgba(18, 95, 49, 0.22);
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   cursor: pointer;
   color: var(--primary-color);
 }
@@ -412,8 +412,8 @@ body.whiteboard-hub-page {
   padding: 6px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border: 1px solid rgba(18, 95, 49, 0.18);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
   z-index: 20;

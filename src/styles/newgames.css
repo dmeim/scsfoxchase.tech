@@ -389,8 +389,8 @@
 
 .game-detail-modal::backdrop {
     background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
 }
 
 .game-detail-dialog {

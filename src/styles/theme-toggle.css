@@ -16,8 +16,8 @@
     border: 1px solid rgba(255, 255, 255, 0.45);
     border-radius: 2px;
     background: rgba(255, 255, 255, 0.72);
-    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     transition: background 0.2s ease;
 }
 

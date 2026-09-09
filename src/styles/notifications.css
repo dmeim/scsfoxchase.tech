@@ -47,8 +47,8 @@
   border-radius: 2px;
   color: var(--primary-color);
   background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 [data-theme="dark"] .notification-trigger {

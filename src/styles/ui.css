@@ -45,8 +45,8 @@ body.ui-page main {
   border: 1px solid var(--ui-border);
   border-radius: 2px;
   background: var(--ui-surface);
-  backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
 }
 
 .ui-library-nav-inner {
@@ -95,8 +95,8 @@ body.ui-page main {
   font-size: 0.9rem;
   font-weight: 650;
   line-height: 1.25;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .ui-library-nav nav ul li a:hover,
@@ -539,7 +539,7 @@ body.ui-page main {
 .ui-icon-button:focus-visible,
 .ui-chip--filter:focus-visible,
 .ui-field :is(input, select, textarea):focus-visible,
-.ui-search-field:focus-within {
+.ui-search-field:not(.ui-search-field--embedded):focus-within {
   outline: 2px solid var(--secondary-color);
   outline-offset: 2px;
 }

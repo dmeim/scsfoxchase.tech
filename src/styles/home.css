@@ -5,7 +5,7 @@
 .mockup-kicker { text-align:center; font-weight:700; opacity:.75; margin-bottom: 18px; }
 .mockup-search-grid { display:grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
 .mockup-search-grid .google-search-bar { max-width:none; min-width:0; }
-.mockup-card, .mockup-link { background: rgba(249,249,249,.58); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 2px solid var(--border-color); border-radius: 2px; }
+.mockup-card, .mockup-link { background: rgba(249,249,249,.58); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 2px solid var(--border-color); border-radius: 2px; }
 [data-theme="dark"] .mockup-card, [data-theme="dark"] .mockup-link { background: rgba(45,45,45,.58); }
 .mockup-link { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--text-color); font-weight:700; text-align:center; transition:var(--transition); }
 .mockup-link:hover { border-color: var(--primary-color); color: var(--secondary-color); transform: translateY(-2px); }
@@ -65,10 +65,6 @@
 .smart-search-field {
     flex: 1 1 auto;
     min-width: 0;
-    min-height: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
 }
 .newhome-workflow-grid {
     display: grid;
@@ -78,8 +74,8 @@
 }
 .newhome-group-card {
     background: rgba(249,249,249,.58);
-    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     border: 2px solid var(--border-color);
     border-radius: 2px;
     padding: clamp(10px, 1.2vw, 16px);
@@ -264,8 +260,8 @@
     border-radius: 999px;
     color: var(--text-color);
     background: rgba(249, 249, 249, .7);
-    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     font-weight: 750;
     line-height: 1;
     text-decoration: none;

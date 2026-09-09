@@ -64,8 +64,8 @@ body.help-page main .container.form-shell {
   padding: 10px clamp(20px, 3vw, 34px);
   color: var(--text-color);
   background: rgba(249, 249, 249, 0.72);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 2px solid var(--border-color);
   border-radius: 999px;
   font-size: clamp(1rem, 1.5vw, 1.2rem);
@@ -127,8 +127,8 @@ body.help-page main .container.form-shell {
   padding: 12px 18px;
   color: var(--text-color);
   background: rgba(249, 249, 249, 0.72);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 2px solid var(--border-color);
   border-radius: 2px;
   font-size: clamp(0.9rem, 1.15vw, 1.05rem);
@@ -233,8 +233,8 @@ body.help-page main .container.form-shell {
   color: var(--text-color);
   text-decoration: none;
   background: rgba(249, 249, 249, 0.58);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 2px solid var(--border-color);
   border-radius: 2px;
   transition: var(--transition);
@@ -312,8 +312,8 @@ body.help-page main .container.form-shell {
 
 .form-panel {
   background: rgba(249, 249, 249, 0.72);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 2px solid var(--border-color);
   border-radius: 2px;
   padding: clamp(16px, 2.5vw, 28px);

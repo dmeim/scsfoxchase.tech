@@ -83,7 +83,7 @@ const defaultOption = searchGroups[0].options[0];
         </Card>
       </div>
       <span class="smart-search-separator" aria-hidden="true"></span>
-      <SearchField label="Search the selected destination" icon="" name="q" placeholder={defaultOption.placeholder} class="smart-search-field" inputClass="google-search-input smart-search-input" autocomplete="off" />
+      <SearchField variant="embedded" label="Search the selected destination" icon="" name="q" placeholder={defaultOption.placeholder} class="smart-search-field" inputClass="google-search-input smart-search-input" autocomplete="off" />
       <IconButton icon={iconTimes} label="Clear search" size="small" class="google-search-clear smart-search-clear" data-smart-search-clear />
       <IconButton icon={iconSearch} label="Search selected destination" size="small" type="submit" class="google-search-btn smart-search-submit" />
     </form>

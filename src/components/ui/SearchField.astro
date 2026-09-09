@@ -4,6 +4,7 @@ import './styles.css';
 
 interface Props {
   label: string;
+  variant?: "default" | "embedded";
   name?: string;
   value?: string;
   placeholder?: string;
@@ -17,6 +18,7 @@ interface Props {
 
 const {
   label,
+  variant = "default",
   icon = iconSearch,
   inputClass,
   type = 'search',
@@ -25,7 +27,7 @@ const {
 } = Astro.props;
 ---
 
-<label class:list={['ui-search-field', className]}>
+<label class:list={['ui-search-field', variant === "embedded" && 'ui-search-field--embedded', className]}>
   {icon && <span set:html={icon}></span>}
   <input class:list={['ui-search-field-input', inputClass]} type={type} aria-label={label} {...inputProps} />
 </label>

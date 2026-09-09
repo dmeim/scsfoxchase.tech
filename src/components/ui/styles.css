@@ -50,7 +50,7 @@
 .ui-icon-button:focus-visible,
 .ui-chip--filter:focus-visible,
 .ui-field :is(input, select, textarea):focus-visible,
-.ui-search-field:focus-within {
+.ui-search-field:not(.ui-search-field--embedded):focus-within {
   outline: 2px solid var(--secondary-color);
   outline-offset: 2px;
 }
@@ -181,6 +181,7 @@ a.ui-badge:hover { filter: brightness(0.94); }
 }
 
 .ui-search-field { min-height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 14px; border: 2px solid var(--ui-border); border-radius: 999px; background: var(--ui-surface-strong); }
+.ui-search-field.ui-search-field--embedded { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .ui-search-field > span { display: inline-flex; color: var(--primary-color); }
 .ui-search-field svg { width: 17px; height: 17px; }
 .ui-search-field input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text-color); font: inherit; }

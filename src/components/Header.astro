@@ -250,13 +250,13 @@ const notificationDemo = pathname === '/temp';
       <nav aria-label="Primary">
         <ul>
           <li>
-            <Button href="/" variant="ghost" size="small" icon={iconHouse}>Home</Button>
+            <Button href="/" variant="glass" size="small" class="header-nav-link" icon={iconHouse}>Home</Button>
           </li>
           <li>
-            <Button href="/games" variant="ghost" size="small" icon={iconGamepad2}>Games</Button>
+            <Button href="/games" variant="glass" size="small" class="header-nav-link" icon={iconGamepad2}>Games</Button>
           </li>
           <li>
-            <Button href="/help" variant="ghost" size="small" icon={iconMessageCircleQuestion}>Help</Button>
+            <Button href="/help" variant="glass" size="small" class="header-nav-link" icon={iconMessageCircleQuestion}>Help</Button>
           </li>
           <li>
             {notificationDemo ? <TempNotificationMenu /> : <NotificationCenter />}
