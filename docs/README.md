@@ -87,7 +87,8 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 | Route | Purpose |
 |-------|---------|
 | `/` | Homepage — search bars + app launcher |
-| `/games` | Game catalog |
+| `/games` | Game catalog, including the first-party Mini Games launcher |
+| `/minigame/dino-run` | Dino Run — 16:9 windowed/native-fullscreen mini game |
 | `/help` | Help hub (featured Forms + Guides) |
 | `/forms` | Forms catalog |
 | `/guides` | Guides catalog |

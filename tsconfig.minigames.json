@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/data/minigames.ts",
+    "src/lib/minigames/**/*.ts",
+    "src/scripts/dino-run.ts",
+    "src/scripts/minigame-frame.ts"
+  ]
+}

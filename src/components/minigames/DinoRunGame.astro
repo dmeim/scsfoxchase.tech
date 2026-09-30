@@ -1,0 +1,66 @@
+---
+import MinigameFrame from "../MinigameFrame.astro";
+import { Button, IconButton } from "../ui";
+import { iconArrowBigDown, iconHeart, iconHeartOff, iconPause, iconRotateCcw, iconSpace } from "../../scripts/icons";
+---
+
+<MinigameFrame title="Dino Run">
+  <canvas
+    class="dino-run-canvas"
+    data-dino-canvas
+    width="800"
+    height="450"
+    tabindex="0"
+    aria-label="Dino Run. Space or Up Arrow to jump, hold for a higher jump. Shift to slam down. P to pause."
+    aria-describedby="dino-run-instructions"
+  >Dino Run requires a browser that supports canvas and JavaScript.</canvas>
+
+  <div class="dino-run-hud">
+    <div class="dino-run-lives" data-dino-lives role="img" aria-label="3 of 3 lives">
+      {Array.from({ length: 3 }, (_, index) => (
+        <span class="dino-run-heart" data-dino-heart={index}>
+          <span class="dino-run-heart-full" set:html={iconHeart} />
+          <span class="dino-run-heart-empty" set:html={iconHeartOff} />
+        </span>
+      ))}
+    </div>
+    <div class="dino-run-score">
+      <span>Score <strong data-dino-score>00000</strong></span>
+      <span>Best <strong data-dino-best>00000</strong></span>
+    </div>
+  </div>
+
+  <div class="dino-run-overlay" data-dino-overlay>
+    <p class="dino-run-eyebrow">St. Cecilia Mini Games</p>
+    <h2 data-dino-title>Dino Run</h2>
+    <p data-dino-message>Clear the cacti. Keep your hearts. Beat your best.</p>
+    <Button data-dino-action>Start run</Button>
+    <p class="dino-run-instructions" id="dino-run-instructions">
+      Tap for a short jump · Hold for a high jump<br />
+      Shift or Slam to drop back down
+    </p>
+  </div>
+
+  <div class="dino-run-controls" aria-label="Movement controls">
+    <Button variant="glass" size="small" icon={iconSpace} class="dino-run-jump" data-dino-jump aria-label="Jump. Hold for a higher jump.">
+      Jump <kbd>Space / ↑</kbd>
+    </Button>
+    <Button variant="glass" size="small" icon={iconArrowBigDown} data-dino-slam aria-label="Slam down">
+      Slam <kbd>Shift</kbd>
+    </Button>
+    <span class="dino-run-control-hint">Hold to jump higher</span>
+  </div>
+
+  <Fragment slot="toolbar">
+    <IconButton icon={iconPause} label="Pause game (P)" size="small" data-dino-pause disabled />
+    <IconButton icon={iconRotateCcw} label="Restart game (R)" size="small" data-dino-restart />
+  </Fragment>
+
+  <span class="minigame-sr-only" data-dino-announcement role="status" aria-live="polite"></span>
+</MinigameFrame>
+
+<script>
+  import { initDinoRun } from "../../scripts/dino-run";
+
+  document.querySelectorAll<HTMLCanvasElement>("[data-dino-canvas]").forEach(initDinoRun);
+</script>

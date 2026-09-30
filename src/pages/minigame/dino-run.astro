@@ -1,0 +1,20 @@
+---
+export const prerender = true;
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import DinoRunGame from "../../components/minigames/DinoRunGame.astro";
+import { Button } from "../../components/ui";
+import { iconArrowLeft } from "../../scripts/icons";
+---
+
+<BaseLayout title="Dino Run - St. Cecilia Technology" bodyClass="minigame-page-body" hideFooter dotWave={false}>
+  <meta slot="head" name="description" content="Play Dino Run, a St. Cecilia mini game. Jump over cacti, slam down, and beat your best score." />
+  <section class="minigame-page">
+    <div class="minigame-page-heading">
+      <Button href="/games" variant="ghost" size="small" icon={iconArrowLeft}>Games</Button>
+      <h1>Dino Run</h1>
+      <span class="minigame-page-label">Mini Game</span>
+    </div>
+    <DinoRunGame />
+    <p class="minigame-page-note">Keyboard &amp; touch · Your best score stays on this device</p>
+  </section>
+</BaseLayout>

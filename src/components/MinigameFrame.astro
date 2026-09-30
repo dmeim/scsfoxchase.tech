@@ -1,0 +1,39 @@
+---
+import { Button } from "./ui";
+import { iconMaximize2 } from "../scripts/icons";
+import "../styles/minigames.css";
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<div class="minigame-frame" data-minigame-frame aria-label={`${title} game player`}>
+  <div class="minigame-viewport" data-minigame-viewport>
+    <slot />
+    <div class="minigame-toolbar" aria-label="Game actions">
+      <slot name="toolbar" />
+      <Button
+        variant="glass"
+        size="small"
+        icon={iconMaximize2}
+        class="minigame-fullscreen"
+        data-minigame-fullscreen
+        aria-label="Enter fullscreen"
+        aria-pressed="false"
+        hidden
+      >
+        <span data-fullscreen-label>Fullscreen</span>
+      </Button>
+    </div>
+    <p class="minigame-frame-feedback" data-minigame-feedback role="status" hidden></p>
+  </div>
+</div>
+
+<script>
+  import { initMinigameFrame } from "../scripts/minigame-frame";
+
+  document.querySelectorAll<HTMLElement>("[data-minigame-frame]").forEach(initMinigameFrame);
+</script>

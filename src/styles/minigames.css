@@ -1,0 +1,354 @@
+.minigame-page,
+.minigame-viewport {
+  --minigame-accent: var(--primary-color);
+}
+
+[data-theme="dark"] .minigame-page,
+[data-theme="dark"] .minigame-viewport {
+  --minigame-accent: #70c48c;
+}
+
+.minigame-page {
+  width: min(1120px, calc(100% - 40px), calc((100dvh - 170px) * 16 / 9));
+  margin: 12px auto;
+}
+
+.minigame-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.minigame-page-heading h1 {
+  font-size: clamp(1.2rem, 2.4vw, 1.8rem);
+  line-height: 1.2;
+  color: var(--minigame-accent);
+}
+
+.minigame-page-label {
+  color: var(--text-color);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.minigame-frame {
+  width: 100%;
+}
+
+.minigame-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 2px;
+  outline: 1px solid var(--border-color);
+  outline-offset: -1px;
+  background: var(--light-bg);
+  container-type: inline-size;
+  isolation: isolate;
+}
+
+.minigame-frame:fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: #080d09;
+}
+
+.minigame-frame:fullscreen .minigame-viewport {
+  width: min(100%, calc(100dvh * 16 / 9));
+  flex: none;
+  border-radius: 0;
+  outline: none;
+}
+
+.minigame-frame:-webkit-full-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: #080d09;
+}
+
+.minigame-frame:-webkit-full-screen .minigame-viewport {
+  width: min(100%, calc(100dvh * 16 / 9));
+  flex: none;
+  border-radius: 0;
+  outline: none;
+}
+
+.minigame-toolbar {
+  position: absolute;
+  top: clamp(8px, 2cqw, 20px);
+  right: clamp(8px, 2cqw, 20px);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.minigame-toolbar .ui-icon-button,
+.minigame-toolbar .ui-button {
+  min-height: 34px;
+}
+
+.minigame-toolbar .ui-icon-button {
+  color: var(--minigame-accent);
+}
+
+.minigame-fullscreen[hidden],
+.minigame-frame-feedback[hidden],
+.dino-run-overlay[hidden] {
+  display: none;
+}
+
+.minigame-frame-feedback {
+  position: absolute;
+  z-index: 4;
+  top: 58px;
+  right: 16px;
+  max-width: min(360px, calc(100% - 32px));
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  background: var(--light-bg);
+  color: var(--text-color);
+  font-size: 0.8rem;
+}
+
+.minigame-page-note {
+  margin-top: 10px;
+  color: var(--text-color);
+  text-align: center;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.minigame-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dino-run-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline: none;
+}
+
+.dino-run-canvas:focus-visible {
+  outline: 2px solid var(--minigame-accent);
+  outline-offset: -2px;
+}
+
+.dino-run-hud {
+  position: absolute;
+  top: clamp(8px, 2cqw, 20px);
+  left: clamp(8px, 2cqw, 20px);
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 2.5cqw, 28px);
+  pointer-events: none;
+}
+
+.dino-run-lives {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--minigame-accent);
+}
+
+.dino-run-heart {
+  display: inline-flex;
+  width: clamp(16px, 2.4cqw, 26px);
+  height: clamp(16px, 2.4cqw, 26px);
+}
+
+.dino-run-heart svg {
+  width: 100%;
+  height: 100%;
+}
+
+.dino-run-heart-full svg {
+  fill: currentColor;
+}
+
+.dino-run-heart-empty,
+.dino-run-heart[data-empty="true"] .dino-run-heart-full {
+  display: none;
+}
+
+.dino-run-heart[data-empty="true"] .dino-run-heart-empty {
+  display: inline-flex;
+  opacity: 0.5;
+}
+
+.dino-run-score {
+  display: flex;
+  flex-direction: column;
+  font-size: clamp(10px, 1.2cqw, 14px);
+  line-height: 1.5;
+}
+
+.dino-run-score strong {
+  margin-left: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.dino-run-overlay {
+  position: absolute;
+  z-index: 2;
+  top: 42%;
+  left: 50%;
+  width: 70%;
+  max-width: 520px;
+  padding: 10px;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  background: color-mix(in srgb, var(--light-bg) 94%, transparent);
+  border-radius: 2px;
+}
+
+.dino-run-eyebrow {
+  margin-bottom: 4px;
+  color: var(--minigame-accent);
+  font-size: clamp(9px, 1.1cqw, 12px);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dino-run-overlay h2 {
+  margin: 0 0 6px;
+  color: var(--minigame-accent);
+  font-size: clamp(22px, 4.8cqw, 48px);
+  line-height: 1.1;
+}
+
+.dino-run-overlay > p:not(.dino-run-eyebrow):not(.dino-run-instructions) {
+  margin: 0 0 16px;
+  font-size: clamp(11px, 1.6cqw, 17px);
+  line-height: 1.4;
+}
+
+.dino-run-overlay .ui-button {
+  padding: clamp(6px, 1cqw, 12px) clamp(14px, 3cqw, 28px);
+  font-size: clamp(12px, 1.6cqw, 17px);
+}
+
+.dino-run-instructions {
+  margin-top: 14px;
+  font-size: clamp(10px, 1.2cqw, 13px);
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+.dino-run-controls {
+  position: absolute;
+  left: clamp(8px, 2cqw, 20px);
+  right: clamp(8px, 2cqw, 20px);
+  bottom: clamp(6px, 1.3cqw, 14px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dino-run-controls .ui-button {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dino-run-controls kbd {
+  margin-left: 4px;
+  font-family: inherit;
+  font-size: 0.7em;
+  opacity: 0.65;
+}
+
+.dino-run-control-hint {
+  margin-left: auto;
+  color: var(--text-color);
+  font-size: clamp(10px, 1.2cqw, 13px);
+  opacity: 0.6;
+}
+
+@container (max-width: 520px) {
+  .minigame-toolbar {
+    gap: 3px;
+  }
+
+  .minigame-toolbar .ui-icon-button,
+  .minigame-toolbar .ui-button {
+    min-height: 28px;
+    padding: 5px;
+  }
+
+  .minigame-fullscreen [data-fullscreen-label],
+  .dino-run-controls kbd,
+  .dino-run-control-hint,
+  .dino-run-eyebrow {
+    display: none;
+  }
+
+  .dino-run-overlay {
+    top: 44%;
+    padding: 6px;
+  }
+
+  .dino-run-overlay > p:not(.dino-run-eyebrow):not(.dino-run-instructions) {
+    margin-bottom: 8px;
+  }
+
+  .dino-run-instructions {
+    margin-top: 8px;
+  }
+
+  .dino-run-controls .ui-button {
+    min-height: 30px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .minigame-page {
+    width: calc(100% - 24px);
+    margin-top: 10px;
+  }
+
+  .minigame-page-label {
+    font-size: 0.65rem;
+  }
+}
+
+@media (max-height: 500px) and (min-width: 769px) {
+  .minigame-page {
+    width: min(100% - 24px, calc((100dvh - 140px) * 16 / 9));
+    margin-block: 6px;
+  }
+
+  .minigame-page-heading {
+    margin-bottom: 6px;
+  }
+
+  .minigame-page-note {
+    margin-top: 6px;
+  }
+}

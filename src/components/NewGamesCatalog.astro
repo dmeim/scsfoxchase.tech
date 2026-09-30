@@ -6,6 +6,7 @@ import { Button, ChipGroup, IconButton, ProgressTabs, SearchField } from './ui';
 import { iconChevronLeft, iconChevronRight } from '../scripts/icons';
 import GameDetailDialog from './GameDetailDialog.astro';
 import GameCard from './GameCard.astro';
+import MiniGamesLauncher from './MiniGamesLauncher.astro';
 
 const games = (await getCollection('games', ({ data }) => !data.hidden)).map((entry) => gameDisplayImages(entry.data));
 const trendingIds = trending as string[];
@@ -84,6 +85,8 @@ const secondaryCategories = [...new Set(games.flatMap((game) => game.secondaryCa
             </section>
           ) : null
         }
+
+        <MiniGamesLauncher />
 
         <div class="games-grid games-grid--max" id="games-grid" data-card-style="max">
           {games.map((game) => <GameCard game={game} />)}

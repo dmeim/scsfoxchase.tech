@@ -1,0 +1,28 @@
+---
+import { minigames } from "../data/minigames";
+import { iconChevronRight, iconGamepad2 } from "../scripts/icons";
+---
+
+<section class="minigames-launcher" aria-labelledby="minigames-launcher-title">
+  <div class="minigames-launcher-heading">
+    <h2 id="minigames-launcher-title">
+      <span set:html={iconGamepad2} />
+      Mini Games
+    </h2>
+    <span class="minigames-launcher-caption">Made for St. Cecilia</span>
+  </div>
+  <div class="minigames-launcher-list">
+    {minigames.map((game) => (
+      <a class="minigame-launcher" href={`/minigame/${game.id}`} aria-label={`Play ${game.name}`}>
+        <span class="minigame-launcher-art" aria-hidden="true">
+          {game.image ? <img src={game.image} alt="" width="160" height="90" /> : game.glyph}
+        </span>
+        <span class="minigame-launcher-copy">
+          <strong>{game.name}</strong>
+          <span>{game.description}</span>
+        </span>
+        <span class="minigame-launcher-arrow" set:html={iconChevronRight} />
+      </a>
+    ))}
+  </div>
+</section>

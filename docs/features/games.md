@@ -1,12 +1,13 @@
 # Games catalog (`/games`)
 
-Educational games browser: sidebar filters, trending hero carousel, and a grid of game cards. Data is an Astro content collection of JSON files, embedded in the page at build time (no client fetch for the catalog).
+Educational games browser: sidebar filters, trending hero carousel, a first-party Mini Games launcher, and a grid of external-game cards. External-game data is an Astro content collection of JSON files, embedded in the page at build time (no client fetch for the catalog).
 
 ## Routes
 
 | Route | Source | Behavior |
 |-------|--------|----------|
 | `/games` | `src/pages/games.astro` | Current catalog (`NewGamesCatalog`) |
+| `/minigame/dino-run` | `src/pages/minigame/dino-run.astro` | First-party Dino Run with windowed/native-fullscreen play |
 | `/games.html` | `astro.config.mjs` `redirects` | Redirects to `/games` |
 | `/newgames` | `astro.config.mjs` `redirects` | Redirects to `/games` |
 | `/oldgames` | `src/pages/oldgames.astro` | Alternate catalog UI (`GamesCatalog`) with a top trending carousel and denser cards; same games collection and trending IDs |
@@ -35,6 +36,24 @@ Current trending IDs (order matters):
 ```json
 ["bloxd", "eaglercraft", "little-alchemy", "neal-fun", "lol-beans", "stumble-guys"]
 ```
+
+### First-party Mini Games
+
+A separate launcher group sits between the trending carousel and the external-game grid. It is rendered by `src/components/MiniGamesLauncher.astro` from `src/data/minigames.ts`. These links open in the same tab and are not included in the external catalog's search/filter counts. The first entry is **Dino Run** at **`/minigame/dino-run`**.
+
+Launcher artwork is optional: set an `image` path on the mini-game record when artwork is available; otherwise its `glyph` is displayed. Mini games have their own prerendered pages under `src/pages/minigame/` rather than external-game JSON records.
+
+#### Game frame and Dino Run
+
+- `src/components/MinigameFrame.astro`, `src/scripts/minigame-frame.ts`, and `src/styles/minigames.css` provide the reusable **16:9** player. The fullscreen button requests native browser fullscreen for the player itself, including its controls—not the whole site. Other screen ratios are letterboxed, never stretched. The button is hidden when native fullscreen is unsupported; request failures display a helpful message.
+- Dino Run uses a fixed **800×450** game world and a **60 Hz** simulation. Resizing/fullscreen only changes rendering resolution. The canvas backing buffer follows the displayed size and device pixel ratio (capped at 2).
+- **Space / Up Arrow:** jump; release early for a short hop, hold for a high jump. **Shift:** slam down. **P:** pause/resume. **R:** restart. **Escape:** pause and, when fullscreen, allow the browser to exit fullscreen.
+- Touch/mouse players can tap/hold the canvas or Jump button and use the Slam button. Gameplay keys apply only while the game has focus, not to navigation, form fields, or buttons.
+- The runner retains three hearts, post-hit grace time, increasing speed, and the existing pixel dinosaur/cacti. The personal best uses the same `offline-dino-best` localStorage key as the offline runner. No account or server-side game state is required.
+- Losing focus or hiding the tab pauses the run. Resume is explicit; a paused/finished game does not keep a rendering loop running.
+- The original `src/pages/offline.astro` runner and service-worker policy are unchanged. The new mini-game route is **not precached**; navigating to it offline still serves `/offline`.
+
+Verification: `npm run typecheck:minigames`, `npm test`, and `npm run build`. Gameplay regression tests are in `tests/dino-run.test.ts`.
 
 ### Grid
 
@@ -106,6 +125,13 @@ Same data pipeline (`getCollection('games')` + `trending.json`) via `src/compone
 | `src/pages/games.astro` | `/games` entry |
 | `src/pages/oldgames.astro` | `/oldgames` entry |
 | `src/components/NewGamesCatalog.astro` | Current catalog UI |
+| `src/components/MiniGamesLauncher.astro` | First-party mini-game launcher group |
+| `src/data/minigames.ts` | Mini-game names, routes (by id), glyphs, and optional artwork |
+| `src/components/MinigameFrame.astro` | Reusable 16:9/native-fullscreen game frame |
+| `src/components/minigames/DinoRunGame.astro` | Dino Run canvas, HUD, overlays, and controls |
+| `src/lib/minigames/dino-run.ts` | Fixed-step Dino Run simulation |
+| `src/lib/minigames/dino-renderer.ts` | Canvas rendering and resize/theme handling |
+| `src/scripts/dino-run.ts` | Game input, pause/resume, scores, and lifecycle |
 | `src/components/GamesCatalog.astro` | `/oldgames` UI |
 | `src/content.config.ts` | Collection schema |
 | `src/content/games/*.json` | Game records |

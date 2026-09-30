@@ -166,6 +166,14 @@ export const iconHeartOff = svg(
   '<path d="M10.5 4.893a5.5 5.5 0 0 1 1.091.931.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 1.872-1.002 3.356-2.187 4.655"/><path d="m16.967 16.967-3.459 3.346a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5a5.5 5.5 0 0 1 2.747-4.761"/><path d="m2 2 20 20"/>'
 );
 
+export const iconPause = svg('<path d="M10 4H6v16h4zM18 4h-4v16h4z"/>');
+
+export const iconPlay = svg('<path d="m6 3 14 9-14 9z"/>');
+
+export const iconRotateCcw = svg('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>');
+
+export const iconArrowBigDown = svg('<path d="M15 5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v6a1 1 0 0 1-1 1H4.707A.707.707 0 0 0 4.207 13.207l7.086 7.086a1 1 0 0 0 1.414 0l7.086-7.086A.707.707 0 0 0 19.293 12H16a1 1 0 0 1-1-1z"/>');
+
 /** Lucide Space — offline dino jump control */
 export const iconSpace = svg(
   '<path d="M22 17v1c0 .5-.5 1-1 1H3c-.5 0-1-.5-1-1v-1"/>'

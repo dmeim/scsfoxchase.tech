@@ -8,6 +8,14 @@ const gamesStyles = readFileSync(
 )
 
 describe('games catalog layout', () => {
+	it('places the first-party launcher between the trending carousel and external games', () => {
+		const catalog = readFileSync(
+			fileURLToPath(new URL('../src/components/NewGamesCatalog.astro', import.meta.url)),
+			'utf8',
+		)
+		expect(catalog.indexOf('data-ng-hero aria-label')).toBeLessThan(catalog.indexOf('<MiniGamesLauncher />'))
+		expect(catalog.indexOf('<MiniGamesLauncher />')).toBeLessThan(catalog.indexOf('id="games-grid"'))
+	})
 	it('keeps the sticky filter card below the site header', () => {
 		expect(gamesStyles).toMatch(/--newgames-header-height:\s*62px/)
 		expect(gamesStyles).toMatch(

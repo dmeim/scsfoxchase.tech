@@ -93,6 +93,109 @@
     gap: 24px;
 }
 
+.minigames-launcher {
+    --minigame-accent: var(--primary-color);
+}
+
+[data-theme="dark"] .minigames-launcher {
+    --minigame-accent: #70c48c;
+}
+
+.minigames-launcher-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.minigames-launcher-heading h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--minigame-accent);
+    font-size: 1rem;
+    line-height: 1.2;
+}
+
+.minigames-launcher-caption {
+    font-size: 0.75rem;
+    color: var(--text-color);
+    opacity: 0.65;
+}
+
+.minigames-launcher-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+    gap: 10px;
+}
+
+.minigame-launcher {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    color: var(--text-color);
+    background: var(--light-bg);
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.minigame-launcher:hover {
+    border-color: var(--minigame-accent);
+    color: var(--minigame-accent);
+    background: color-mix(in srgb, var(--minigame-accent) 5%, var(--light-bg));
+}
+
+.minigame-launcher:focus-visible {
+    outline: 2px solid var(--minigame-accent);
+    outline-offset: 3px;
+}
+
+.minigame-launcher-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 72px;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--minigame-accent) 10%, var(--light-bg));
+    color: var(--minigame-accent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.minigame-launcher-art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.minigame-launcher-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    font-size: 0.9rem;
+    line-height: 1.3;
+}
+
+.minigame-launcher-copy > span {
+    margin-top: 3px;
+    color: var(--text-color);
+    font-size: 0.7rem;
+    opacity: 0.7;
+}
+
+.minigame-launcher-arrow {
+    display: inline-flex;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
 /* Candidate 3–style full-bleed hero (no eyebrow / play CTA) */
 .ng-hero {
     position: relative;
