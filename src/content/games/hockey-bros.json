@@ -1,0 +1,19 @@
+{
+  "id": "hockey-bros",
+  "name": "HockeyBros",
+  "url": "https://hockeybros.io/",
+  "image": "/images/hocketbros.png",
+  "description": "Fast-paced arcade hockey—skate, shoot, and score against other players.",
+  "minGrade": 4,
+  "maxGrade": 8,
+  "primaryCategories": [
+    "Multiplayer",
+    "Online",
+    "PvP"
+  ],
+  "secondaryCategories": [
+    "Sports",
+    "Competitive",
+    "Action"
+  ]
+}
