@@ -22,7 +22,7 @@ curl -sS https://scsfoxchase.tech/api/whiteboard/version
 
 ## Prerequisites
 
-- Node.js 22+ (or current LTS that Astro 7 supports)
+- Node.js 22.12.0+ (or a newer supported Node release; `.nvmrc` selects the latest Node 22)
 - Cloudflare account with the zone for `scsfoxchase.tech`
 - GitHub repo connected for Workers Builds (production). Wrangler CLI auth is for pre-merge preview (`versions upload`), not for shipping live traffic.
 

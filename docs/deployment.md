@@ -25,7 +25,7 @@ Before trusting any production observation, confirm `GET /api/whiteboard/version
 
 ## Local build and deploy
 
-Prerequisites: Node 22+, Cloudflare account for the `scsfoxchase.tech` zone, and Wrangler auth (`npx wrangler login` or `CLOUDFLARE_API_TOKEN`).
+Prerequisites: Node 22.12.0+, Cloudflare account for the `scsfoxchase.tech` zone, and Wrangler auth (`npx wrangler login` or `CLOUDFLARE_API_TOKEN`).
 
 Build locally as usual. To test a change **before merge**, upload a preview version (it does not take production traffic):
 

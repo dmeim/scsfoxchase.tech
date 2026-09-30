@@ -18,7 +18,7 @@ A PWA dashboard and educational games catalog for St. Cecilia School. Used daily
 ## Getting Started
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -29,13 +29,22 @@ Open the URL Astro prints (usually `http://localhost:4321`).
 | `npm run dev` | Local Astro dev server |
 | `npm run build` | Production build → `dist/client/` |
 | `npm run preview` | Preview the production build locally |
-| `npm run deploy` | Build + `wrangler deploy` to Worker `scsfoxchase-tech` |
+| `npm run verify:whiteboard` | Whiteboard type-check, all tests, and production build |
+| `npm run preview:upload` | Run verification and upload a preview version; does not deploy to production |
 
-Node.js **22+** is required (see `.nvmrc` / `package.json` `engines`).
+Node.js **22.12.0 or newer** is required (see `.nvmrc` / `package.json` `engines`). `.nvmrc` selects the latest Node 22 release.
+
+### Dependency maintenance
+
+`package-lock.json` records the exact versions installed by `npm ci` locally and in Workers Builds. After updating dependencies, run `npm run verify:whiteboard` before pushing.
+
+- Workers tests use `@cloudflare/vitest-plugin`. Version 1.3.4 requires Vitest `^4.1.0`; keep Vitest on 4.x until the plugin supports 5.x.
+- `@astrojs/react` 7 uses Oxc for JSX and Fast Refresh. The optional React Compiler remains disabled; no additional compiler package is required for our `react()` configuration.
+- Keep the `js-yaml`, `lodash-es`, and version-scoped `nanoid` overrides compatible with their upstream consumers. Do not force a new major solely to remove an outdated-version report.
 
 ## Deployment
 
-The site deploys to **Cloudflare Workers** (Worker name `scsfoxchase-tech`). Assets come from `dist/client/` after `npm run build`.
+GitHub **Workers Builds on `main`** is the production deployer for Worker `scsfoxchase-tech`. Assets come from `dist/client/` after `npm run build`; do not deploy production from a laptop.
 
 Public form configuration is attached at Worker runtime. After adding or changing `PUBLIC_TURNSTILE_SITEKEY` in **Runtime variables and secrets**, deploy a fresh Worker version and verify that `/api/forms/config` returns the public sitekey before testing `/inventory`.
 

@@ -65,7 +65,7 @@ This `docs/` tree is the canonical reference for coding agents and human operato
 - **React** islands (`@astrojs/react`) for Clerk header auth and the Whiteboard canvas
 - **Excalidraw 0.18.1** (MIT) on a Durable Object WebSocket — product name is Whiteboard; no tldraw license key
 - **Whiteboard storage:** scenes in DO SQLite; signed-in library metadata in D1; R2 previews, legacy media reads, and retained source indexes
-- **Node.js 22+** (`package.json` `engines`)
+- **Node.js 22.12.0+** (`package.json` `engines`; `.nvmrc` selects the latest Node 22 release)
 
 ### Domain and deploy
 
