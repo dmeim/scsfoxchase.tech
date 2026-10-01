@@ -76,7 +76,7 @@ Body font: `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif` (`global.css`). Bra
 
 ### Homepage (`body.home-page`)
 
-- Blurred fixed background via `body.home-page::before` (`/images/background.png`).
+- Blurred fixed background via `body.home-page::before` (`/october-background.png`). Wallpaper files live directly in `public/`, not `public/images/`.
 - **Smart search** — pill `.google-search-bar` rows (`SmartSearch`).
 - **App launcher** — `.app-gallery` / `.app-item` tiles (`AppLauncher`): bordered tiles with frosted backgrounds on home, icon in `.app-icon-wrapper`, label below.
 - Desktop home uses viewport clamps (`--home-tile`, `--home-icon`, `--home-gap`, …) under `@media (min-width: 901px)` so the dashboard scales without a Chromebook-only width breakpoint.
