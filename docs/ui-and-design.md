@@ -106,6 +106,7 @@ Games filters use `.search-bar input` (also `999px`) plus `.filter-chip` pills.
 ### CSS composition and production blur
 
 - Primary header links use the shared glass button variant plus `.header-nav-link.ui-button` for header-specific styling. Do not style these through generic `nav ul li a` selectors or the transparent ghost variant.
+- Header navigation layout and fixed row heights use `nav > ul` and `nav > ul > li`, including responsive rules. Nested lists such as the notification panel remain stacked with content-sized rows.
 - Page CSS and shared component CSS can be emitted in a different order during production bundling. Component variants should own appearance; page overrides must not rely on equal-specificity source order across bundles.
 - Put `-webkit-backdrop-filter` **before** the standard `backdrop-filter` declaration when both are present. With the current production minifier, reversing that order can discard the standard declaration and disable blur in Chromium.
 - `tests/ui-styles.test.ts` checks the component contracts and runs all site styles through Vite's production CSS minifier, asserting that prefixed backdrop filters retain their standard equivalents. Verify rendered styles in the production build as well as the dev server.

@@ -4,6 +4,7 @@ import { setUiButtonLoading, uiClassNames } from '../components/ui/dom';
 import {
     extractInventorySerial,
     getInventorySerialFromSearch,
+    setInventorySerialOnUrl,
 } from '../lib/inventory-serial';
 declare global {
   interface Window {
@@ -786,7 +787,7 @@ function updateUrlSerial(serial, shouldUpdate = true) {
     if (!shouldUpdate || !window.history || !serial) return;
 
     const url = new URL(window.location.href);
-    url.searchParams.set('serial', serial);
+    setInventorySerialOnUrl(url, serial);
     window.history.replaceState({}, '', url);
 }
 

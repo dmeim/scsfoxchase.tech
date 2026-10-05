@@ -421,7 +421,7 @@ export function parseStoredSceneElements(value: unknown): SceneElement[] {
 	return collectSceneElements(value, Number.MAX_SAFE_INTEGER).elements
 }
 
-/** Last-write-wins by version, then versionNonce (same idea as reconcileElements). */
+/** Higher version wins; equal versions use Excalidraw's lower-nonce rule. */
 export function elementWins(
 	incoming: SceneElement,
 	existing: SceneElement,
@@ -429,7 +429,7 @@ export function elementWins(
 	if (incoming.version !== existing.version) {
 		return incoming.version > existing.version
 	}
-	return incoming.versionNonce > existing.versionNonce
+	return incoming.versionNonce < existing.versionNonce
 }
 
 export function mergeSceneElements(

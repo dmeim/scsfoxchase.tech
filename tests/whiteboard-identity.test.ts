@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	AUTH_GET_TOKEN_SETTLE_MS,
+	cacheSessionToken,
+	getSessionTokenFresh,
 	getSessionTokenSettled,
 	markAuthResolved,
 	markAuthResolvedAfterTokenSettle,
@@ -69,6 +71,55 @@ describe('getSessionTokenSettled', () => {
 		const pending = getSessionTokenSettled(AUTH_GET_TOKEN_SETTLE_MS)
 		await vi.advanceTimersByTimeAsync(AUTH_GET_TOKEN_SETTLE_MS)
 		await expect(pending).resolves.toBeNull()
+	})
+})
+
+describe('session-token identity boundaries', () => {
+	it('clears the cached token on an account switch but not a profile update', () => {
+		setActiveIdentity(signedInIdentity('old'))
+		cacheSessionToken('old-token')
+		setActiveIdentity({ ...signedInIdentity('old'), displayName: 'Renamed' })
+		expect(peekSessionToken()).toBe('old-token')
+		setActiveIdentity(signedInIdentity('new'))
+		expect(peekSessionToken()).toBeNull()
+	})
+
+	it.each([getSessionTokenFresh, getSessionTokenSettled])(
+		'never returns or caches a previous account token from an in-flight fetch',
+		async (getToken) => {
+			setActiveIdentity(signedInIdentity('old'))
+			let resolve!: (token: string) => void
+			setSessionTokenGetter(() => new Promise<string>((done) => { resolve = done }))
+			const pending = getToken()
+			setActiveIdentity(signedInIdentity('new'))
+			cacheSessionToken('new-token')
+			resolve('stale-old-token')
+			await expect(pending).resolves.toBeNull()
+			expect(peekSessionToken()).toBe('new-token')
+		},
+	)
+
+	it('does not use a captured timeout fallback after switching accounts', async () => {
+		vi.useFakeTimers()
+		setActiveIdentity(signedInIdentity('old'))
+		cacheSessionToken('old-token')
+		setSessionTokenGetter(() => new Promise(() => {}))
+		const pending = getSessionTokenFresh()
+		setActiveIdentity(signedInIdentity('new'))
+		await vi.advanceTimersByTimeAsync(AUTH_GET_TOKEN_SETTLE_MS)
+		await expect(pending).resolves.toBeNull()
+	})
+
+	it('rejects a stale fetch across sign-out and sign-in to the same account', async () => {
+		setActiveIdentity(signedInIdentity('same'))
+		let resolve!: (token: string) => void
+		setSessionTokenGetter(() => new Promise<string>((done) => { resolve = done }))
+		const pending = getSessionTokenFresh()
+		setActiveIdentity(null)
+		setActiveIdentity(signedInIdentity('same'))
+		resolve('previous-session-token')
+		await expect(pending).resolves.toBeNull()
+		expect(peekSessionToken()).toBeNull()
 	})
 })
 

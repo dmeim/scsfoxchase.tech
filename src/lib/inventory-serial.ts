@@ -16,6 +16,15 @@ export function getInventorySerialFromSearch(search: string): string {
 	return ''
 }
 
+export function setInventorySerialOnUrl(url: URL, serial: string): void {
+	for (const key of [...url.searchParams.keys()]) {
+		if (INVENTORY_SERIAL_QUERY_KEYS.has(key.toLowerCase())) {
+			url.searchParams.delete(key)
+		}
+	}
+	url.searchParams.set('serial', normalizeInventorySerial(serial))
+}
+
 export function extractInventorySerial(value: unknown): string {
 	const text = String(value ?? '').trim()
 	if (!text) return ''

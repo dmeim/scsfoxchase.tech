@@ -41,6 +41,7 @@ const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
 const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
 const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
+const EDIT_GATE_EVENT = 'scsfoxchase:whiteboard-edit-gate'
 const BOUNDS_THROTTLE_MS = 120
 /** Auto-pong keeps the socket OPEN without waking DO JS; resubscribe after this silence. */
 export const FOLLOW_SOCKET_GAP_MS = 10_000
@@ -118,6 +119,13 @@ function publishHello(detail: {
 }) {
 	if (typeof window === 'undefined') return
 	window.dispatchEvent(new CustomEvent(HELLO_EVENT, { detail }))
+}
+
+function publishEditGate(allowEdits: boolean) {
+	if (typeof window === 'undefined') return
+	window.dispatchEvent(
+		new CustomEvent(EDIT_GATE_EVENT, { detail: { allowEdits } }),
+	)
 }
 
 function parseBounds(value: unknown): [number, number, number, number] | null {
@@ -201,6 +209,8 @@ export function useWhiteboardExcalidrawRoles(opts: {
 		targetSessionId: '',
 		subjects: {},
 	})
+	// Server notifications include voluntary subscribers; participant updates do not.
+	const serverFollowedByRef = useRef(false)
 	const followedByRef = useRef(false)
 	const applyingFollowRef = useRef(false)
 	const applyingGenRef = useRef(0)
@@ -518,7 +528,8 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			Boolean(uid) &&
 			(force.targetUserId === uid || force.targetSessionId === sid)
 		const amSubjectTarget = Object.values(force.subjects).includes(uid)
-		followedByRef.current = amRoomTarget || amSubjectTarget
+		followedByRef.current =
+			serverFollowedByRef.current || amRoomTarget || amSubjectTarget
 		if (followedByRef.current) sendSceneBounds(true)
 	}, [sendSceneBounds])
 
@@ -560,7 +571,15 @@ export function useWhiteboardExcalidrawRoles(opts: {
 					authToken,
 					title: typeof data.title === 'string' ? data.title : undefined,
 				})
+				if (typeof data.classCanEdit === 'boolean') {
+					publishEditGate(data.classCanEdit)
+				}
 				resubscribeFollow()
+				return true
+			}
+
+			if (data.type === 'wb:editGate' && typeof data.allowEdits === 'boolean') {
+				publishEditGate(data.allowEdits)
 				return true
 			}
 
@@ -683,8 +702,8 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			}
 
 			if (data.type === 'wb:followedBy') {
-				followedByRef.current = Boolean(data.followed)
-				if (followedByRef.current) sendSceneBounds(true)
+				serverFollowedByRef.current = Boolean(data.followed)
+				refreshFollowedBy()
 				return true
 			}
 
@@ -710,7 +729,6 @@ export function useWhiteboardExcalidrawRoles(opts: {
 			refreshFollowedBy,
 			resubscribeFollow,
 			scheduleReassertAfterPaint,
-			sendSceneBounds,
 			subscribeFollow,
 		],
 	)

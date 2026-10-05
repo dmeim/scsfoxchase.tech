@@ -720,6 +720,40 @@ export class WhiteboardBoard extends DurableObject<Env> {
 		})
 	}
 
+	/** Read-only media lookup: scene membership never grants account-wide access. */
+	async referencedImageOwners(opts: {
+		boardId: string
+		fileId: string
+	}): Promise<{ ownerKeys: string[]; savedToLibrary: boolean }> {
+		const denied = { ownerKeys: [], savedToLibrary: false }
+		if (
+			!BOARD_UUID_RE.test(opts.boardId) ||
+			(!BOARD_UUID_RE.test(opts.fileId) && !/^[0-9a-f]{64}$/i.test(opts.fileId))
+		) return denied
+		// Do not use /meta or ensureBoardLifetime: unknown UUIDs must stay empty.
+		const storedBoardId = await this.ctx.storage.get<string>(META_BOARD_ID_KEY)
+		if (storedBoardId !== opts.boardId) return denied
+		const savedToLibrary = await this.isSavedToLibrary()
+		const expiresAt = await this.ctx.storage.get<string>(META_UNSAVED_EXPIRES_AT_KEY)
+		if (!savedToLibrary && expiresAt && isExpiredIso(expiresAt)) return denied
+		const scene = await this.loadScene()
+		if (!scene.elements.some((element) =>
+			element.type === 'image' &&
+			!element.isDeleted &&
+			element.fileId === opts.fileId,
+		)) return denied
+		const owner = sanitizeOwnerKey(
+			await this.ctx.storage.get<string>(META_CLOUD_OWNER_KEY),
+		)
+		return {
+			ownerKeys: [
+				...(owner?.startsWith('google:') ? [owner] : []),
+				`temp:${storedBoardId}`,
+			],
+			savedToLibrary,
+		}
+	}
+
 	/**
 	 * Asset PUT/DELETE gate used by assetRoutes. Accepts the creating host
 	 * secret or a live can-edit WebSocket session. Does not mint a host hash.
@@ -2395,6 +2429,10 @@ export class WhiteboardBoard extends DurableObject<Env> {
 	private async syncLiveCanEditForClassCanEdit(): Promise<void> {
 		this.hydrateSockets()
 		const enabled = await this.readClassCanEdit()
+		// Administrators keep canEdit=true, but their Group Edit control must sync too.
+		for (const ws of this.ctx.getWebSockets()) {
+			sendJson(ws, { type: 'wb:editGate', allowEdits: enabled })
+		}
 		let changed = false
 		for (const [sessionId, ws] of this.sessionIdToWs) {
 			const prev = normalizeAttachment(

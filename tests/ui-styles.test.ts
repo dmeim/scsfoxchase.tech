@@ -20,6 +20,19 @@ describe("shared UI style contracts", () => {
     expect(source("src/styles/global.css")).toContain(".header-nav-link.ui-button");
   });
 
+  it("keeps nested notification lists out of desktop and responsive navigation layout rules", () => {
+    const css = source("src/styles/global.css");
+    expect(css).not.toMatch(/\bnav\s+ul\b/);
+    expect(css).not.toMatch(/\bnav\s*>\s*ul\s+li\b/);
+    expect(css).toContain("nav > ul > li");
+    expect(source("src/styles/notifications.css")).toMatch(
+      /\.notification-item\s*\{[^}]*display:\s*grid/,
+    );
+    expect(source("src/components/NotificationCenter.astro")).toContain(
+      '<ul class="notification-list"',
+    );
+  });
+
   it("preserves standard backdrop filters through the production CSS minifier", async () => {
     const input = [
       ...readdirSync("src/styles").filter((file) => file.endsWith(".css")).map((file) => resolve("src/styles", file)),

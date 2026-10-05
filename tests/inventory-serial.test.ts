@@ -3,6 +3,7 @@ import {
 	extractInventorySerial,
 	getInventorySerialFromSearch,
 	normalizeInventorySerial,
+	setInventorySerialOnUrl,
 } from '../src/lib/inventory-serial'
 
 describe('inventory serial input', () => {
@@ -39,6 +40,23 @@ describe('inventory serial input', () => {
 		expect(getInventorySerialFromSearch('?other=x&ServiceTag=tag123')).toBe(
 			'TAG123',
 		)
+	})
+
+	it.each([
+		'?tag=ABC123',
+		'?SERIAL=ABC123',
+		'?serviceTag=ABC123&serial=OLD&serial=OLDER&TAG=OTHER&mode=print',
+	])('canonicalizes %s before writing a new lookup', (search) => {
+		const url = new URL(`https://scsfoxchase.tech/inventory${search}#report`)
+		setInventorySerialOnUrl(url, ' xyz789 ')
+		expect(getInventorySerialFromSearch(url.search)).toBe('XYZ789')
+		expect([...url.searchParams].filter(([key]) =>
+			['serial', 'servicetag', 'tag'].includes(key.toLowerCase()),
+		)).toEqual([['serial', 'XYZ789']])
+		expect(url.hash).toBe('#report')
+		if (search.includes('mode=print')) {
+			expect(url.searchParams.get('mode')).toBe('print')
+		}
 	})
 
 	it('ignores blank supported parameters in favor of a populated alias', () => {

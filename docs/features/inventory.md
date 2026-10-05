@@ -17,7 +17,7 @@ Title: “Inventory Lookup | St. Cecilia Technology”; `bodyClass="asset-lookup
 2. The page reads the shared public sitekey from `/api/forms/config`, then Turnstile issues a single-use `inventory_lookup` token without requiring Clerk sign-in.
 3. **Lookup** POSTs the serial and token to the same-origin form proxy, which verifies Turnstile and forwards only the serial to n8n.
 4. Successful lookup enables **Print Report** (`window.print()`); print chrome includes “St. Cecilia Inventory Report” and a timestamp.
-5. On success, the URL is updated via `history.replaceState` to include `?serial=<SERIAL>`.
+5. On success, the URL is updated via `history.replaceState` to include one canonical `serial=<SERIAL>` parameter. Existing `serial`, `serviceTag`, and `tag` aliases are removed case-insensitively; unrelated query parameters and the fragment are preserved.
 
 The field and camera scanner accept a plain serial (e.g. `ABC123XYZ`), a URL whose query includes `serial`, `serviceTag`, or `tag`, or text prefixed with `serial` / `serial:` / similar. Query parameter names are case-insensitive so URLs uppercased by keyboard-style scanners still work.
 

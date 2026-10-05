@@ -325,6 +325,13 @@ export function useWhiteboardExcalidrawFiles(
 		cloudOwnerKey: null,
 	})
 	const googleOwnerRef = useRef<string | null>(null)
+	// BinaryFiles live on an Excalidraw instance, not on the board/hook.
+	const imageStateRef = useRef<{
+		api: ExcalidrawImperativeAPI
+		ready: Set<string>
+		inflight: Set<string>
+		failedAt: Map<string, number>
+	} | null>(null)
 	const readyRef = useRef(new Set<string>())
 	const inflightRef = useRef(new Set<string>())
 	const prefixRegisteredRef = useRef(false)
@@ -490,14 +497,14 @@ export function useWhiteboardExcalidrawFiles(
 	const failedAtRef = useRef(new Map<string, number>())
 
 	const hydrateImage = useCallback(
-		async (fileId: string) => {
-			const api = apiRef.current
-			if (!api) return false
+		async (fileId: string, api: ExcalidrawImperativeAPI) => {
+			if (apiRef.current !== api) return false
 			// Recover bytes written by the reverted board-scoped uploader first.
 			// This endpoint is deliberately GET-only.
 			const boardScoped = await fetchBoardCanvasBytes(boardId, fileId)
 			if (boardScoped && IMAGE_MIME.has(boardScoped.mimeType)) {
 				const dataURL = await blobToDataURL(boardScoped.blob)
+				if (apiRef.current !== api) return false
 				api.addFiles([
 					{
 						id: asFileId(fileId),
@@ -521,6 +528,7 @@ export function useWhiteboardExcalidrawFiles(
 			if (!found || !IMAGE_MIME.has(found.mimeType)) return false
 			rememberGoogleOwner(found.ownerKey)
 			const dataURL = await blobToDataURL(found.blob)
+			if (apiRef.current !== api) return false
 			api.addFiles([
 				{
 					id: asFileId(fileId),
@@ -569,19 +577,31 @@ export function useWhiteboardExcalidrawFiles(
 		) => {
 			if (!boardId) return
 			rememberGoogleOwner(googleOwnerFromElements(elements))
+			const api = apiRef.current
+			if (!api) return
+			if (imageStateRef.current?.api !== api) {
+				imageStateRef.current = {
+					api, ready: new Set(), inflight: new Set(), failedAt: new Map(),
+				}
+			}
+			const imageState = imageStateRef.current
 			const referenced = referencedImageFileIds(elements)
 			const now = Date.now()
 			for (const fileId of referenced) {
-				if (readyRef.current.has(fileId) || inflightRef.current.has(fileId)) {
+				// Verify readiness as well: resetScene can clear files on the same API.
+				if (imageState.ready.has(fileId) && !files[fileId]?.dataURL) {
+					imageState.ready.delete(fileId)
+				}
+				if (imageState.ready.has(fileId) || imageState.inflight.has(fileId)) {
 					continue
 				}
-				const failedAt = failedAtRef.current.get(fileId) ?? 0
+				const failedAt = imageState.failedAt.get(fileId) ?? 0
 				if (now - failedAt < 1000) continue
 				const existing = files[fileId]
 				// A local data URL means this is a newly inserted file. Existing
 				// scene files are hydrated below by their file id and remain read-only.
 				if (existing?.dataURL && !NEW_MEDIA_INSERTION_ENABLED) continue
-				inflightRef.current.add(fileId)
+				imageState.inflight.add(fileId)
 				void (async () => {
 					try {
 						if (existing?.dataURL) {
@@ -598,16 +618,17 @@ export function useWhiteboardExcalidrawFiles(
 								throw new Error('image upload failed')
 							}
 						} else {
-							const ok = await hydrateImage(fileId)
+							const ok = await hydrateImage(fileId, api)
 							if (!ok) throw new Error('asset not in R2 yet')
 						}
-						readyRef.current.add(fileId)
-						failedAtRef.current.delete(fileId)
+						if (apiRef.current !== api) return
+						imageState.ready.add(fileId)
+						imageState.failedAt.delete(fileId)
 					} catch {
-						failedAtRef.current.set(fileId, Date.now())
-						readyRef.current.delete(fileId)
+						imageState.failedAt.set(fileId, Date.now())
+						imageState.ready.delete(fileId)
 					} finally {
-						inflightRef.current.delete(fileId)
+						imageState.inflight.delete(fileId)
 					}
 				})()
 			}

@@ -23,6 +23,7 @@ Join by share code, link, or UUID still works with **no account**. Role is decid
 - Production Frontend API domain: **`clerk.scsfoxchase.tech`** (encoded in the live publishable key; OAuth callback on that host). Documented in `DEPLOYMENT.md`.
 - Google-only provider is configured in the Clerk Dashboard (not custom OAuth redirect code).
 - `AuthBridge` sets identity + session token getter; marks auth resolved for hub/board gating.
+- Cached session tokens are cleared on account changes. Token fetches and timeout fallbacks are bound to an identity epoch, so a late response from a previous sign-in cannot populate or authenticate the new session. Same-account profile updates keep the token cache.
 
 Optional allowlist: `PUBLIC_CLERK_ALLOWED_DOMAINS` (comma-separated domains and/or full emails). Empty → all Google accounts allowed. Client signs out and shows a hint when the email is not allowed (e.g. school domain).
 
@@ -53,7 +54,7 @@ Used by:
 
 Secrets / vars: `CLERK_SECRET_KEY` (Worker secret), `PUBLIC_CLERK_PUBLISHABLE_KEY`, optional `PUBLIC_CLERK_ALLOWED_DOMAINS`. Local: `.dev.vars` (see `.dev.vars.example`). There is no `PUBLIC_TLDRAW_LICENSE_KEY`.
 
-The board-scoped canvas route is read-only compatibility during the rollback. GET/HEAD is public and reads the R2 object directly; PUT/DELETE return `405`. There is no board asset manifest or board write-proof protocol. Legacy owner-key PUT/DELETE authorization remains separate and is described below.
+The board-scoped canvas route is read-only compatibility during the rollback. GET/HEAD is public and first reads the board-scoped R2 object directly. On a miss, a read-only DO lookup resolves live image references through that board's persisted Google owner or temporary namespace, without revealing the owner key. PUT/DELETE return `405`. There is no board asset manifest or board write-proof protocol. Legacy owner-key PUT/DELETE authorization remains separate and is described below.
 
 ## Owner keys
 
@@ -116,7 +117,7 @@ The board-scoped compatibility route is not part of the Clerk-owned index API:
 
 | Method | Path | Auth / behavior |
 |--------|------|----------------|
-| `GET` / `HEAD` | `/api/whiteboard/boards/:uuid/assets/:fileId` | Public read of an existing R2 object; no DO manifest lookup |
+| `GET` / `HEAD` | `/api/whiteboard/boards/:uuid/assets/:fileId` | Public read of an existing board-scoped object, or a live scene-referenced legacy image; no asset manifest |
 | `PUT` / `DELETE` | `/api/whiteboard/boards/:uuid/assets/:fileId` | `405`; board-scoped writes are disabled |
 
 The legacy `/api/whiteboard/assets/:ownerKey/:assetId` route remains for old media and player links. `POST /api/whiteboard/assets/claim` copies legacy `temp:{boardId}` objects to the Google owner; it does not move board-scoped objects.

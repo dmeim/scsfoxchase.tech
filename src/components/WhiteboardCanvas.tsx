@@ -4,6 +4,7 @@ import {
   CaptureUpdateAction,
   Excalidraw,
   getSceneVersion,
+  newElementWith,
   reconcileElements,
   restoreElements,
   serializeAsJSON,
@@ -25,6 +26,7 @@ import {
   whenAuthReady,
 } from '../lib/whiteboard-identity'
 import {
+  boardSessionStorageKey,
   buildWhiteboardConnectUrl,
   CLIENT_PING_MS,
   elementsWithIncreasedVersion,
@@ -55,6 +57,9 @@ import {
   type SceneOutboxState,
 } from '../lib/whiteboard-sync'
 import { getHostSecret } from '../scripts/whiteboard-library'
+import { boardAuthStorageKey } from '../lib/whiteboard-participants'
+import { persistedSceneChanged, retainMissingSceneElements } from '../lib/whiteboard-client-scene'
+import { sessionTokenMatchesIdentity } from '../lib/whiteboard-client-auth'
 // PHASE 3.2
 import { useWhiteboardExcalidrawFiles } from '../lib/whiteboard-excalidraw-files'
 // PHASE 3.3
@@ -116,7 +121,9 @@ type WhiteboardCanvasProps = {
   boardId?: string
 }
 
-type OutboxMutation = Omit<SceneMutationFrame, 'type'>
+type OutboxMutation = Omit<SceneMutationFrame, 'type'> & {
+  viewBackgroundColor: string
+}
 type PendingSceneMutation = {
   elements: readonly OrderedExcalidrawElement[]
   appState: AppState
@@ -134,15 +141,20 @@ export default function WhiteboardCanvas({
   const boardId = boardIdProp ?? readBoardIdFromLocation() ?? ''
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [connected, setConnected] = useState(false)
+  const [authContextPending, setAuthContextPending] = useState(false)
+  const authContextPendingRef = useRef(false)
+  const resetSceneOnNextRemoteRef = useRef(false)
   const [hasPending, setHasPending] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const saveFailedRef = useRef(false)
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const applyingRemoteRef = useRef(false)
-  const lastSceneVersionRef = useRef(0)
-  /** Observed scene versions are only a local dirty detector. */
-  const observedElementVersionsRef = useRef(new Map<string, number>())
+  /** Immutable local observation, including native Open's omitted elements. */
+  const observedSceneElementsRef = useRef<readonly SceneElement[]>([])
+  const observedBackgroundRef = useRef<string | null>(null)
+  const ackedBackgroundRef = useRef<string | null>(null)
+  const ackedBackgroundRevisionRef = useRef(0)
   /** Versions are retired only after an ack for their exact mutation. */
   const ackedElementVersionsRef = useRef(new Map<string, number>())
   /** Server's durable scene order; mutation frames carry this as their base. */
@@ -201,8 +213,9 @@ export default function WhiteboardCanvas({
   const resubscribeFollowRef = useRef(roles.resubscribeFollow)
   resubscribeFollowRef.current = roles.resubscribeFollow
   const unsubUserFollowRef = useRef<(() => void) | null>(null)
-  const canEditRef = useRef(roles.canEdit)
-  canEditRef.current = roles.canEdit
+  const canEdit = roles.canEdit && !authContextPending
+  const canEditRef = useRef(canEdit)
+  canEditRef.current = canEdit && !authContextPendingRef.current
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -271,6 +284,10 @@ export default function WhiteboardCanvas({
       ) {
         sceneRevisionRef.current = revision
       }
+      if (typeof remoteAppState?.viewBackgroundColor === 'string') {
+        ackedBackgroundRef.current = remoteAppState.viewBackgroundColor
+        ackedBackgroundRevisionRef.current = revision ?? sceneRevisionRef.current
+      }
       const api = apiRef.current
       if (!api) {
         const pending = pendingRemoteRef.current
@@ -294,7 +311,10 @@ export default function WhiteboardCanvas({
       }
       applyingRemoteRef.current = true
       try {
-        const local = api.getSceneElementsIncludingDeleted()
+        const local = resetSceneOnNextRemoteRef.current
+          ? []
+          : api.getSceneElementsIncludingDeleted()
+        resetSceneOnNextRemoteRef.current = false
         const localAppState = api.getAppState()
         const restored = restoreElements(
           remoteElements as unknown as Parameters<typeof restoreElements>[0],
@@ -309,6 +329,8 @@ export default function WhiteboardCanvas({
           typeof remoteAppState?.viewBackgroundColor === 'string'
             ? remoteAppState.viewBackgroundColor
             : undefined
+        observedSceneElementsRef.current = immutableSceneElements(reconciled as SceneElement[])
+        observedBackgroundRef.current = viewBackgroundColor ?? localAppState.viewBackgroundColor
         api.updateScene({
           elements: reconciled,
           ...(viewBackgroundColor
@@ -316,12 +338,6 @@ export default function WhiteboardCanvas({
             : {}),
           captureUpdate: CaptureUpdateAction.NEVER,
         })
-        lastSceneVersionRef.current = getSceneVersion(reconciled)
-        // Keep the local observed map separate from the server ack baseline.
-        rememberElementVersions(
-          reconciled as SceneElement[],
-          observedElementVersionsRef.current,
-        )
         sceneHydratedRef.current = true
       } finally {
         queueMicrotask(() => {
@@ -405,14 +421,13 @@ export default function WhiteboardCanvas({
       // the latest snapshot as the sole coalesced queued item until its ack.
       if (outboxRef.current.inFlight) return 'not-ready'
 
-      const version = getSceneVersion(elements)
       const asScene = elements as unknown as SceneElement[]
       const dirty = elementsWithIncreasedVersion(
         asScene,
         ackedElementVersionsRef.current,
       )
-      if (!forceDispatch && dirty.length === 0) {
-        lastSceneVersionRef.current = version
+      if (!forceDispatch && dirty.length === 0 &&
+        appState.viewBackgroundColor === ackedBackgroundRef.current) {
         return 'sent'
       }
 
@@ -444,6 +459,7 @@ export default function WhiteboardCanvas({
       if (!isMutationId(mutationId)) return 'terminal'
       const mutation = {
         mutationId,
+        viewBackgroundColor: appState.viewBackgroundColor,
         elements: payload,
         full,
         baseRevision: baseRevisionOverride ?? sceneRevisionRef.current,
@@ -451,9 +467,12 @@ export default function WhiteboardCanvas({
       }
       const sendResult = sendMutationFrame(mutation, ws)
       if (sendResult !== 'sent') return sendResult
+      if (!outboxRef.current.pending) {
+        // A periodic read can observe a background change without onChange.
+        observedSceneElementsRef.current = immutableSceneElements(asScene)
+        observedBackgroundRef.current = appState.viewBackgroundColor
+      }
       setOutbox(sceneOutboxStart(outboxRef.current, mutation))
-      rememberElementVersions(payload, observedElementVersionsRef.current)
-      lastSceneVersionRef.current = version
       return 'sent'
     },
     [sendMutationFrame, showClientSceneError],
@@ -564,17 +583,46 @@ export default function WhiteboardCanvas({
       if (!canEditRef.current) return
       // Nothing this instance holds is trustworthy until a server scene lands.
       if (!sceneHydratedRef.current) return
-      const version = getSceneVersion(elements)
-      if (version === lastSceneVersionRef.current) return
+      const previous = observedSceneElementsRef.current
+      const next = retainMissingSceneElements(
+        previous,
+        elements as unknown as readonly SceneElement[],
+        (element) => newElementWith(
+          element as unknown as OrderedExcalidrawElement,
+          { isDeleted: true },
+        ) as unknown as SceneElement,
+      )
+      if (!persistedSceneChanged(
+        previous, next, observedBackgroundRef.current, appState.viewBackgroundColor,
+      )) {
+        if (next !== elements) {
+          apiRef.current?.updateScene({
+            elements: next as unknown as readonly OrderedExcalidrawElement[],
+            captureUpdate: CaptureUpdateAction.NEVER,
+          })
+        }
+        return
+      }
+      if (observedBackgroundRef.current !== appState.viewBackgroundColor) {
+        previewCoordinatorRef.current?.invalidate()
+      }
+      observedSceneElementsRef.current = immutableSceneElements(next)
+      observedBackgroundRef.current = appState.viewBackgroundColor
       setOutbox(sceneOutboxQueue(outboxRef.current, {
         // Excalidraw reuses/mutates scene objects between callbacks. Keep one
         // immutable queued snapshot so a retry cannot change underneath it.
         elements: immutableSceneElements(
-          elements as unknown as SceneElement[],
+          next,
         ) as unknown as readonly OrderedExcalidrawElement[],
         appState: { ...appState },
         baseRevision: sceneRevisionRef.current,
       }))
+      if (next !== elements) {
+        apiRef.current?.updateScene({
+          elements: next as unknown as readonly OrderedExcalidrawElement[],
+          captureUpdate: CaptureUpdateAction.NEVER,
+        })
+      }
       schedulePreviewCapture()
       if (flushTimerRef.current != null) return
       flushTimerRef.current = window.setTimeout(() => {
@@ -603,7 +651,9 @@ export default function WhiteboardCanvas({
     let resyncTimer: number | null = null
     let reconnectTimer: number | null = null
     let authRetryTimer: number | null = null
-    let authFetchInFlight = false
+    let authFetchEpoch: number | null = null
+    let authEpoch = 0
+    let authUpgradePending = false
     let authStartedAt = 0
     let lastAuthTokenSent = ''
     let lastAuthSignedInSent = false
@@ -638,11 +688,17 @@ export default function WhiteboardCanvas({
      * unlocks outgoing scene updates — it drops everything until a socket is
      * greeted, and silently dropped sends would still be marked delivered.
      */
+    const isCurrentAuth = (ws: WebSocket, epoch: number) =>
+      !cancelled && wsRef.current === ws && authEpoch === epoch
+
     const sendAuthFrame = (ws: WebSocket, token: string) => {
-      if (ws.readyState !== WebSocket.OPEN) return
+      if (cancelled || wsRef.current !== ws || ws.readyState !== WebSocket.OPEN) return
       const hostSecret = getHostSecret(boardId)
       const signedIn = isSignedIn()
       const identity = getActiveIdentity()
+      // The shared token cache can be populated by an older Clerk fetch even
+      // after an identity event. Never attach that JWT to the new account.
+      if (token && !sessionTokenMatchesIdentity(token, identity?.clerkUserId)) token = ''
       const refreshProfile = Boolean(token && refreshProfileOnNextAuth)
       ws.send(
         JSON.stringify({
@@ -672,38 +728,37 @@ export default function WhiteboardCanvas({
       authRetryTimer = window.setTimeout(() => {
         authRetryTimer = null
         if (cancelled || wsRef.current !== ws) return
-        if (helloOnSocketRef.current) return
+        if (helloOnSocketRef.current && !authUpgradePending) return
         if (!isSignedIn()) {
           if (!helloOnSocketRef.current) sendAuthFrame(ws, '')
           return
         }
         if (Date.now() - authStartedAt > AUTH_RETRY_GIVE_UP_MS) {
-          if (!helloOnSocketRef.current) {
-            apiRef.current?.setToast?.({
-              message:
-                'Sign-in is taking too long. Reload the page to edit this board.',
-              duration: 10000,
-              closable: true,
-            })
-          }
+          apiRef.current?.setToast?.({
+            message:
+              'Sign-in is taking too long. Reload the page to edit this board.',
+            duration: 10000,
+            closable: true,
+          })
           return
         }
-        if (authFetchInFlight) {
+        const epoch = authEpoch
+        if (authFetchEpoch === epoch) {
           scheduleAuthRetry(ws, delay)
           return
         }
-        authFetchInFlight = true
+        authFetchEpoch = epoch
         void getSessionTokenFresh()
           .then((value) => {
             const token = value?.trim() ?? ''
-            if (cancelled || wsRef.current !== ws) return
+            if (!isCurrentAuth(ws, epoch)) return
             if (token) sendAuthFrame(ws, token)
           })
+          .catch(() => { /* Bounded retry below also covers token-fetch failures. */ })
           .finally(() => {
-            authFetchInFlight = false
-            if (cancelled || wsRef.current !== ws || helloOnSocketRef.current) {
-              return
-            }
+            if (authFetchEpoch === epoch) authFetchEpoch = null
+            if (!isCurrentAuth(ws, epoch) ||
+              (helloOnSocketRef.current && !authUpgradePending)) return
             scheduleAuthRetry(ws, Math.min(delay * 2, AUTH_RETRY_MAX_MS))
           })
       }, delay)
@@ -714,29 +769,39 @@ export default function WhiteboardCanvas({
      * token only if already cached. Do not await Clerk first: a hang must not
      * block this frame and leave Connecting forever.
      */
-    const sendConnectAuth = (ws: WebSocket) => {
+    const sendConnectAuth = (ws: WebSocket, skipCachedToken: boolean) => {
+      const epoch = authEpoch
       authStartedAt = Date.now()
-      sendAuthFrame(ws, peekSessionToken()?.trim() ?? '')
+      sendAuthFrame(ws, skipCachedToken ? '' : (peekSessionToken()?.trim() ?? ''))
 
       void (async () => {
         await whenAuthReady()
-        if (cancelled || wsRef.current !== ws) return
+        if (!isCurrentAuth(ws, epoch)) return
         const signedIn = isSignedIn()
         const next = signedIn
-          ? ((await getSessionTokenSettled())?.trim() ?? '')
+          ? ((await (skipCachedToken ? getSessionTokenFresh() : getSessionTokenSettled()))?.trim() ?? '')
           : ''
-        if (cancelled || wsRef.current !== ws) return
+        if (!isCurrentAuth(ws, epoch)) return
         if (next !== lastAuthTokenSent || signedIn !== lastAuthSignedInSent) {
           sendAuthFrame(ws, next)
         }
-        if (signedIn && !helloOnSocketRef.current) {
+        if (signedIn && (!helloOnSocketRef.current || authUpgradePending)) {
+          clearAuthRetry()
           scheduleAuthRetry(ws, AUTH_RETRY_MS)
         }
-      })()
+      })().catch(() => {
+        if (isCurrentAuth(ws, epoch) && isSignedIn()) {
+          clearAuthRetry()
+          scheduleAuthRetry(ws, AUTH_RETRY_MS)
+        }
+      })
     }
 
-    const connect = () => {
+    const connect = (skipCachedToken = false) => {
       if (cancelled) return
+      authEpoch += 1
+      authFetchEpoch = null
+      authUpgradePending = false
 
       const identity = getBoardConnectIdentity()
       const sessionId = getOrCreateSessionId(boardId)
@@ -759,10 +824,11 @@ export default function WhiteboardCanvas({
       wsRef.current = ws
 
       ws.addEventListener('open', () => {
+        if (cancelled || wsRef.current !== ws) return
         if (!preserveReconnectBackoff) attempt = 0
         preserveReconnectBackoff = false
         clearTimers()
-        void sendConnectAuth(ws)
+        void sendConnectAuth(ws, skipCachedToken)
         pingTimer = window.setInterval(() => {
           if (ws.readyState !== WebSocket.OPEN) return
           ws.send('{"type":"ping"}')
@@ -786,6 +852,7 @@ export default function WhiteboardCanvas({
       })
 
       ws.addEventListener('message', (event) => {
+        if (cancelled || wsRef.current !== ws) return
         if (typeof event.data !== 'string') return
         let parsed: unknown
         try {
@@ -809,7 +876,9 @@ export default function WhiteboardCanvas({
           setConnected(true)
           helloOnSocketRef.current = true
           authSentRef.current = true
-          clearAuthRetry()
+          authContextPendingRef.current = false
+          setAuthContextPending(false)
+          if (!authUpgradePending) clearAuthRetry()
           // Push anything drawn while the socket was down or auth was pending.
           queueMicrotask(() => flushNowRef.current(true))
         }
@@ -821,6 +890,7 @@ export default function WhiteboardCanvas({
             data.status === 'duplicate' ||
             data.status === 'noop')
         ) {
+          const revisionBeforeAck = sceneRevisionRef.current
           if (
             typeof data.revision === 'number' &&
             Number.isSafeInteger(data.revision) &&
@@ -832,15 +902,47 @@ export default function WhiteboardCanvas({
           if (inFlight?.mutationId === data.mutationId) {
             saveFailedRef.current = false
             setSaveFailed(false)
-            setOutbox(sceneOutboxAcknowledge(
+            let acknowledged = sceneOutboxAcknowledge(
               outboxRef.current,
               (flight) => flight.mutationId === data.mutationId,
-            ))
+            )
+            const revision =
+              typeof data.revision === 'number' &&
+              Number.isSafeInteger(data.revision) && data.revision >= 0
+                ? data.revision : null
+            const base = inFlight.baseRevision ?? 0
+            const ownAdvance =
+              revision !== null &&
+              data.status !== 'noop' &&
+              revision === base + 1 &&
+              revisionBeforeAck <= revision &&
+              ackedBackgroundRevisionRef.current <= base
+            // Rebase only never-sent work across our confirmed single revision.
+            // Immutable flights and snapshots predating peer updates stay pinned.
+            if (acknowledged.pending && ownAdvance && revision !== null &&
+              acknowledged.pending.baseRevision === base) {
+              acknowledged = {
+                ...acknowledged,
+                pending: { ...acknowledged.pending, baseRevision: revision },
+              }
+            }
+            setOutbox(acknowledged)
             mutationSocketRef.current = null
             rememberElementVersions(
               inFlight.elements,
               ackedElementVersionsRef.current,
             )
+            const backgroundAccepted = ownAdvance || (
+              data.status === 'noop' && revision !== null &&
+              revision === base && revisionBeforeAck <= revision
+            )
+            if (backgroundAccepted && revision !== null) {
+              ackedBackgroundRef.current = inFlight.viewBackgroundColor
+              ackedBackgroundRevisionRef.current = revision
+            } else {
+              // Element acceptance is not proof that stale appState applied.
+              ws.send(JSON.stringify({ type: 'scene:request' }))
+            }
             queueMicrotask(() => flushNowRef.current(false))
           }
           return
@@ -916,6 +1018,15 @@ export default function WhiteboardCanvas({
           return
         }
 
+        if (authUpgradePending &&
+          data.type === 'wb:participants' && Array.isArray(data.participants) &&
+          data.participants.some((row: Record<string, unknown>) =>
+            row.sessionId === data.yourSessionId &&
+            row.userId === getActiveIdentity()?.accountId)
+        ) {
+          authUpgradePending = false
+          clearAuthRetry()
+        }
         // PHASE 3.3
         if (handleRoleMessageRef.current(data)) return
 
@@ -942,7 +1053,10 @@ export default function WhiteboardCanvas({
       })
 
       ws.addEventListener('close', () => {
-        if (!cancelled) setConnected(false)
+        if (cancelled || wsRef.current !== ws) return
+        setConnected(false)
+        authEpoch += 1
+        authFetchEpoch = null
         clearTimers()
         clearAuthRetry()
         if (wsRef.current === ws) {
@@ -955,7 +1069,12 @@ export default function WhiteboardCanvas({
             !applyingRemoteRef.current
           ) {
             const elements = api.getSceneElementsIncludingDeleted()
-            if (getSceneVersion(elements) !== lastSceneVersionRef.current) {
+            if (persistedSceneChanged(
+              observedSceneElementsRef.current,
+              elements as unknown as readonly SceneElement[],
+              observedBackgroundRef.current,
+              api.getAppState().viewBackgroundColor,
+            )) {
               setOutbox(sceneOutboxQueue(outboxRef.current, {
                 elements: immutableSceneElements(
                   elements as unknown as SceneElement[],
@@ -989,27 +1108,64 @@ export default function WhiteboardCanvas({
     const stopAuthChange = onAuthChange((identity) => {
       const previous = observedIdentity
       observedIdentity = identity
-      if (
-        !previous ||
-        !identity ||
-        previous.clerkUserId !== identity.clerkUserId ||
-        previous.displayName === identity.displayName
-      ) {
+      const accountChanged = previous?.clerkUserId !== identity?.clerkUserId
+      if (!accountChanged && previous?.displayName === identity?.displayName &&
+        previous?.profileUpdatedAt === identity?.profileUpdatedAt) return
+      authEpoch += 1
+      authFetchEpoch = null
+      clearAuthRetry()
+      if (accountChanged && previous) {
+        // Server reauth is upgrade-only. Never reuse an authenticated session
+        // for sign-out or a different account, nor replay its queued writes.
+        authContextPendingRef.current = true
+        setAuthContextPending(true)
+        canEditRef.current = false
+        handleRoleMessageRef.current({ type: 'wb:role', role: 'viewer', canEdit: false })
+        try {
+          sessionStorage.removeItem(boardSessionStorageKey(boardId))
+          sessionStorage.removeItem(boardAuthStorageKey(boardId))
+        } catch { /* Private mode can disable sessionStorage. */ }
+        setOutbox({ inFlight: null, pending: null })
+        mutationSocketRef.current = null
+        if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+        sceneHydratedRef.current = false
+        pendingRemoteRef.current = null
+        resetSceneOnNextRemoteRef.current = true
+        ackedElementVersionsRef.current.clear()
+        ackedBackgroundRef.current = null
+        ackedBackgroundRevisionRef.current = 0
+        observedSceneElementsRef.current = []
+        observedBackgroundRef.current = null
+        saveFailedRef.current = false
+        setSaveFailed(false)
+        refreshProfileOnNextAuth = false
+        previewSkipOwnerRef.current = false
+        previewCoordinatorRef.current?.invalidate()
+        clearTimers()
+        if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
+        reconnectTimer = null
+        const oldSocket = wsRef.current
+        wsRef.current = null
+        oldSocket?.close()
+        attempt = 0
+        connect(true)
         return
       }
-      refreshProfileOnNextAuth = true
+      // Guest -> signed-in can upgrade this socket, even after its guest hello.
+      if (accountChanged) authUpgradePending = Boolean(identity)
+      refreshProfileOnNextAuth = Boolean(identity && !accountChanged)
       const ws = wsRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
-      const cached = peekSessionToken()?.trim() ?? ''
-      if (cached) {
-        sendAuthFrame(ws, cached)
-        return
-      }
-      void getSessionTokenSettled().then((value) => {
+      const epoch = authEpoch
+      authStartedAt = Date.now()
+      if (authUpgradePending) sendAuthFrame(ws, '')
+      void getSessionTokenFresh().then((value) => {
         const token = value?.trim() ?? ''
-        if (!token || cancelled || wsRef.current !== ws) return
-        sendAuthFrame(ws, token)
-      })
+        if (!isCurrentAuth(ws, epoch)) return
+        if (token) sendAuthFrame(ws, token)
+      }).catch(() => { /* Retry until Clerk supplies a usable token. */ })
+      scheduleAuthRetry(ws, AUTH_RETRY_MS)
     })
 
     void connect()
@@ -1062,8 +1218,8 @@ export default function WhiteboardCanvas({
       // Version bookkeeping belongs to the old instance. Left in place, the new
       // empty instance's first onChange looks like a real edit and queues an
       // empty snapshot that a later forceFull flush would push as the scene.
-      lastSceneVersionRef.current = 0
-      observedElementVersionsRef.current.clear()
+      observedSceneElementsRef.current = []
+      observedBackgroundRef.current = null
       unsubUserFollowRef.current?.()
       unsubUserFollowRef.current = api.onUserFollow((payload) => {
         onUserFollowRef.current(payload)
@@ -1073,7 +1229,7 @@ export default function WhiteboardCanvas({
         captureUpdate: CaptureUpdateAction.NEVER,
       })
       requestAnimationFrame(() => {
-        reassertFollowRef.current()
+        if (apiRef.current === api) reassertFollowRef.current()
       })
       const pending = pendingRemoteRef.current
       if (pending) {
@@ -1119,7 +1275,7 @@ export default function WhiteboardCanvas({
           arrives. Starts view-only; the `key` remount flips Excalidraw out of
           view mode once a can-edit role lands (0.18.1 can otherwise stick). */}
       <Excalidraw
-        key={roles.canEdit ? 'edit' : 'view'}
+        key={canEdit ? 'edit' : 'view'}
         excalidrawAPI={handleApi}
         theme={theme}
         onChange={handleChange}
@@ -1132,7 +1288,7 @@ export default function WhiteboardCanvas({
         onPaste={media.onPaste}
         isCollaborating
         name={roles.displayName}
-        viewModeEnabled={roles.viewModeEnabled}
+        viewModeEnabled={!canEdit || roles.viewModeEnabled}
         onScrollChange={roles.onScrollChange}
       />
       {roles.forceFollowLocked ? (
@@ -1170,7 +1326,7 @@ export default function WhiteboardCanvas({
         >
           Connecting…
         </div>
-      ) : roles.viewModeEnabled ? (
+      ) : !canEdit || roles.viewModeEnabled ? (
         <div
           style={{
             position: 'absolute',

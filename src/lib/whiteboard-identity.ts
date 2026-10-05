@@ -36,6 +36,8 @@ type WhiteboardAuthStore = {
 	identity: WhiteboardIdentity | null
 	sessionTokenGetter: ((options?: SessionTokenGetterOptions) => Promise<string | null>) | null
 	authResolved: boolean
+	/** Changes only across sign-in, sign-out, or account switches. */
+	identityEpoch: number
 	/** Last non-empty JWT from a settled `getToken`. Sync peek for first `wb:auth`. */
 	lastToken: string | null
 }
@@ -45,6 +47,7 @@ function emptyAuthStore(): WhiteboardAuthStore {
 		identity: null,
 		sessionTokenGetter: null,
 		authResolved: false,
+		identityEpoch: 0,
 		lastToken: null,
 	}
 }
@@ -137,6 +140,10 @@ export function whenAuthReady(): Promise<void> {
 export function setActiveIdentity(identity: WhiteboardIdentity | null): void {
 	const store = getAuthStore()
 	const changed = identityKey(store.identity) !== identityKey(identity)
+	if (store.identity?.clerkUserId !== identity?.clerkUserId) {
+		store.identityEpoch = (store.identityEpoch ?? 0) + 1
+		store.lastToken = null
+	}
 	store.identity = identity
 	if (!identity) store.lastToken = null
 	if (!changed || typeof window === 'undefined') return
@@ -213,12 +220,15 @@ export function raceSettled<T>(
 
 export async function getSessionToken(): Promise<string | null> {
 	const store = getAuthStore()
+	const epoch = store.identityEpoch ?? 0
 	const getter = store.sessionTokenGetter
 	if (!getter) return store.lastToken
 	try {
-		return rememberToken(await getter()) ?? store.lastToken
+		const token = await getter()
+		if ((store.identityEpoch ?? 0) !== epoch) return null
+		return rememberToken(token) ?? store.lastToken
 	} catch {
-		return store.lastToken
+		return (store.identityEpoch ?? 0) === epoch ? store.lastToken : null
 	}
 }
 
@@ -227,31 +237,38 @@ export async function getSessionTokenFresh(
 	timeoutMs = AUTH_GET_TOKEN_SETTLE_MS,
 ): Promise<string | null> {
 	const store = getAuthStore()
+	const epoch = store.identityEpoch ?? 0
 	const getter = store.sessionTokenGetter
 	const fetchFresh = async () => {
 		if (!getter) return store.lastToken
 		try {
-			return rememberToken(await getter({ skipCache: true })) ?? store.lastToken
+			const token = await getter({ skipCache: true })
+			if ((store.identityEpoch ?? 0) !== epoch) return null
+			return rememberToken(token) ?? store.lastToken
 		} catch {
-			return store.lastToken
+			return (store.identityEpoch ?? 0) === epoch ? store.lastToken : null
 		}
 	}
-	return raceSettled(
+	const token = await raceSettled(
 		fetchFresh().then((value) => nonEmptyToken(value)),
 		timeoutMs,
 		peekSessionToken(),
 	)
+	return (store.identityEpoch ?? 0) === epoch ? token : null
 }
 
 /** `getSessionToken` that cannot hang past `timeoutMs` (empty / cached token OK). */
 export async function getSessionTokenSettled(
 	timeoutMs = AUTH_GET_TOKEN_SETTLE_MS,
 ): Promise<string | null> {
-	return raceSettled(
+	const store = getAuthStore()
+	const epoch = store.identityEpoch ?? 0
+	const token = await raceSettled(
 		getSessionToken().then((value) => nonEmptyToken(value)),
 		timeoutMs,
 		peekSessionToken(),
 	)
+	return (store.identityEpoch ?? 0) === epoch ? token : null
 }
 
 /**
@@ -262,7 +279,9 @@ export async function markAuthResolvedAfterTokenSettle(
 	getToken: () => Promise<string | null | undefined>,
 	timeoutMs = AUTH_GET_TOKEN_SETTLE_MS,
 ): Promise<string> {
-	const clerkUserId = getAuthStore().identity?.clerkUserId ?? ''
+	const store = getAuthStore()
+	const clerkUserId = store.identity?.clerkUserId ?? ''
+	const epoch = store.identityEpoch ?? 0
 	const token = await raceSettled(
 		Promise.resolve()
 			.then(getToken)
@@ -273,7 +292,7 @@ export async function markAuthResolvedAfterTokenSettle(
 	)
 	if (
 		clerkUserId &&
-		getAuthStore().identity?.clerkUserId === clerkUserId &&
+		(store.identityEpoch ?? 0) === epoch &&
 		token.trim()
 	) {
 		cacheSessionToken(token)

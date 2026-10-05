@@ -31,9 +31,9 @@ Do not use `excalidraw-room`, Firebase, `oss-collab`, Liveblocks, or Yjs for thi
 `src/components/WhiteboardCanvas.tsx` + `src/lib/whiteboard-sync.ts`:
 
 1. `buildWhiteboardConnectUrl` opens `/api/whiteboard/connect/{uuid}?sessionId=…`.
-2. On change, a trailing ~1-second debounce (`SCENE_FLUSH_MS`) sends a mutation-ID-bearing `scene:update` with elements whose `version` increased. Periodically a full element set is sent. Each flush includes `databaseJson` from `serializeAsJSON(elements, appState, {}, "database")` (`files: {}`).
+2. On element or shared background-color change, a trailing ~1-second debounce (`SCENE_FLUSH_MS`) sends a mutation-ID-bearing `scene:update`. Element changes and `viewBackgroundColor` are tracked separately, so background-only changes can save even on an empty board; pan, selection, and other local UI state do not trigger a save. Native Open/reset converts omitted elements into version-incremented deletion tombstones rather than treating every full sync as a replacement. Periodically a full element set is sent. Each flush includes `databaseJson` from `serializeAsJSON(elements, appState, {}, "database")` (`files: {}`).
 3. Incoming `scene:sync` / `scene:update` is merged with `restoreElements` + `reconcileElements`, then applied with `captureUpdate: NEVER`.
-4. The client retires a mutation only after `scene:ack` (`applied`, `duplicate`, or `noop`). A transient `persist_failed` keeps the immutable mutation and retries after bounded reconnect backoff; malformed or oversized failures are terminal and shown to the user.
+4. The client retires a mutation only after `scene:ack` (`applied`, `duplicate`, or `noop`). Never-sent queued snapshots may advance their base across a confirmed single revision from their own preceding mutation, but not across intervening peer revisions; immutable in-flight replay bases stay pinned. An element ack alone does not prove a stale background was accepted: the client verifies revision agreement and requests the authoritative scene when needed. A transient `persist_failed` keeps the immutable mutation and retries after bounded reconnect backoff; malformed or oversized failures are terminal and shown to the user.
 5. Client ping runs every 25 seconds (`{"type":"ping"}`); the DO auto-responds with `pong` without waking JavaScript.
 
 New image/video insertion is paused at the canvas boundary. Existing image references still run the read/hydrate path described below; they do not enqueue an upload.
@@ -43,6 +43,8 @@ New image/video insertion is paused at the canvas boundary. Existing image refer
 The Worker validates the board UUID, canonical UUID `sessionId`, and `Upgrade: websocket`, then runs two admission gates before `WHITEBOARDS.get().fetch`. `WHITEBOARD_CONNECT_LIMITER` allows 600 admissions per 60 seconds per trusted `CF-Connecting-IP`; `WHITEBOARD_BOARD_CONNECT_LIMITER` then allows 240 per 60 seconds per canonical board UUID plus trusted IP. Both bindings must be configured, and the local/test fallback enforces the same layered policy with expiring buckets capped at 4096 keys. Each DO admits at most 64 total sockets and 32 pending-auth sockets; pending auth expires after approximately 30 seconds without a per-socket alarm.
 
 Scratch host proof (`hostSecret`) and a Clerk JWT are sent in the first WebSocket message (`wb:auth`), not in the connect query string. `X-Board-Host` on the upgrade request is a non-mutating compatibility check for an already initialized board only; it cannot create host metadata or claim a random UUID. Do not put the host secret in a URL because query strings can reach access logs.
+
+Signing in after a guest hello reauthenticates the open socket, with bounded retries while a token is unavailable. Signing out or switching accounts closes the old authenticated socket, clears its session proof and queued mutations, and reconnects with a fresh session. Same-account profile changes refresh authenticated identity metadata without cancelling an unfinished guest upgrade. Auth retries stop on a matching authenticated participant identity, not an unrelated role/Group Edit notification. Cached tokens and asynchronous token results are scoped to the active sign-in identity.
 
 The socket opens and sends the stored scene before Clerk is necessarily ready. A signed-in tab without a JWT sends `signedIn: true` and remains pending until a token arrives; a late token upgrades the existing session with `wb:role`. A socket receives one `wb:hello`; the runtime does not emit a second hello for late authentication. There are no `roleResolved` or `wb:authResult` frames.
 
@@ -65,7 +67,7 @@ The PWA service worker (`public/sw.js`) never intercepts `/api/*`, so this upgra
 - SQLite failures and oversize/malformed scenes send `wb:error` (`persist_failed`, `scene_too_large`, or `malformed_scene`) and do not broadcast that failed update. Image availability is not a server-side scene gate.
 - Accepted mutations send `scene:ack` after durable persistence; duplicate mutation IDs are acknowledged without a second write. Transient persistence failures retain the client mutation for reconnect retry; terminal protocol/size failures do not retry forever.
 - Incoming WebSocket frames are rejected before JSON parsing when their UTF-8 byte length exceeds the bounded frame cap. Scene/database JSON is capped at 2,000,000 UTF-8 bytes and scenes remain capped at 4,000 elements.
-- Merge is last-write-wins by element `version`, then `versionNonce` (`mergeSceneElements`).
+- Merge selects the higher element `version`; equal versions select the lower `versionNonce`, matching Excalidraw 0.18.1 (`mergeSceneElements`).
 - Full `scene:sync` broadcasts exclude the writer (`exceptSessionId = fromSessionId`), preserving the `12f06f5` echo fix. Incremental updates also exclude their sender.
 - WebSocket auto-response handles ping/pong; socket attachments are restored after hibernation.
 - Viewers cannot mutate the scene. Editors can mutate only while Group Edit is on; Owner and Manager can always mutate.
@@ -100,6 +102,7 @@ Older objects may still be migrated from the former `database_json` + `live_json
 | `wb:hello` | `{ sessionId, role, canEdit, authToken, owner, … }` | Session identity for the manage panel |
 | `wb:participants` | `{ yourSessionId, yourRole, participants[] }` | People list |
 | `wb:role` | `{ role, canEdit }` | Manual role change or late-auth upgrade |
+| `wb:editGate` | `{ allowEdits }` | Authoritative Group Edit value for all connected panels, including Owner/Manager |
 | `scene:ack` | `{ mutationId, status, revision? }` | Durable mutation outcome: `applied`, `duplicate`, or `noop` |
 | `wb:error` | `{ code, message, mutationId, terminal }` | Scene size, malformed payload, or persistence failure |
 | `wb:forceFollow` | `{ forceFollow, targetUserId, targetSessionId, subjects }` | Follow User camera lock |
@@ -121,11 +124,11 @@ The Excalidraw image tool is hidden and image/video paste, drag, and drop insert
 **Object key:** `boards/{boardId}/assets/{fileId}`
 **Route:** `/api/whiteboard/boards/{boardId}/assets/{fileId}`
 
-The route accepts a board UUID and either a UUID or a 64-character content-hash file id. GET and HEAD read the R2 object directly and do not wake or query a DO manifest. Missing objects return `404`.
+The route accepts a board UUID and either a UUID or a 64-character content-hash file id. GET and HEAD first read the board-scoped R2 object directly. If it is missing, a read-only Durable Object lookup checks that the requested file is a live image reference in that board, then resolves the stored Google owner and board temporary prefixes server-side. This lets UUID-link Viewers read legacy saved-board images without receiving the owner key or access to unrelated account files. Unknown or expired unsaved boards do not initialize lifetime metadata during this lookup. Missing or unreferenced legacy files return `404`.
 
 | Method | Result |
 |--------|--------|
-| `GET` / `HEAD` | Read an existing board-scoped object |
+| `GET` / `HEAD` | Read an existing board-scoped object, or a scene-referenced legacy image |
 | `PUT` | `405` — board-scoped writes are disabled |
 | `DELETE` | `405` — board-scoped deletes are disabled |
 
@@ -142,7 +145,7 @@ No manifest row is required or consulted. Objects left in this namespace are not
 | `temp:{boardId}` | Unsaved/signed-out scratch media; subject to the 24-hour scratch lifetime |
 | `local:{deviceId}` | Leftover objects; compatibility reads only |
 
-Existing image/GIF files hydrate by trying the board-scoped read-only route first and then the legacy owner-key route (`google:`, `temp:`, and any remembered legacy owner). Existing MP4/WebM player links continue to resolve through their owner key and `/whiteboard-player`.
+Existing image/GIF files hydrate by trying the board-aware read-only route first and then the legacy owner-key route (`google:`, `temp:`, and any remembered legacy owner). Hydration readiness belongs to the current Excalidraw instance and is checked against its binary-file map, so Group Edit remounts rehydrate existing images. Async image reads do not add files to a superseded canvas instance. Existing MP4/WebM player links continue to resolve through their owner key and `/whiteboard-player`.
 
 The legacy route still provides its established authenticated PUT/DELETE paths for owner-key media and the `POST /api/whiteboard/assets/claim` temp-to-Google move. The paused canvas does not initiate new image/video insertion, and the removed board-scoped write-proof flow is not used.
 

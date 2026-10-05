@@ -1359,17 +1359,17 @@ a.whiteboard-toggle:hover {
 }
 
 nav,
-nav ul {
+nav > ul {
     display: flex;
     align-items: center;
     height: 36px;
 }
 
-nav ul {
+nav > ul {
     gap: 10px;
 }
 
-nav ul li {
+nav > ul > li {
     margin: 0;
     display: flex;
     align-items: center;
@@ -2234,17 +2234,17 @@ footer {
     }
 
     nav,
-    nav ul,
-    nav ul li {
+    nav > ul,
+    nav > ul > li {
         height: 28px;
     }
 
-    nav ul {
+    nav > ul {
         margin: 0;
         gap: 8px;
     }
 
-    nav ul li {
+    nav > ul > li {
         margin: 0;
     }
 
@@ -2429,7 +2429,7 @@ footer {
         justify-self: end;
     }
 
-    nav ul {
+    nav > ul {
         gap: 6px;
     }
 

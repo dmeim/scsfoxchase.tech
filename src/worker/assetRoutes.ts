@@ -934,6 +934,7 @@ async function responseForR2Object(
 	object: R2AssetObject,
 	assetId: string,
 	servedOwnerKey: string | null,
+	knownSavedToLibrary?: boolean,
 ): Promise<Response> {
 	if (object === null) {
 		return jsonError(404, 'Asset not found', request)
@@ -945,9 +946,9 @@ async function responseForR2Object(
 		isExpiredUpload(object.uploaded)
 	) {
 		const boardId = servedOwnerKey.slice('temp:'.length)
-		const saved = UUID_RE.test(boardId)
+		const saved = knownSavedToLibrary ?? (UUID_RE.test(boardId)
 			? await readSavedToLibraryFlag(env, boardId)
-			: false
+			: false)
 		if (saved === false) {
 			return jsonError(404, 'Asset expired', request)
 		}
@@ -1042,11 +1043,28 @@ export async function handleAssetRequest(
 		}
 		const key = boardAssetR2Key(boardAsset.boardId, boardAsset.fileId)
 		let object: R2AssetObject
+		let servedOwnerKey: string | null = null
+		let savedToLibrary: boolean | undefined
 		try {
 			object = await env.WHITEBOARD_ASSETS.get(key, {
 				range: request.headers,
 				onlyIf: request.headers,
 			})
+			if (object === null) {
+				const reference = await boardStub(env, boardAsset.boardId)
+					.referencedImageOwners(boardAsset)
+				savedToLibrary = reference.savedToLibrary
+				for (const ownerKey of reference.ownerKeys) {
+					object = await env.WHITEBOARD_ASSETS.get(
+						r2ObjectKey(ownerKey, boardAsset.fileId),
+						{ range: request.headers, onlyIf: request.headers },
+					)
+					if (object !== null) {
+						servedOwnerKey = ownerKey
+						break
+					}
+				}
+			}
 		} catch {
 			logWhiteboardEvent('r2_read_error', {
 				method: request.method,
@@ -1057,10 +1075,11 @@ export async function handleAssetRequest(
 		return responseForR2Object(
 			request,
 			env,
-				object,
-				boardAsset.fileId,
-				null,
-			)
+			object,
+			boardAsset.fileId,
+			servedOwnerKey,
+			savedToLibrary,
+		)
 	}
 
 	const parsed = parseAssetPath(url.pathname)

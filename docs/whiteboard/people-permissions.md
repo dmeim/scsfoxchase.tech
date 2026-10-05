@@ -28,6 +28,10 @@ How Owner is chosen:
 
 Guest **Editor** from **People** is not sticky on a shared Chromebook. Signed-out connect `userId` is minted for this board visit (this page load) in `getBoardConnectIdentity()` — not the durable `deviceInstallId` in `localStorage`. Refresh, a new tab, or joining again from the hub is a new guest and defaults to **Viewer**, unless they join with the board’s share code (join-proof cookie, ~12h). Owner/Manager can still promote that guest for this visit only.
 
+Signing in while a board is already open reauthenticates its guest socket, so a saved board's Owner can regain editing without reloading. Signing out or switching accounts starts a fresh socket/session instead of retaining the previous account's role or queued writes.
+
+Group Edit changes broadcast `wb:editGate` with the authoritative `allowEdits` value to all connected panels. Owner and Manager controls update even when their own editing permission does not change or no Editors are connected.
+
 **Google sign-in** is how a person stays Editor (or Manager) across visits and class periods. On shared Chromebooks, sign out of Google when the period ends so the next student does not keep a signed-in role. Signed-out guests do not need a site-data clear.
 
 Helpers: `WHITEBOARD_ROLES`, `roleCanEdit`, `sessionCanEdit`, `assignableRolesFor` in `src/lib/whiteboard-sync.ts`.
@@ -72,6 +76,8 @@ Manage panel eye buttons dispatch `scsfoxchase:whiteboard-follow` with `{ userId
 Following state is published back as `scsfoxchase:whiteboard-following` so the eye shows open vs slashed.
 
 Stock Excalidraw follow **breaks on pan/zoom**. That is the intended unfollow for voluntary Follow: `onUserFollow` with `UNFOLLOW` clears the target. Bounds messages still keep the camera aligned while the guest stays following.
+
+A leader's server-provided follower flag is retained separately from locally derived forced-follow targets. Participant/role updates therefore do not stop camera publishing while voluntary followers remain; publishing stops only when neither voluntary nor forced followers need it.
 
 Voluntary Follow is ignored while Follow User is locking this session (force-follow wins). Eyes are dimmed in the manage panel while that lock is on.
 

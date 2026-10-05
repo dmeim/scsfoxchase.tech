@@ -182,6 +182,7 @@ const FOLLOW_EVENT = 'scsfoxchase:whiteboard-follow'
 const FOLLOWING_EVENT = 'scsfoxchase:whiteboard-following'
 const FORCE_FOLLOW_EVENT = 'scsfoxchase:whiteboard-force-follow'
 const HELLO_EVENT = 'scsfoxchase:whiteboard-hello'
+const EDIT_GATE_EVENT = 'scsfoxchase:whiteboard-edit-gate'
 
 function roleLabel(role: WhiteboardRole): string {
   return role.charAt(0).toUpperCase() + role.slice(1)
@@ -269,6 +270,7 @@ function initWhiteboardMenu() {
   let forceFollowTargetUserId = ''
   let classCanEditOn = false
   let classCanEditBusy = false
+  let classCanEditRevision = 0
   const canForceFollow = () => yourRole === 'owner' || yourRole === 'manager'
   const canRenameBoard = () => canForceFollow()
   const canManageShare = () => canForceFollow()
@@ -480,8 +482,11 @@ function initWhiteboardMenu() {
     } catch {
       setShareHint('Could not load share code.')
     }
+    const revision = classCanEditRevision
     const classCanEdit = await readClassCanEdit(boardId)
-    if (classCanEdit !== null) renderClassCanEditUi(classCanEdit)
+    if (classCanEdit !== null && revision === classCanEditRevision) {
+      renderClassCanEditUi(classCanEdit)
+    }
   }
 
   const copyText = async (
@@ -709,6 +714,13 @@ function initWhiteboardMenu() {
     }
   }) as EventListener)
 
+  window.addEventListener(EDIT_GATE_EVENT, ((event: CustomEvent) => {
+    const detail = event.detail as { allowEdits?: unknown } | undefined
+    if (typeof detail?.allowEdits !== 'boolean') return
+    classCanEditRevision += 1
+    renderClassCanEditUi(detail.allowEdits)
+  }) as EventListener)
+
   window.addEventListener(FOLLOWING_EVENT, ((event: CustomEvent) => {
     const detail = event.detail as { followingUserId?: string | null }
     followingUserId =
@@ -893,10 +905,11 @@ function initWhiteboardMenu() {
     classCanEditBusy = true
     setShareHint(null)
     const wantOn = classCanEditToggle.checked
+    const revision = classCanEditRevision
     void (async () => {
       try {
         const next = await patchClassCanEdit(boardId, wantOn)
-        renderClassCanEditUi(next)
+        if (revision === classCanEditRevision) renderClassCanEditUi(next)
       } catch (err) {
         renderClassCanEditUi(classCanEditOn)
         setShareHint(
